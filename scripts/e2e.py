@@ -90,6 +90,14 @@ def main() -> int:
         code, p, _ = guiju("which", "JGJ 147-2004", home=home, timeout=180)
         check("which 旧版 → superseded", bool(p.get("currency")) and p["currency"][0]["status"] == "superseded")
 
+        # ---- 4b. 精准性：不能把"代替它的那本通用规范"当成这本书 ----
+        code, p, _ = guiju("which", "GB 50016-2014", home=home, timeout=240)
+        name = (p.get("announcement") or {}).get("name") or ""
+        check("被代替引用不误导定位（GB 50016）", "建筑设计防火规范" in name, name)
+        code, p, _ = guiju("which", "JGJ 130-2011", home=home, timeout=240)
+        name = (p.get("announcement") or {}).get("name") or ""
+        check("被代替引用不误导定位（JGJ 130）", "脚手架" in name, name)
+
         # ---- 5. 按编号下载正文（本地未索引，靠权威名称 + 实施日窗口定位） ----
         code, p, _ = guiju("pull", "JGJ/T450-2018", home=home, timeout=600)
         path = p.get("path", "") or ""

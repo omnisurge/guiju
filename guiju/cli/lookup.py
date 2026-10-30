@@ -115,8 +115,11 @@ def _by_code(
 
     key = normalize_key(ref)
     rows = store.find_by_code(key)
-    if rows:
-        decisive = [r for r in rows if r["role"] in _DECISIVE_ROLES] or list(rows)
+    # 只有「本次公告发布的版本」才算这个编号的家。
+    # 危险案例（实测）：GB 50016-2014 只出现在《建筑防火通用规范》的"代替…"句里，
+    # 若把 mentioned/superseded_ref 也当候选，就会把用户带到代替它的那本规范上去。
+    decisive = [r for r in rows if r["role"] in _DECISIVE_ROLES]
+    if decisive:
         keys = {r["code_key"] for r in decisive}
         if len(keys) > 1:
             raise AmbiguousCode(
@@ -164,9 +167,21 @@ def _by_code(
             resolved_name=best_record.name,
         )
     ids = {h.entry["id"] for h in hits}
-    if len(ids) > 1 and allow_network:
-        hits = _verify_by_primary_code(store, hits, key, fetch_detail) or hits
-        ids = {h.entry["id"] for h in hits}
+    ann_name = hits[0].entry.get("name") or hits[0].entry.get("doc_name")
+    suspicious = len(ids) > 1 or not _name_matches(ann_name, search_name)
+    if allow_network and suspicious:
+        verified = _verify_by_primary_code(store, hits[:_VERIFY_MAX], key, fetch_detail)
+        if verified:
+            hits = verified
+            ids = {h.entry["id"] for h in hits}
+        elif len(ids) == 1:
+            # 名称像、但正文编号对不上：宁可不给，也不把别的标准递出去
+            raise NotIndexed(
+                f"候选公告 #{hits[0].entry['id']}「{ann_name}」的正文编号不是 {ref}",
+                hint="该编号可能没有独立公告，或条文已并入通用规范；可用 guiju search 按名称查",
+                currency=[r.as_payload() for r in records],
+                resolved_name=best_record.name,
+            )
     if len(ids) > 1:
         raise AmbiguousTarget(
             f"按名称「{best_record.name}」命中 {len(ids)} 条公告，需要人工选定",
@@ -258,6 +273,18 @@ def _pick_record(records: list, key: str):
         if r.status == "current":
             return r
     return pool[0] if pool else None
+
+
+def _norm_name(name: str | None) -> str:
+    return "".join(ch for ch in (name or "") if ch.isalnum())
+
+
+def _name_matches(doc_name: str | None, search_name: str) -> bool:
+    """公告名与权威名称是否指向同一本书（互含即视作一致）。"""
+    left, right = _norm_name(doc_name), _norm_name(search_name)
+    if not left or not right:
+        return False
+    return left in right or right in left
 
 
 def _is_english(record) -> bool:

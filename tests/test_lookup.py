@@ -73,20 +73,20 @@ class ByCodeWithoutIndexTest(unittest.TestCase):
 
     def test_code_resolved_via_currency_name(self):
         cur = FakeCurrency([Record(code="GB 55037-2022", status="current", name="建筑防火通用规范")])
-        got = resolve(self.store, "GB55037-2022", cur)
+        got = resolve(self.store, "GB55037-2022", cur, allow_network=False)
         self.assertEqual(got["ann"]["id"], 1)
         self.assertEqual(got["via"], "code_via_currency")
         self.assertEqual(got["status"], "current")
 
     def test_superseded_status_is_surfaced(self):
         cur = FakeCurrency([Record(code="GB 55037-2017", status="superseded", name="建筑防火通用规范")])
-        got = resolve(self.store, "GB55037-2017", cur)
+        got = resolve(self.store, "GB55037-2017", cur, allow_network=False)
         self.assertEqual(got["status"], "superseded")
 
     def test_currency_name_ambiguous(self):
         cur = FakeCurrency([Record(code="X-1", status="current", name="建筑设计防火规范")])
         with self.assertRaises(AmbiguousTarget):
-            resolve(self.store, "X-1", cur)
+            resolve(self.store, "X-1", cur, allow_network=False)
 
     def test_currency_has_no_name(self):
         with self.assertRaises(NotIndexed):
@@ -96,6 +96,40 @@ class ByCodeWithoutIndexTest(unittest.TestCase):
         cur = FakeCurrency([Record(code="Y-1", status="current", name="钢结构设计标准")])
         with self.assertRaises(GuijuError):
             resolve(self.store, "Y-1", cur)
+
+class RoleAndVerificationTest(unittest.TestCase):
+    """两个会"拿错书"的坑：被别的公告提到、以及同名公告的核实。"""
+
+    def setUp(self):
+        self.store = make_store()
+
+    def test_mentioned_code_is_not_the_publisher(self):
+        """GB 50016-2014 只在《建筑防火通用规范》里被"代替"，不能因此定位到那本。"""
+        self.store.upsert_edition("GB50016-2014", "GB 50016-2014", None, "parsed")
+        self.store.add_mention(1, "GB50016-2014", "superseded_ref", "代替GB 50016-2014")
+        cur = FakeCurrency([
+            Record(code="GB 50016-2014", status="current", name="建筑设计防火规范",
+                   implement_date="2015-05-01"),
+        ])
+        got = resolve(self.store, "GB 50016-2014", cur, allow_network=False)
+        self.assertEqual(got["ann"]["doc_name"], "建筑设计防火规范")
+        self.assertNotEqual(got["ann"]["id"], 1)
+
+    def test_verification_picks_announcement_whose_text_has_the_code(self):
+        cur = FakeCurrency([Record(code="GB 50016-2014", status="current", name="建筑设计防火规范")])
+
+        def fake_detail(url):
+            if url.endswith("a3.html"):
+                return "现批准《建筑设计防火规范》为国家标准，编号为GB 50016-2014。"
+            return "现批准《建筑设计防火规范》为国家标准，编号为GB 50099-2011。"
+
+        got = resolve(self.store, "GB 50016-2014", cur, fetch_detail=fake_detail)
+        self.assertEqual(got["ann"]["id"], 3)
+
+    def test_name_mismatch_without_verification_evidence_is_refused(self):
+        cur = FakeCurrency([Record(code="X-9", status="current", name="建筑抗震设计规范")])
+        with self.assertRaises(NotIndexed):
+            resolve(self.store, "X-9", cur, fetch_detail=lambda url: "编号为GB 50099-2011")
 
 
 if __name__ == "__main__":
