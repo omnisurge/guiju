@@ -47,6 +47,13 @@ def check(name: str, condition: bool, detail: str = "") -> None:
     print(f"  [{'PASS' if condition else 'FAIL'}] {name}" + (f" —— {detail}" if detail else ""))
 
 
+def detail_of(code: int, p: dict) -> str:
+    """失败时把退出码/原因/错误文本带出来 —— 否则 CI 里只看到 None，没法判读。"""
+    if p.get("ok") is False or code != 0:
+        return f"exit={code} {p.get('reason', '')} {str(p.get('error', ''))[:70]}".strip()
+    return ""
+
+
 def skip(name: str, why: str) -> None:
     SKIPPED.append((name, why))
     print(f"  [SKIP] {name} —— {why}")
@@ -82,7 +89,8 @@ def main() -> int:
             return _summary()
 
         code, p, _ = guiju("sync", home=home, timeout=900)
-        check("sync 落库 3254 条", p.get("total_in_db") == 3254, str(p.get("total_in_db")))
+        check("sync 落库 3254 条", p.get("total_in_db") == 3254,
+              detail_of(code, p) or str(p.get("total_in_db")))
         check("sync 与上游对账", p.get("total_in_db") == p.get("total_reported"),
               f"db={p.get('total_in_db')} 上游={p.get('total_reported')}")
         code, p, _ = guiju("sync", home=home, timeout=900)
@@ -148,14 +156,14 @@ def main() -> int:
         code, p, _ = guiju("pull", ann_id, home=home, timeout=600)
         local_path = p.get("path", "") or ""
         check("pull 按公告ID（无编号亦可归档）", code == 0 and p.get("magic") == "pdf",
-              f"{p.get('bytes')}B code={p.get('code')}")
+              detail_of(code, p) or f"{p.get('bytes')}B code={p.get('code')}")
 
         code, p, _ = guiju("pull", ann_id, home=home, timeout=600)
         check("pull 幂等（公告ID路径）", code == 10 and p.get("already") is True)
 
         code, p, _ = guiju("verify", home=home)
         check("verify 通过", code == 0 and p.get("ok") is True and p.get("total", 0) >= 1,
-              f"total={p.get('total')}")
+              detail_of(code, p) or f"total={p.get('total')}")
 
         code, p, _ = guiju("provenance", local_path, home=home)
         url = str((p.get("announcement") or {}).get("url", ""))
