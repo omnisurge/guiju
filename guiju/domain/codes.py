@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import StrEnum
+
+from .._compat import StrEnum
 
 #: 长前缀必须排在短前缀前面，否则 GB/T 会被 GB 抢先匹配
 _CODE_RE = re.compile(

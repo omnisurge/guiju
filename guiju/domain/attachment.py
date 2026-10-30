@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import StrEnum
+
+from .._compat import StrEnum
 
 #: 这三个词出现即排除：它们是"废止条文"一类的附属文件，不是正文
 DEPRECATED_WORDS = ("废止", "作废", "条文废止")

@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from .._compat import StrEnum
 
 #: 该年份（含）之后发布的公告基本都能拿到正文
 FULL_TEXT_SINCE_YEAR = 2014
