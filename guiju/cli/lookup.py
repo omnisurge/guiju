@@ -26,7 +26,14 @@ _CODEISH = re.compile(r"^[A-Za-z]")
 _DECISIVE_ROLES = ("primary", "target_of_revision")
 
 
-def resolve(store: Store, ref: str, currency: currency_mod.Currency | None = None) -> dict:
+def resolve(
+    store: Store,
+    ref: str,
+    currency: currency_mod.Currency | None = None,
+    *,
+    allow_network: bool = True,
+    fetch_detail=None,
+) -> dict:
     ref = (ref or "").strip()
     if not ref:
         raise GuijuError("引用为空")
@@ -38,7 +45,7 @@ def resolve(store: Store, ref: str, currency: currency_mod.Currency | None = Non
         return _by_id(store, int(ref))
     if _CJK.search(ref) and not _CODEISH.match(ref):
         return _by_name(store, ref)
-    return _by_code(store, ref, currency)
+    return _by_code(store, ref, currency, allow_network=allow_network, fetch_detail=fetch_detail)
 
 
 # ------------------------------------------------------------------ 三种入口
@@ -96,7 +103,14 @@ def _by_name(store: Store, ref: str) -> dict:
     return result
 
 
-def _by_code(store: Store, ref: str, currency: currency_mod.Currency) -> dict:
+def _by_code(
+    store: Store,
+    ref: str,
+    currency: currency_mod.Currency,
+    *,
+    allow_network: bool = True,
+    fetch_detail=None,
+) -> dict:
     from ..domain.codes import normalize_key
 
     key = normalize_key(ref)
@@ -150,6 +164,9 @@ def _by_code(store: Store, ref: str, currency: currency_mod.Currency) -> dict:
             resolved_name=best_record.name,
         )
     ids = {h.entry["id"] for h in hits}
+    if len(ids) > 1 and allow_network:
+        hits = _verify_by_primary_code(store, hits, key, fetch_detail) or hits
+        ids = {h.entry["id"] for h in hits}
     if len(ids) > 1:
         raise AmbiguousTarget(
             f"按名称「{best_record.name}」命中 {len(ids)} 条公告，需要人工选定",
@@ -167,7 +184,7 @@ def _by_code(store: Store, ref: str, currency: currency_mod.Currency) -> dict:
     row = store.get_ann(int(hits[0].entry["id"]))
     result = _wrap(row, via="code_via_currency")
     result.update(
-        code_key=best_record.code,
+        code_key=normalize_key(best_record.code),
         code_display=best_record.code,
         confidence="from_currency",
         currency=[r.as_payload() for r in records],
@@ -191,6 +208,43 @@ def _wrap(row, *, via: str) -> dict:
         "currency": [],
         "status": "",
     }
+
+
+#: 有界核实上限：超过这个数量就交还人工，避免把"查证"变成"全库扫描"
+_VERIFY_MAX = 6
+
+
+def _verify_by_primary_code(store: Store, hits: list, key: str, fetch_detail=None) -> list:
+    """候选不多时，逐条抓详情页看正文编号 —— 这是查证，不是猜测。
+
+    实测：GB 55006-2021《钢结构通用规范》按名称命中 6 条公告；每页 1.2 秒即可确定
+    哪一条的正文编号就是 GB 55006-2021。相比让用户手工翻 6 条，这个代价是值得的；
+    超过 6 条则退回人工（32），不让"查证"退化成全库扫描。
+    """
+    from ..domain.codes import classify, normalize_key
+
+    if len(hits) > _VERIFY_MAX:
+        return []
+    if fetch_detail is None:
+        from ..sources import registry
+
+        source = registry()["mohurd"]
+        fetch_detail = lambda url: source.detail(url)[1]  # noqa: E731
+
+    matched = []
+    for hit in hits:
+        ann = store.get_ann(int(hit.entry["id"]))
+        if ann is None:
+            continue
+        try:
+            text = fetch_detail(ann["url"])
+        except Exception:  # noqa: BLE001 - 单条失败不影响其它候选
+            continue
+        codes = classify(text, ann["doc_name"] or "")
+        primary = normalize_key(codes.primary_key or "")
+        if primary and primary == key:
+            matched.append(hit)
+    return matched
 
 
 def _pick_record(records: list, key: str):

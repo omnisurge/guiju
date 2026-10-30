@@ -24,7 +24,12 @@ def run(store: Store, args: argparse.Namespace) -> int:
     target = None
     error = None
     try:
-        target = resolve(store, args.ref, currency=currency_mod.NullCurrency() if args.offline else cur)
+        target = resolve(
+            store,
+            args.ref,
+            currency=currency_mod.NullCurrency() if args.offline else cur,
+            allow_network=not args.offline,
+        )
     except (NotIndexed, AmbiguousTarget) as exc:
         error = exc
     except Exception as exc:  # noqa: BLE001 - 只做展示，不因解析失败而整体失败

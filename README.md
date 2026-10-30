@@ -70,6 +70,10 @@ guiju which GB55037-2022
 # 4) 下载正文（幂等：已存在且校验通过则返回退出码 10）
 guiju pull GB55037-2022 --json
 
+# 4b) 批量：一次取一整份规范台账
+guiju pull --list scripts/fixtures/mandatory-55x.txt --json
+guiju pull --list my-ledger.txt --limit 3          # 先试 3 本
+
 # 5) 出引用串
 guiju cite GB55037-2022 5.2.1
 # → 《建筑防火通用规范》GB 55037-2022 第5.2.1条
@@ -90,6 +94,7 @@ guiju status
 | `guiju index` | 可选预热：解析编号建本地缓存（**已被 which 取代，非必需**） | 是 |
 | `guiju show <ref>` | 名称/编号/角色/可得性/本地文件 | 否 |
 | `guiju pull <ref>` | 下载正文，幂等，内容寻址归档 | 是 |
+| `guiju pull --list f.txt` | 按清单批量下载，汇总成功/已存在/未达成 | 是 |
 | `guiju cite <ref> [条款]` | 生成引用串（`--strict` 有未核实项即失败） | 否 |
 | `guiju verify` | 校验归档完整性（缺失/被改） | 否 |
 | `guiju provenance <路径>` | 按 sha256 反查来源 | 否 |

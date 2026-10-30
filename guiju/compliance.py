@@ -108,8 +108,27 @@ def _detect_block(resp: Response) -> None:
             )
 
 
-def get(url: str, referer: str | None = None, timeout: int = 60) -> Response:
-    """发一次 GET，返回 Response。这是全仓唯一允许发起网络请求的函数。"""
+def get(url: str, referer: str | None = None, timeout: int = 60, attempts: int = 2) -> Response:
+    """发一次 GET，返回 Response。这是全仓唯一允许发起网络请求的函数。
+
+    弱网容错：只对**可重试**的失败（超时/连接错误/5xx）做有界重试，默认 2 次、退避 1s。
+    合规拒绝（40）与 4xx 一律不重试 —— 重试它们只会变成攻击。
+    """
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            return _get_once(url, referer=referer, timeout=timeout)
+        except _Retryable as exc:
+            if attempt >= attempts:
+                raise SourceUnreachable(str(exc)) from None
+            time.sleep(1.0 * attempt)
+    raise SourceUnreachable(f"重试耗尽：{url}")  # pragma: no cover
+
+
+class _Retryable(Exception):
+    """内部标记：这类失败值得再试一次。"""
+
+
+def _get_once(url: str, referer: str | None = None, timeout: int = 60) -> Response:
     check_url(url)
     host = (urllib.parse.urlsplit(url).hostname or "").lower()
     _throttle(host)
@@ -129,13 +148,15 @@ def get(url: str, referer: str | None = None, timeout: int = 60) -> Response:
             final_url = resp.geturl() or url
             ctype = resp.headers.get("Content-Type", "") or ""
     except urllib.error.HTTPError as exc:
+        if exc.code >= 500:
+            raise _Retryable(f"HTTP {exc.code}：{url}") from exc
         raise SourceUnreachable(f"HTTP {exc.code}：{url}") from exc
     except ComplianceDenied:
         raise
     except ssl.SSLError as exc:
-        raise SourceUnreachable(f"TLS 失败：{exc}") from exc
-    except Exception as exc:  # noqa: BLE001 - 网络异常种类多，统一归为不可达
-        raise SourceUnreachable(f"{type(exc).__name__}：{exc}［{url}］") from exc
+        raise _Retryable(f"TLS 失败：{exc}") from exc
+    except Exception as exc:  # noqa: BLE001 - 超时/连接错误等，值得再试
+        raise _Retryable(f"{type(exc).__name__}：{exc}［{url}］") from exc
 
     out = Response(url=final_url, body=body, content_type=ctype)
     _detect_block(out)

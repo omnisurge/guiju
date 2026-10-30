@@ -102,6 +102,14 @@ def main() -> int:
         code, p2, _ = guiju("pull", "JGJ/T450-2018", home=home, timeout=600)
         check("pull 幂等返回 10", code == 10 and p2.get("already") is True)
 
+        # ---- 5b. 批量（台账真实清单，先取 2 本） ----
+        ledger = ROOT / "scripts" / "fixtures" / "mandatory-55x.txt"
+        code, p, _ = guiju("pull", "--list", str(ledger), "--limit", "2", home=home, timeout=600)
+        check("批量下载 2 本", code == 0 and p.get("counts", {}).get("0") == 2, str(p.get("counts")))
+        check("批量汇总给出产出目录", bool(p.get("out_dir")), str(p.get("out_dir")))
+        code, p, _ = guiju("pull", "--list", str(ledger), "--limit", "2", home=home, timeout=600)
+        check("批量复跑全部命中已有（10）", code == 0 and p.get("counts", {}).get("10") == 2, str(p.get("counts")))
+
         # ---- 6. 诚实歧义：同名多公告不替用户猜 ----
         code, p, _ = guiju("pull", "老年人照料设施建筑设计标准", home=home, timeout=180)
         check("同名多公告 → 32 + candidates", code == 32 and len(p.get("candidates") or []) >= 2,

@@ -24,7 +24,10 @@
 想知道某编号是什么/是否现行？ → guiju which <编号> --json   （不需要预先索引）
    · 返回 currency[{code,status,name}] + announcement{id,...}
    · status: current/superseded/upcoming/withdrawn/unknown，unknown ≠ 现行
-要正文文件吗？             → guiju pull <编号|公告ID|URL> --json
+要正文文件吗？             → guiju pull <编号|规范名|公告ID|URL> --json
+要一整批吗？               → guiju pull --list <文件|-> --json [--limit N]
+   · 清单每行一个 ref，# 注释与行尾注释都支持
+   · 汇总里 counts 按退出码统计，ok=false 表示有 1/20/40/50 这类严重失败
 只要引用串吗？             → guiju cite <编号|公告ID|URL> [条款号] --json
 怀疑本地文件被改/丢失？     → guiju verify --json
 这个 PDF 哪来的？          → guiju provenance <路径> --json

@@ -221,8 +221,13 @@ class Store:
         )
 
     def artifact_by_code(self, code_key: str) -> sqlite3.Row | None:
+        """按编号找归档。对空格/大小写不敏感 —— 展示号（GB 55001-2021）与
+        归一化号（GB55001-2021）必须指向同一条记录，否则幂等快路径会永远打不中。"""
+        key = (code_key or "").replace(" ", "").upper()
         return self.db.execute(
-            "SELECT * FROM artifact WHERE code_key = ? ORDER BY fetched_at DESC LIMIT 1", (code_key,)
+            "SELECT * FROM artifact WHERE REPLACE(UPPER(code_key),' ','') = ?"
+            " ORDER BY fetched_at DESC, id DESC LIMIT 1",
+            (key,),
         ).fetchone()
 
     def artifact_by_sha(self, sha256: str) -> sqlite3.Row | None:

@@ -20,7 +20,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
             hint="接受 5.2.1 / 第5.2.1条 / 5.2.1条 三种写法",
         )
 
-    target = resolve(store, args.ref)
+    target = resolve(store, args.ref, allow_network=not args.offline)
     ann = target["ann"]
     code_key = target.get("code_key")
     code_display = target.get("code_display")
