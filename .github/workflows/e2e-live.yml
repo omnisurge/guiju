@@ -1,7 +1,12 @@
 # 联网端到端验收 —— 只能手动触发。
 #
-# 为什么不随 push 跑：这个任务会真实请求住建部站点（约 34 次，含一次 4MB 正文下载）。
+# 为什么不随 push 跑：本任务真实请求住建部站点（含一次 4MB 正文下载）。
 # 把政府站点当每次提交的压测对象既不合规也不必要；它服务于「发版前 / 改了解析器之后」的验收。
+#
+# 时效服务（spec-currency）在 NAS 的 Tailscale 私网里，托管 runner 通常够不着：
+#   · 配了仓库变量 GUIJU_CURRENCY_URL → 走全量断言
+#   · 没配 → 自动跳过编号定位类断言（汇总里写明 SKIP），只验本地路径与抓取能力
+#   · 想把「没配」变成失败 → 勾选 require_currency
 name: e2e-live
 
 on:
@@ -9,6 +14,10 @@ on:
     inputs:
       keep_home:
         description: 保留数据目录供排查（默认不留）
+        type: boolean
+        default: false
+      require_currency:
+        description: 时效服务不可用时直接失败（默认跳过相关断言）
         type: boolean
         default: false
 
@@ -23,15 +32,16 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GUIJU_CURRENCY_URL: ${{ vars.GUIJU_CURRENCY_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
-      - name: 依赖自检（运行时应为零第三方依赖）
+      - name: 运行时依赖必须为零
         run: |
-          python -c "import sys; print(sys.version)"
           python - <<'PY'
           import pathlib, re
           text = pathlib.Path('pyproject.toml').read_text(encoding='utf-8')
@@ -41,21 +51,18 @@ jobs:
           print('运行时依赖：空 ✓')
           PY
 
-      - name: 联网端到端（36 项断言）
-        run: |
-          if [ "${keep_home}" = "true" ]; then
-            python scripts/e2e.py --keep
-          else
-            python scripts/e2e.py
-          fi
+      - name: 联网端到端
         env:
-          keep_home: ${{ inputs.keep_home }}
-
-      - name: 归档验收记录
-        if: always()
+          KEEP_HOME: ${{ inputs.keep_home }}
+          REQUIRE_CURRENCY: ${{ inputs.require_currency }}
         run: |
-          python - <<'PY'
-          import json, pathlib
-          p = pathlib.Path('docs/ACCEPTANCE.md')
-          print(p.read_text(encoding='utf-8')[:1200])
-          PY
+          set -euo pipefail
+          args=()
+          if [ "$KEEP_HOME" = "true" ]; then args+=(--keep); fi
+          if [ "$REQUIRE_CURRENCY" = "true" ]; then args+=(--require-currency); fi
+          echo "GUIJU_CURRENCY_URL=${GUIJU_CURRENCY_URL:-<未配置，将跳过编号定位断言>}"
+          python scripts/e2e.py "${args[@]}"
+
+      - name: 验收记录摘录
+        if: always()
+        run: head -40 docs/ACCEPTANCE.md

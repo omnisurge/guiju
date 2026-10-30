@@ -189,6 +189,13 @@ class Store:
             (ann_id,),
         ).fetchall()
 
+    def artifact_by_announcement(self, ann_id: int) -> sqlite3.Row | None:
+        """没有编号的公告（约 39%）也要能幂等：按公告找已归档文件。"""
+        return self.db.execute(
+            "SELECT * FROM artifact WHERE ann_id = ? ORDER BY fetched_at DESC, id DESC LIMIT 1",
+            (int(ann_id),),
+        ).fetchone()
+
     def find_by_code(self, key: str) -> list[sqlite3.Row]:
         exact = self.db.execute(
             "SELECT m.code_key, m.role, m.evidence, e.code_display, e.status, e.confidence, a.*"

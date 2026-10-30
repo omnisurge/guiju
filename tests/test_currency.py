@@ -12,6 +12,7 @@ from guiju.currency import (
     _tool_text,
     parse_tsv,
 )
+from guiju.errors import SourceUnreachable
 
 RAW = """GB 50011-2010\tcurrent\t建筑抗震设计规范\t2010-12-01\tcsres
 GB 50011-2001\tsuperseded\t建筑抗震设计规范\t2001-12-01\tcsres
@@ -84,11 +85,14 @@ class CacheTest(unittest.TestCase):
     def test_null_currency_is_silent(self):
         self.assertEqual(NullCurrency().lookup("GB 1-2020"), [])
 
-    def test_command_currency_with_missing_binary(self):
-        self.assertEqual(CommandCurrency("/nonexistent/spec-currency").lookup("GB 1-2020"), [])
+    def test_command_currency_missing_binary_is_unreachable(self):
+        # 契约：连不上要抛（20，可重试），不能静默返回空数组冒充"没有这个编号"
+        with self.assertRaises(SourceUnreachable):
+            CommandCurrency("/nonexistent/spec-currency").lookup("GB 1-2020")
 
-    def test_mcp_currency_unreachable_is_silent(self):
-        self.assertEqual(McpCurrency("http://127.0.0.1:9/mcp").lookup("GB 1-2020"), [])
+    def test_mcp_currency_unreachable_is_unreachable(self):
+        with self.assertRaises(SourceUnreachable):
+            McpCurrency("http://127.0.0.1:9/mcp").lookup("GB 1-2020")
 
 
 if __name__ == "__main__":

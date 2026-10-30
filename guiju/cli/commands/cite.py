@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from ...domain.cite import build_citation, normalize_clause
-from ...errors import AmbiguousCode, BadUsage, NotIndexed
+from ...errors import AmbiguousCode, BadUsage, NotIndexed, SourceUnreachable
 from ...store.sqlite import Store
 from .. import render
 from ..lookup import resolve
@@ -20,7 +20,15 @@ def run(store: Store, args: argparse.Namespace) -> int:
             hint="接受 5.2.1 / 第5.2.1条 / 5.2.1条 三种写法",
         )
 
-    target = resolve(store, args.ref, allow_network=not args.offline)
+    from ... import currency as currency_mod
+
+    # --offline 的语义是"完全不碰网络"：连时效端口都不用，而不是只跳过详情页核实
+    target = resolve(
+        store,
+        args.ref,
+        currency=currency_mod.NullCurrency() if args.offline else None,
+        allow_network=not args.offline,
+    )
     ann = target["ann"]
     code_key = target.get("code_key")
     code_display = target.get("code_display")
@@ -97,7 +105,11 @@ def _check_currency(code_display: str | None, *, offline: bool):
 
     if offline or not code_display:
         return "unknown", "", []
-    records = currency_mod.CachedCurrency().lookup(code_display)
+    try:
+        records = currency_mod.CachedCurrency().lookup(code_display)
+    except SourceUnreachable:
+        # 引用串本身来自本地归档，时效服务挂了只影响"是否现行"，不该整条失败
+        return "unknown", "时效服务不可达：本引用未做现行性校验", []
     key = normalize_key(code_display)
     mine = next((r for r in records if normalize_key(r.code) == key), None)
     if mine is None:

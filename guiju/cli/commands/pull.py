@@ -52,8 +52,10 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     status = target.get("status") or ""
 
     # 幂等快路径：已知编号且归档完好时，连详情页都不必抓（批量复跑的关键）
-    if code_key and not args.force:
-        existing = store.artifact_by_code(code_key)
+    if not args.force:
+        existing = (
+            store.artifact_by_code(code_key) if code_key else store.artifact_by_announcement(ann_id)
+        )
         if existing:
             path = Path(existing["local_path"])
             if path.exists() and sha256_file(path) == existing["sha256"]:
@@ -78,7 +80,9 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     if status in ("superseded", "withdrawn"):
         render.warn(f"该版本状态为 {status}；现行版用 guiju which {code_key} 查")
 
-    existing = store.artifact_by_code(code_key) if code_key else None
+    existing = (
+        store.artifact_by_code(code_key) if code_key else store.artifact_by_announcement(ann_id)
+    )
     if existing and not args.force:
         path = Path(existing["local_path"])
         if path.exists() and sha256_file(path) == existing["sha256"]:

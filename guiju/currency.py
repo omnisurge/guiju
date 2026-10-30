@@ -27,6 +27,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Protocol
 
+from .errors import SourceUnreachable
+
 DEFAULT_MCP_URL = "http://100.66.1.x:18083/mcp"
 DEFAULT_CMD = "spec-currency"
 TIMEOUT = 25
@@ -110,10 +112,12 @@ class CommandCurrency:
             argv += ["--cache", "off"]
         try:
             proc = subprocess.run(argv, capture_output=True, text=True, timeout=TIMEOUT)
-        except (OSError, subprocess.TimeoutExpired):
-            return []
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SourceUnreachable(f"spec-currency 不可执行（{self.binary}）：{exc}") from exc
         if proc.returncode != 0 and not proc.stdout.strip():
-            return []
+            raise SourceUnreachable(
+                f"spec-currency 执行失败（exit={proc.returncode}）：{proc.stderr.strip()[:120]}"
+            )
         return parse_tsv(proc.stdout)
 
 
@@ -136,9 +140,13 @@ class McpCurrency:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                 body = resp.read().decode("utf-8", "ignore")
                 sid = resp.headers.get("mcp-session-id") or session
-        except Exception:
-            return None, session
-        return _parse_sse(body), sid
+        except Exception as exc:  # 网络异常种类多，统一归为不可达
+            # 关键区分：连不上 ≠ 没有这个编号。前者是 20（可重试），后者才是 31（别再试）
+            raise SourceUnreachable(f"时效服务不可达（{self.url}）：{type(exc).__name__}") from exc
+        parsed = _parse_sse(body)
+        if parsed is None:
+            raise SourceUnreachable(f"时效服务响应无法解析（{self.url}）")
+        return parsed, sid
 
     def lookup(self, code: str) -> list[Record]:
         init, sid = self._rpc(

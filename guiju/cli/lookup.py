@@ -17,7 +17,7 @@ import re
 
 from .. import currency as currency_mod
 from ..domain.search import rank, tokens_of
-from ..errors import AmbiguousCode, AmbiguousTarget, GuijuError, NotIndexed
+from ..errors import AmbiguousCode, AmbiguousTarget, GuijuError, NotIndexed, SourceUnreachable
 from ..sources.mohurd import migrate_legacy_url
 from ..store.sqlite import Store
 
@@ -145,7 +145,13 @@ def _by_code(
         return result
 
     # ---- 本地没有这份映射：问权威时效服务要名称，再按名称找公告（不再需要 index）
-    records = currency.lookup(ref)
+    try:
+        records = currency.lookup(ref)
+    except SourceUnreachable as exc:
+        raise SourceUnreachable(
+            f"编号 {ref} 的权威名称取不到：{exc}",
+            hint="检查 GUIJU_CURRENCY_URL / NAS 是否可达；或加 --offline 后改用 guiju search 按名称查",
+        ) from None
     best_record = _pick_record(records, key)
     if best_record is None or not best_record.name:
         raise NotIndexed(
