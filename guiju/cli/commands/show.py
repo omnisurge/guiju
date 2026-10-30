@@ -56,6 +56,9 @@ def run(store: Store, args: argparse.Namespace) -> int:
             }
             for m in mentions
         ],
+        "hint": ""
+        if mentions
+        else "该公告尚未解析编号：guiju which <编号> 可直接查，或 guiju pull 时自动解析",
         "availability": window.value,
         "availability_note": availability_note(window, ann["published_on"]),
         "local": local,

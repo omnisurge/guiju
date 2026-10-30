@@ -137,12 +137,17 @@ def _by_code(store: Store, ref: str, currency: currency_mod.Currency) -> dict:
             currency=[r.as_payload() for r in records],
         )
 
-    hits, mode = rank(store.catalog_entries(), tokens_of(best_record.name))
+    # 上游名称常带装饰（「（2026年局部修订）」「(2018年版)」「（英文版）」），
+    # 这些字样在住建部公告里并不存在，直接检索会把召回打成 0 → 先剥掉再检索。
+    search_name = _strip_decorations(best_record.name)
+    hits, mode = rank(store.catalog_entries(), tokens_of(search_name))
+    hits = _filter_by_version_window(hits, best_record.implement_date)
     if not hits:
-        raise GuijuError(
-            f"时效服务给了名称「{best_record.name}」，但本地目录没有对应公告",
-            hint="先 guiju sync；该标准可能没有公开正文公告（例如非工程建设类国标）",
+        raise NotIndexed(
+            f"时效服务给到名称「{best_record.name}」，但本地目录没有对应公告",
+            hint="先 guiju sync；若目录已同步仍无，说明该标准没有公开正文公告（如非工程建设类国标）",
             currency=[r.as_payload() for r in records],
+            resolved_name=best_record.name,
         )
     ids = {h.entry["id"] for h in hits}
     if len(ids) > 1:
@@ -189,13 +194,40 @@ def _wrap(row, *, via: str) -> dict:
 
 
 def _pick_record(records: list, key: str):
-    for r in records:
-        if r.code.replace(" ", "").upper() == key:
-            return r
-    for r in records:
+    exact = [r for r in records if r.code.replace(" ", "").upper() == key]
+    if exact:
+        return exact[0]
+    # 英文版（编号以 E 结尾 / 名称含"英文版"）不是官方中文正文，不参与定位
+    chinese = [r for r in records if not _is_english(r)]
+    pool = chinese or list(records)
+    for r in pool:
         if r.status == "current":
             return r
-    return records[0] if records else None
+    return pool[0] if pool else None
+
+
+def _is_english(record) -> bool:
+    return record.code.upper().rstrip().endswith("E") or "英文" in (record.name or "")
+
+
+def _strip_decorations(name: str) -> str:
+    """去掉上游名称里的括号补充，只留检索用的主体名。"""
+    import re
+
+    cleaned = re.sub(r"[（(][^）)]*[）)]", "", name or "")
+    return cleaned.strip() or (name or "")
+
+
+def _filter_by_version_window(hits: list, implement_date: str) -> list:
+    """用一个不猜的原则消歧：**某版本的正文公告，必然发布在该版本实施日之前**。
+
+    实测（老年人照料设施建筑设计标准）：同名公告有 2018-07-02（原版）与 2026-09-23（局部修订），
+    JGJ/T 450-2018 的实施日是 2018-10-01，据此排除 2026 那条，无需凭"看起来像"去猜。
+    """
+    if len(hits) <= 1 or not implement_date:
+        return hits
+    dated = [h for h in hits if (h.entry.get("published_on") or "9999-99-99") <= implement_date]
+    return dated or hits
 
 
 def _dedupe(rows) -> list:

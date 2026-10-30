@@ -12,6 +12,7 @@ from .. import render
 def run(store: Store, args: argparse.Namespace) -> int:
     stats = store.stats()
     payload = {
+        "ok": True,
         "name": "guiju",
         "version": __version__,
         "catalog_synced_at": stats["synced_at"] or "未同步",

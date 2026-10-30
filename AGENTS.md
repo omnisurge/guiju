@@ -46,6 +46,7 @@
 | 33 | `ambiguous_attachment` | **停下来**，把 `candidates`（label + url）交给人选。禁止兜底取第一个 |
 | 40 | `compliance` | **立即停止**。不重试、不换 UA、不换代理、不找镜像绕过 |
 | 50 | `needs_human` | 上报维护者（多半是站点改版，修 `guiju/sources/mohurd.py`） |
+| 2 | `bad_usage` | 输入无法解析（条款号形态错误等）：按 `hint` 改正，别重复同样的输入 |
 | 1 | `internal` | 程序缺陷：把 stderr 的 traceback 带上去上报 |
 
 ---

@@ -21,6 +21,7 @@ EXIT_NEEDS_HUMAN = 50
 #: 给 agent 的决策表，同时被 README / AGENTS.md / --help 引用，保持单一来源
 EXIT_TABLE = {
     EXIT_OK: ("成功", "继续"),
+    EXIT_USAGE: ("输入无法解析（参数/条款号）", "按 hint 修正输入，不要重试同样的输入"),
     EXIT_EXISTS: ("已存在且校验通过", "跳过，别重复下载"),
     EXIT_UNREACHABLE: ("源不可达（网络/5xx/超时）", "稍后重试"),
     EXIT_NO_ATTACHMENT: ("公告页没有正文附件", "换备源或按提示判定为「历史上无正文」，不是故障"),
@@ -52,6 +53,12 @@ class GuijuError(Exception):
             data["hint"] = self.hint
         data.update(self.extra)
         return data
+
+
+class BadUsage(GuijuError):
+    exit = EXIT_USAGE
+    reason = "bad_usage"
+    hint = "检查参数形态；条款号接受 5.2.1 / 第5.2.1条"
 
 
 class SourceUnreachable(GuijuError):

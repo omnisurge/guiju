@@ -149,6 +149,7 @@ guiju status
 | 33 | 多个附件且无法判定 | **让人选**，禁止兜底取第一个 |
 | 40 | 命中合规护栏 | **停止**，不重试、不换路径 |
 | 50 | 站点结构变更/需人工 | 上报维护者修适配器 |
+| 2 | 输入无法解析（参数/条款号） | 按 hint 修正输入，别重试同样输入 |
 | 1 | 程序缺陷（会同时打印 traceback 到 stderr） | 带 traceback 上报 |
 
 `--json` 下失败体统一为：
@@ -178,7 +179,9 @@ guiju status
 ## 开发
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 33 项，离线，零依赖
+python3 -m unittest discover -s tests -t . -v   # 单测：离线、零依赖
+python3 scripts/e2e.py                          # 端到端验收：31 项断言（联网）
+python3 scripts/e2e.py --offline                # 不联网的冒烟
 ```
 
 ```

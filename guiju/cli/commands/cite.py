@@ -5,13 +5,21 @@ from __future__ import annotations
 import argparse
 
 from ...domain.cite import build_citation, normalize_clause
-from ...errors import AmbiguousCode, GuijuError, NotIndexed
+from ...errors import AmbiguousCode, BadUsage, NotIndexed
 from ...store.sqlite import Store
 from .. import render
 from ..lookup import resolve
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
+    # 先校验输入，再解析目标：否则非法条款号会被"解析失败"抢先，错误信息误导
+    clause = normalize_clause(args.clause)
+    if args.clause and clause is None:
+        raise BadUsage(
+            f"条款号无法识别：{args.clause}",
+            hint="接受 5.2.1 / 第5.2.1条 / 5.2.1条 三种写法",
+        )
+
     target = resolve(store, args.ref)
     ann = target["ann"]
     code_key = target.get("code_key")
@@ -19,6 +27,17 @@ def run(store: Store, args: argparse.Namespace) -> int:
 
     if not code_key:
         mentions = store.mentions_for(int(ann["id"]))
+        if not mentions and not args.offline:
+            # 没有本地编号记录就现场解析一次（1 个请求），这样 cite 也能按名称/公告ID直接工作
+            from ...domain.codes import classify
+            from ...sources import registry
+            from ...store.sqlite import persist_codes
+
+            _, text = registry()["mohurd"].detail(ann["url"])
+            codes = classify(text, ann["doc_name"] or "")
+            persist_codes(store, int(ann["id"]), codes, ann["doc_name"] or "")
+            store.commit()
+            mentions = store.mentions_for(int(ann["id"]))
         primary = next((m for m in mentions if m["role"] in ("primary", "target_of_revision")), None)
         if primary is None:
             raise NotIndexed(
@@ -27,13 +46,6 @@ def run(store: Store, args: argparse.Namespace) -> int:
                 page_url=ann["url"],
             )
         code_key, code_display = primary["code_key"], primary["code_display"]
-
-    clause = normalize_clause(args.clause)
-    if args.clause and clause is None:
-        raise GuijuError(
-            f"条款号无法识别：{args.clause}",
-            hint="接受 5.2.1 / 第5.2.1条 / 5.2.1条 三种写法",
-        )
 
     confidence = target.get("confidence") or "parsed"
     text, warnings = build_citation(
