@@ -15,9 +15,21 @@ from .._version import __version__
 from ..errors import EXIT_OK, EXIT_TABLE, GuijuError
 from ..store.sqlite import Store
 from . import render
-from .commands import cite, index, provenance, pull, search, show, status, sync, verify, version
+from .commands import (
+    cite,
+    index,
+    provenance,
+    pull,
+    search,
+    show,
+    status,
+    sync,
+    verify,
+    version,
+    which,
+)
 
-COMMANDS = (sync, search, index, show, pull, cite, verify, provenance, status, version)
+COMMANDS = (sync, search, which, index, show, pull, cite, verify, provenance, status, version)
 
 
 def _exit_epilog() -> str:

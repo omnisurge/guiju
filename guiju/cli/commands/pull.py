@@ -39,6 +39,11 @@ def run(store: Store, args: argparse.Namespace) -> int:
     code_key = target.get("code_key") or codes.primary_key
     code_display = target.get("code_display") or codes.primary_display
     confidence = target.get("confidence") or codes.confidence.value
+    status = target.get("status") or ""
+
+    # 顺带（不额外发请求）提示：拿到的是不是已被替代的版本
+    if status in ("superseded", "withdrawn"):
+        render.warn(f"该版本状态为 {status}；现行版用 guiju which {code_key} 查")
 
     if not code_key:
         # 不是阻塞项：schema 允许「无编号但有正文」。以公告名称归档，仅提示引用不可用。
@@ -130,6 +135,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "bytes": len(body),
         "magic": magic,
         "confidence": confidence,
+        "status": status,
         "source_page": ann["url"],
         "attachment": choice.url,
         "published_on": ann["published_on"],

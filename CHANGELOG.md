@@ -1,5 +1,36 @@
 # 变更记录
 
+## 0.4.0 — 2026-10-30（废止 index：接入 spec-currency 权威时效）
+
+**核心变化：`index` 不再是任何命令的前置条件**（见 `docs/adr/0001-currency-and-scope.md`）。
+
+### 新增
+
+- `guiju/currency.py`：时效端口 + 三适配器（`CommandCurrency` 本地二进制 / `McpCurrency` NAS HTTP / `NullCurrency` 静默降级），`GUIJU_CURRENCY`、`GUIJU_CURRENCY_URL` 可覆盖
+- `guiju which <编号|名称>`：一条命令说清「权威状态 + 本地公告 + 有无正文」——index 的替代入口
+- `cite` 增加权威状态校验：`superseded`/`withdrawn` 进 warnings，`--strict` 直接失败；`--offline` 跳过
+- `pull` 在已获得状态时标注 `status`（不额外发请求）
+- 解析链新增「编号 → 权威名称 → 本地公告」，本地无索引也能直达
+
+### 变更
+
+- `resolve()` 支持**规范名**入参（含书名号），多候选抛 `AmbiguousTarget`（exit 32）
+- `index` 降级为可选的离线/批量预热缓存，从里程碑中移除
+- exit 31 的语义与提示改写（不再提示"先跑 index"）
+
+### 实测（本地 mentions 仅 2 行 / 3254 公告，等于无索引）
+
+```
+guiju which GB55037-2022   → current / 建筑防火通用规范 / 公告 #158
+guiju cite GB55037-2022 5.2.1 → 《建筑防火通用规范》GB 55037-2022 第5.2.1条（status=current）
+guiju which "JGJ 147-2004" → superseded
+```
+
+### 合规分层
+
+`compliance.py` 仍只管**内容抓取**（`*.gov.cn` 逐跳校验）；元数据查询走 `currency` 端口，
+不下载正文、不落文件。两者刻意不合并（详见 ADR）。
+
 ## 0.3.0 — 2026-10-30（检索：从"子串匹配"升级为"三层召回 + 相关性排序"）
 
 ### 修复（都是实测到的用户可见问题）

@@ -21,7 +21,9 @@
    · 书名号可带可不带（《防火》与 防火 等价）
    · 返回 mode=and/fuzzy/chars，total 是总数、count 是本次返回数
    · --limit 默认 20，要"全部"用 --all
-要标准编号但 search 显示未索引 → guiju index --match <关键词> --limit N
+想知道某编号是什么/是否现行？ → guiju which <编号> --json   （不需要预先索引）
+   · 返回 currency[{code,status,name}] + announcement{id,...}
+   · status: current/superseded/upcoming/withdrawn/unknown，unknown ≠ 现行
 要正文文件吗？             → guiju pull <编号|公告ID|URL> --json
 只要引用串吗？             → guiju cite <编号|公告ID|URL> [条款号] --json
 怀疑本地文件被改/丢失？     → guiju verify --json
@@ -39,7 +41,7 @@
 | 10 | — | 已完成，直接用 `path`，**不要再 pull 一次** |
 | 20 | `unreachable` | 退避后重试一次；仍失败就报告"源不可达" |
 | 30 | `no_attachment` / `bad_attachment` | 读 `hint` 与 `availability`；若是 `pre_window`，这是**正常事实**，不要重试，直接向用户说明 |
-| 31 | `not_indexed` | 先 `guiju index --match <关键词>`，再重试原命令 |
+| 31 | `not_indexed` | 名称检索无命中，或时效服务也给不出名称 → 先 `guiju sync`；仍无则说明该标准没有公开正文公告（**不要重试**，先 `guiju which` 确认） |
 | 32 | `ambiguous_code` | **停下来**，把 `candidates` 原样交给人选。禁止按年份/字母序自行判断哪个是现行版 |
 | 33 | `ambiguous_attachment` | **停下来**，把 `candidates`（label + url）交给人选。禁止兜底取第一个 |
 | 40 | `compliance` | **立即停止**。不重试、不换 UA、不换代理、不找镜像绕过 |
@@ -64,6 +66,7 @@
 - `code` 为 `null`（`pull` 仍可下载，按名称归档）
 - `cite` 会失败（31）—— 这是正确的，不要编一个编号出来
 
+**现行性以 `spec-currency` 的权威结论为准**（`which`/`cite` 自带），不要据年份或页面上"修改为"字样自行判断。
 同一公告里出现新旧两个编号是常态（`JGJ 147-2016` 与 `JGJ 147-2004`）。
 JSON 的 `codes[].role` 会告诉你身份：
 

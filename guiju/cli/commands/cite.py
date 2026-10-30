@@ -40,6 +40,14 @@ def run(store: Store, args: argparse.Namespace) -> int:
         ann["doc_name"] or "", code_display, clause, confidence=confidence
     )
 
+    # 权威时效校验：宁可多一次查询，也不能引用一个已被替代的版本
+    status, current_hint, records = _check_currency(code_display, offline=args.offline)
+    if status in ("superseded", "withdrawn"):
+        warnings.append(
+            f"该版本状态为 {status}"
+            + (f"，现行版为 {current_hint}" if current_hint else "")
+        )
+
     if args.strict and warnings:
         raise AmbiguousCode(
             "引用串存在未核实项，--strict 下拒绝输出",
@@ -56,6 +64,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "code_key": code_key,
         "clause": clause,
         "confidence": confidence,
+        "status": status,
+        "currency": [r.as_payload() for r in records],
         "warnings": warnings,
         "published_on": ann["published_on"],
         "url": ann["url"],
@@ -68,9 +78,26 @@ def run(store: Store, args: argparse.Namespace) -> int:
     return 0
 
 
+def _check_currency(code_display: str | None, *, offline: bool):
+    """问权威时效服务：这个编号现在是什么状态。拿不到就返回 unknown，不阻断引用。"""
+    from ... import currency as currency_mod
+    from ...domain.codes import normalize_key
+
+    if offline or not code_display:
+        return "unknown", "", []
+    records = currency_mod.CachedCurrency().lookup(code_display)
+    key = normalize_key(code_display)
+    mine = next((r for r in records if normalize_key(r.code) == key), None)
+    if mine is None:
+        return "unknown", "", records
+    current = next((r.code for r in records if r.status == "current" and r.code != mine.code), "")
+    return mine.status, current, records
+
+
 def add_parser(sub, parents) -> None:
-    p = sub.add_parser("cite", parents=parents, help="生成标准引用串")
-    p.add_argument("ref", help="编号 / 公告ID / 公告URL")
+    p = sub.add_parser("cite", parents=parents, help="生成标准引用串（含权威状态校验）")
+    p.add_argument("ref", help="编号 / 规范名 / 公告ID / 公告URL")
     p.add_argument("clause", nargs="?", default=None, help="条款号，如 5.2.1")
-    p.add_argument("--strict", action="store_true", help="存在未核实项时非零退出")
+    p.add_argument("--strict", action="store_true", help="存在未核实项或被替代时非零退出")
+    p.add_argument("--offline", action="store_true", help="不访问时效服务")
     p.set_defaults(func=run)

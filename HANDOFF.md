@@ -48,7 +48,8 @@ $PY -m guiju cite GB55037-2022 5.2.1           # → 《…》GB 55037-2022 第5
 
 ## 三、下一步（按优先级）
 
-1. **M1 收尾**：全量 `index`（3254 条约 65 分钟，可分 5 批跑），把编号覆盖率从 61% 基线拉到 ≥85%；`status` 里补 `probe` 失败分布。
+1. ~~M1 全量 index~~ **已废止**：`index` 不再维护（见 `docs/adr/0001-currency-and-scope.md`）。编号 → 名称交给 `spec-currency`，名称 → 公告交给本地三层召回检索。
+   剩下要做的是：给 `status` 补 `probe` 失败分布、以及把 `currency` 的降级情况计数。
 2. **M2 收尾**：37 本强制性规范 `pull` 全量验收（0 垃圾文件），并跑一次 `verify`。
 3. **M2 加分项**：`guiju mcp`（stdio JSON-RPC 薄壳），让任意 agent 直接调。
 4. **M3**：上海 `zjw.sh.gov.cn` / 四川消防两源，配冲突仲裁（同版本多源：官方发布公告优先）。

@@ -1,0 +1,236 @@
+"""时效端口 —— 借用 spec-currency 的权威结论，替代本地"编号索引"。
+
+为什么 index 要放弃
+------------------
+index 的本质是**在本地维护一份"公告 ⇄ 编号"的映射**，而这份映射上游并不提供
+（住建部列表接口只给标题，编号只在详情页正文）。维护它意味着：每有新公告就要扫一遍，
+站点改版还要重扫 —— 这正是"持续维护"的成本。
+
+而 spec-currency 已经用**权威源**回答了同一个问题：给一个编号，它返回
+`code / name / status(现行/被替代/即将实施/废止) / implement_date / source`。
+有了名称，"编号 → 公告"就退化成一次本地检索（名称检索，不需要任何预建索引）。
+
+合规分层（重要）
+----------------
+`compliance.py` 的白名单只约束**内容抓取**（正文只从 *.gov.cn 来）。
+本模块只向一个已审批的元数据服务取"编号/名称/状态"，不下载任何标准正文、不落文件，
+因此不走 compliance 的闸门 —— 这条边界是刻意的，**不要把它当成合规豁免来复用**。
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import urllib.request
+from dataclasses import dataclass
+from typing import Protocol
+
+DEFAULT_MCP_URL = "http://100.66.1.x:18083/mcp"
+DEFAULT_CMD = "spec-currency"
+TIMEOUT = 25
+
+
+@dataclass(frozen=True)
+class Record:
+    code: str
+    status: str          # current / superseded / upcoming / withdrawn / unknown
+    name: str = ""
+    implement_date: str = ""
+    source: str = ""
+    replaces: str = ""
+
+    @property
+    def is_current(self) -> bool:
+        return self.status == "current"
+
+    def as_payload(self) -> dict:
+        return {
+            "code": self.code,
+            "status": self.status,
+            "name": self.name,
+            "implement_date": self.implement_date,
+            "source": self.source,
+        }
+
+
+class Currency(Protocol):
+    name: str
+
+    def lookup(self, code: str) -> list[Record]: ...
+
+
+class NullCurrency:
+    """没有可用时效服务时的兜底：不猜、不报错，只是没有结论。"""
+
+    name = "none"
+
+    def lookup(self, code: str) -> list[Record]:
+        return []
+
+
+def parse_tsv(text: str) -> list[Record]:
+    """解析 spec-currency 的 TSV 契约。
+
+    列：`code \t status \t name \t implement_date \t source`
+    `#` 开头的行是"结果可能不可信"的提示（降级/备用源），按契约必须跳过。
+    """
+    out: list[Record] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        cols = line.split("\t")
+        if len(cols) < 2:
+            continue
+        out.append(
+            Record(
+                code=cols[0].strip(),
+                status=cols[1].strip().lower(),
+                name=cols[2].strip() if len(cols) > 2 else "",
+                implement_date=cols[3].strip() if len(cols) > 3 else "",
+                source=cols[4].strip() if len(cols) > 4 else "",
+            )
+        )
+    return out
+
+
+class CommandCurrency:
+    """调用本地 spec-currency 二进制（最稳，离线 NAS 也能用）。"""
+
+    name = "cmd"
+
+    def __init__(self, binary: str) -> None:
+        self.binary = binary
+
+    def lookup(self, code: str) -> list[Record]:
+        argv = [self.binary, "query", code]
+        if os.environ.get("GUIJU_CURRENCY_CACHE_OFF") == "1":
+            argv += ["--cache", "off"]
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=TIMEOUT)
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        if proc.returncode != 0 and not proc.stdout.strip():
+            return []
+        return parse_tsv(proc.stdout)
+
+
+class McpCurrency:
+    """通过 spec-currency 的 MCP server（streamable-http）查询。"""
+
+    name = "mcp"
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+
+    def _rpc(self, payload: dict, session: str | None = None) -> tuple[dict | None, str | None]:
+        headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+        if session:
+            headers["mcp-session-id"] = session
+        req = urllib.request.Request(
+            self.url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                body = resp.read().decode("utf-8", "ignore")
+                sid = resp.headers.get("mcp-session-id") or session
+        except Exception:  # noqa: BLE001 - 时效服务不可用不是致命错误
+            return None, session
+        return _parse_sse(body), sid
+
+    def lookup(self, code: str) -> list[Record]:
+        init, sid = self._rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "guiju", "version": "0.3.0"},
+                },
+            }
+        )
+        if init is None:
+            return []
+        result, _ = self._rpc(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "query", "arguments": {"code": code}},
+            },
+            sid,
+        )
+        if not result:
+            return []
+        text = _tool_text(result)
+        return parse_tsv(text)
+
+
+def _parse_sse(body: str) -> dict | None:
+    """解析 SSE 或纯 JSON 两种响应形态。"""
+    body = body.strip()
+    if body.startswith("{"):
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            return None
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("data:"):
+            payload = line[5:].strip()
+            if not payload:
+                continue
+            try:
+                return json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
+def _tool_text(result: dict) -> str:
+    out = result.get("result") or {}
+    parts = []
+    for item in out.get("content") or []:
+        if isinstance(item, dict) and item.get("type") == "text":
+            parts.append(str(item.get("text") or ""))
+    return "\n".join(parts)
+
+
+_cache: dict[tuple[str, str], list[Record]] = {}
+
+
+def default_currency() -> Currency:
+    """优先本地二进制（快、可离线），否则 MCP 服务，最后退化为空。"""
+    override = os.environ.get("GUIJU_CURRENCY")  # cmd:<path> / mcp:<url> / off
+    if override:
+        kind, _, arg = override.partition(":")
+        if kind == "off":
+            return NullCurrency()
+        if kind == "cmd" and arg:
+            return CommandCurrency(arg)
+        if kind == "mcp":
+            return McpCurrency(arg or DEFAULT_MCP_URL)
+    binary = shutil.which(DEFAULT_CMD)
+    if binary:
+        return CommandCurrency(binary)
+    if os.environ.get("GUIJU_CURRENCY_URL") or DEFAULT_MCP_URL:
+        return McpCurrency(os.environ.get("GUIJU_CURRENCY_URL") or DEFAULT_MCP_URL)
+    return NullCurrency()
+
+
+class CachedCurrency:
+    """同一进程内缓存：一次命令不要为同一个编号问两次上游。"""
+
+    def __init__(self, inner: Currency | None = None) -> None:
+        self.inner = inner or default_currency()
+        self.name = self.inner.name
+
+    def lookup(self, code: str) -> list[Record]:
+        key = (self.name, code)
+        if key not in _cache:
+            _cache[key] = self.inner.lookup(code)
+        return _cache[key]

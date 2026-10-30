@@ -89,6 +89,12 @@ class AmbiguousCode(GuijuError):
     hint = "从 candidates 里人工选定版本，禁止依年份自行猜测"
 
 
+class AmbiguousTarget(GuijuError):
+    exit = EXIT_AMBIGUOUS_CODE
+    reason = "ambiguous_target"
+    hint = "从 candidates 里选定一条公告；工具不会替你猜是哪本规范"
+
+
 class ComplianceDenied(GuijuError):
     exit = EXIT_COMPLIANCE
     reason = "compliance"
