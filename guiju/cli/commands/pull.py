@@ -167,8 +167,6 @@ def _read_refs(spec: str) -> list[str]:
 
 def _batch(store: Store, args: argparse.Namespace, source) -> int:
     refs = _read_refs(args.list)
-    if args.limit:
-        refs = refs[: args.limit]
     if not refs:
         raise GuijuError("清单为空：每行一个编号/名称/公告ID，以 # 开头的行为注释")
 
@@ -246,7 +244,6 @@ def add_parser(sub, parents) -> None:
     p = sub.add_parser("pull", parents=parents, help="下载规范正文（单条或批量，幂等）")
     p.add_argument("ref", nargs="?", default=None, help="编号 / 规范名 / 公告ID / 公告URL")
     p.add_argument("--list", default=None, help="批量清单文件（每行一个 ref，- 表示 stdin）")
-    p.add_argument("--limit", type=int, default=0, help="批量时最多处理多少条")
     p.add_argument("--out", default=None, help="归档目录（默认 ~/.guiju/library）")
     p.add_argument("--readable", action="store_true", help="用人类可读文件名（默认内容寻址）")
     p.add_argument("--force", action="store_true", help="已存在也重新下载")

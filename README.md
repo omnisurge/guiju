@@ -70,9 +70,9 @@ guiju which GB55037-2022
 # 4) 下载正文（幂等：已存在且校验通过则返回退出码 10）
 guiju pull GB55037-2022 --json
 
-# 4b) 批量：一次取一整份规范台账
-guiju pull --list scripts/fixtures/mandatory-55x.txt --json
-guiju pull --list my-ledger.txt --limit 3          # 先试 3 本
+# 4b) 批量：给一个清单文件（清单本身就是范围，不需要再切）
+guiju pull --list refs.txt --json
+cat refs.txt | guiju pull --list - --json          # 或走 stdin
 
 # 5) 出引用串
 guiju cite GB55037-2022 5.2.1

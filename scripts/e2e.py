@@ -102,13 +102,14 @@ def main() -> int:
         code, p2, _ = guiju("pull", "JGJ/T450-2018", home=home, timeout=600)
         check("pull 幂等返回 10", code == 10 and p2.get("already") is True)
 
-        # ---- 5b. 批量（台账真实清单，先取 2 本） ----
-        ledger = ROOT / "scripts" / "fixtures" / "mandatory-55x.txt"
-        code, p, _ = guiju("pull", "--list", str(ledger), "--limit", "2", home=home, timeout=600)
-        check("批量下载 2 本", code == 0 and p.get("counts", {}).get("0") == 2, str(p.get("counts")))
-        check("批量汇总给出产出目录", bool(p.get("out_dir")), str(p.get("out_dir")))
-        code, p, _ = guiju("pull", "--list", str(ledger), "--limit", "2", home=home, timeout=600)
-        check("批量复跑全部命中已有（10）", code == 0 and p.get("counts", {}).get("10") == 2, str(p.get("counts")))
+        # ---- 5b. 批量清单（不额外下载：复用已下载项 + 一个未知编号） ----
+        mixed = Path(home) / "batch.txt"
+        mixed.write_text("# 冒烟清单\nJGJ/T450-2018  # 已下载\nGB99999-2099\n", encoding="utf-8")
+        code, p, _ = guiju("pull", "--list", str(mixed), home=home, timeout=600)
+        counts = p.get("counts", {})
+        check("批量按退出码汇总", code == 0 and counts.get("10") == 1 and counts.get("31") == 1, str(counts))
+        check("批量给出产出目录", bool(p.get("out_dir")), str(p.get("out_dir")))
+        check("批量 ok 只排除严重失败（31 不算）", p.get("ok") is True)
 
         # ---- 6. 诚实歧义：同名多公告不替用户猜 ----
         code, p, _ = guiju("pull", "老年人照料设施建筑设计标准", home=home, timeout=180)
