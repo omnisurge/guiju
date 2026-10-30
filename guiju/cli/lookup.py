@@ -157,7 +157,7 @@ def _by_code(
     # 上游名称常带装饰（「（2026年局部修订）」「(2018年版)」「（英文版）」），
     # 这些字样在住建部公告里并不存在，直接检索会把召回打成 0 → 先剥掉再检索。
     search_name = _strip_decorations(best_record.name)
-    hits, mode = rank(store.catalog_entries(), tokens_of(search_name))
+    hits, _mode = rank(store.catalog_entries(), tokens_of(search_name))
     hits = _filter_by_version_window(hits, best_record.implement_date)
     if not hits:
         raise NotIndexed(
@@ -253,7 +253,7 @@ def _verify_by_primary_code(store: Store, hits: list, key: str, fetch_detail=Non
             continue
         try:
             text = fetch_detail(ann["url"])
-        except Exception:  # noqa: BLE001 - 单条失败不影响其它候选
+        except Exception:
             continue
         codes = classify(text, ann["doc_name"] or "")
         primary = normalize_key(codes.primary_key or "")

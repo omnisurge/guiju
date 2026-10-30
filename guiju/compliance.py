@@ -71,7 +71,7 @@ class _GuardedRedirect(urllib.request.HTTPRedirectHandler):
 
     max_redirections = 5
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
         target = urllib.parse.urljoin(req.full_url, newurl)
         check_url(target)
         return super().redirect_request(req, fp, code, msg, headers, target)
@@ -155,7 +155,7 @@ def _get_once(url: str, referer: str | None = None, timeout: int = 60) -> Respon
         raise
     except ssl.SSLError as exc:
         raise _Retryable(f"TLS 失败：{exc}") from exc
-    except Exception as exc:  # noqa: BLE001 - 超时/连接错误等，值得再试
+    except Exception as exc:
         raise _Retryable(f"{type(exc).__name__}：{exc}［{url}］") from exc
 
     out = Response(url=final_url, body=body, content_type=ctype)

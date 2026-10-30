@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: 单元测试（离线、零依赖）
+        run: python -m unittest discover -s tests -t . -v
+
+      - name: 离线冒烟（装配 + 退出码契约）
+        run: |
+          python -m guiju --version --json
+          python -m guiju status --json
+          python scripts/e2e.py --offline
+
+      - name: 安装入口自检（guiju / gj）
+        run: |
+          python -m pip install -e .
+          guiju version --json
+          gj version --json
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install ruff
+      - run: ruff check .

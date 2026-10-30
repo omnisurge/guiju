@@ -32,7 +32,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         )
     except (NotIndexed, AmbiguousTarget) as exc:
         error = exc
-    except Exception as exc:  # noqa: BLE001 - 只做展示，不因解析失败而整体失败
+    except Exception as exc:
         error = exc
 
     ann = target["ann"] if target else None

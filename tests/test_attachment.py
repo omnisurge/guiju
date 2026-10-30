@@ -6,7 +6,10 @@ from guiju.domain.attachment import Attachment, Verdict, pick
 
 
 def atts(*labels):
-    return [Attachment(url=f"https://www.mohurd.gov.cn/dl/{i}.pdf", label=l) for i, l in enumerate(labels)]
+    return [
+        Attachment(url=f"https://www.mohurd.gov.cn/dl/{i}.pdf", label=label)
+        for i, label in enumerate(labels)
+    ]
 
 
 class PickTest(unittest.TestCase):

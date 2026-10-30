@@ -1,10 +1,10 @@
 """目录解析回归 —— 夹具是 2026-10-30 真实响应片段，解析器改动即报警。"""
 
+import re
 import unittest
 
 from guiju.domain.announcement import classify_title
 from guiju.sources.mohurd import _COUNT_RE, _DATE_RE, _ITEM_RE
-import re
 
 from .paths import FIXTURES
 

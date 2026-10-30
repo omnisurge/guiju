@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 
 from ...domain.announcement import classify_title
-from ...errors import GuijuError
 from ...sources import registry
 from ...store.sqlite import Store, now
 from .. import render

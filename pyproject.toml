@@ -35,7 +35,9 @@ guiju = "guiju.cli:main"
 gj = "guiju.cli:main"
 
 [project.urls]
-Documentation = "https://github.com/guiju/guiju/blob/main/docs/ARCHITECTURE.md"
+Homepage = "https://github.com/omnisurge/guiju"
+Documentation = "https://github.com/omnisurge/guiju/blob/main/docs/ARCHITECTURE.md"
+Changelog = "https://github.com/omnisurge/guiju/blob/main/CHANGELOG.md"
 
 [tool.setuptools.dynamic]
 version = { attr = "guiju._version.__version__" }
@@ -52,7 +54,8 @@ line-length = 110
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "SIM", "PIE", "RUF", "I", "UP"]
-ignore = ["E501"]
+# 中文全角标点是有意的：文档串/提示语里用「：」而不是「:」，不要报 RUF001-003
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 python_version = "3.10"

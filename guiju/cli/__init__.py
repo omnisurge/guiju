@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .._version import __version__
 from ..errors import EXIT_OK, EXIT_TABLE, GuijuError
 from ..store.sqlite import Store
 from . import render
@@ -102,8 +101,9 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         render.warn("已中断")
         return 130
-    except Exception as exc:  # noqa: BLE001 - 兜底：契约要求「任何失败都有结构化输出」
+    except Exception as exc:
         import traceback
+
         from ..errors import EXIT_INTERNAL
 
         traceback.print_exc(file=sys.stderr)

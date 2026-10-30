@@ -152,10 +152,11 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
 
 
 def _read_refs(spec: str) -> list[str]:
-    if spec == "-":
-        raw = sys.stdin.read()
-    else:
-        raw = Path(spec).expanduser().read_text(encoding="utf-8")
+    raw = (
+        sys.stdin.read()
+        if spec == "-"
+        else Path(spec).expanduser().read_text(encoding="utf-8")
+    )
     refs = []
     for line in raw.splitlines():
         line = line.split("#", 1)[0].strip()   # 允许行尾注释，清单可直接带标准名

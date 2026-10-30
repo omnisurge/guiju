@@ -6,7 +6,7 @@ from pathlib import Path
 
 from guiju.cli.lookup import resolve
 from guiju.currency import Record
-from guiju.errors import AmbiguousTarget, NotIndexed, GuijuError
+from guiju.errors import AmbiguousTarget, GuijuError, NotIndexed
 from guiju.store.sqlite import Store
 
 

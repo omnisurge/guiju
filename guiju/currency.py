@@ -136,7 +136,7 @@ class McpCurrency:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                 body = resp.read().decode("utf-8", "ignore")
                 sid = resp.headers.get("mcp-session-id") or session
-        except Exception:  # noqa: BLE001 - 时效服务不可用不是致命错误
+        except Exception:
             return None, session
         return _parse_sse(body), sid
 
