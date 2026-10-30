@@ -58,8 +58,9 @@ gj --version                     # 等价别名
 # 1) 同步目录（首次全量约 1 分钟；之后增量，通常 1 页内完成）
 guiju sync
 
-# 2) 检索（纯本地 SQLite，不联网、秒回）
+# 2) 检索（纯本地，不联网、秒回；书名号可带可不带）
 guiju search 防火 --json
+guiju search 《防火》 --all          # 43 条：所有名称含「防火」的标准
 
 # 3) 为公告解析标准编号（编号写在公告正文里，需要开详情页）
 guiju index --match 防火 --limit 20
@@ -82,7 +83,7 @@ guiju status
 | 命令 | 作用 | 联网 |
 |---|---|---|
 | `guiju sync` | 增量同步公告目录（遇 0 新增即停） | 是 |
-| `guiju search <关键词…>` | 本地检索公告 | 否 |
+| `guiju search <关键词…>` | 本地检索公告（子串 + 模糊三层召回） | 否 |
 | `guiju index` | 开详情页解析编号与角色（可断点续跑） | 是 |
 | `guiju show <ref>` | 名称/编号/角色/可得性/本地文件 | 否 |
 | `guiju pull <ref>` | 下载正文，幂等，内容寻址归档 | 是 |
@@ -95,6 +96,19 @@ guiju status
 `<ref>` 支持三种写法：标准编号（`GB55037-2022` / `GB 55037` / `55037`）、公告 ID、公告 URL。
 
 全局开关：`--json`（stdout 只有 JSON）、`--quiet`、`--db PATH`。
+
+### 检索行为（三层召回，结果按相关性排序）
+
+| 层 | 触发 | 例子 |
+|---|---|---|
+| `and` | 子串命中（多关键词为「与」） | `防火` → 43 条；`防火 设计` → 同时含两者 |
+| `fuzzy` | 中文插字导致二元组断开 | `防火规范` → 补回《建筑防火通用规范》 |
+| `chars` | 召回不足 3 条时放宽到字符全覆盖 | `给排水` → 《建筑给水排水设计规范》 |
+
+`--json` 会返回 `mode`（`and`/`fuzzy`/`chars` 及其组合）与 `total`/`count`/`truncated`，
+每条结果带 `match`（`exact_name`/`prefix_name`/`contains_name`/`contains_code`/`fuzzy`）与 `score`。
+
+注意：**未 `index` 的条目没有编号**（`codes: []`）。名称检索不需要 index，按编号检索才需要。
 
 ---
 

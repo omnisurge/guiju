@@ -17,7 +17,10 @@
 
 ```
 要先确认环境吗？          → guiju status --json
-只想找条目（不联网）吗？   → guiju search <关键词> --json
+只想找条目（不联网）吗？   → guiju search <关键词> --json [--all]
+   · 书名号可带可不带（《防火》与 防火 等价）
+   · 返回 mode=and/fuzzy/chars，total 是总数、count 是本次返回数
+   · --limit 默认 20，要"全部"用 --all
 要标准编号但 search 显示未索引 → guiju index --match <关键词> --limit N
 要正文文件吗？             → guiju pull <编号|公告ID|URL> --json
 只要引用串吗？             → guiju cite <编号|公告ID|URL> [条款号] --json

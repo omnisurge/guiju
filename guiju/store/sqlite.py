@@ -120,6 +120,32 @@ class Store:
         )
         return self.db.execute(sql, (*params, limit)).fetchall()
 
+    def catalog_entries(self) -> list[dict]:
+        """把目录（含编号）读进内存供检索打分。数据量 3k 级，不值得建全文索引。"""
+        anns = self.db.execute(
+            "SELECT id,url,published_on,title,doc_name,category FROM announcement"
+        ).fetchall()
+        codes: dict[int, list[str]] = {}
+        # mention 只存角色，展示用编号在 edition 表
+        for row in self.db.execute(
+            "SELECT m.ann_id, e.code_display, m.code_key, m.role"
+            " FROM mention m LEFT JOIN edition e ON e.code_key = m.code_key"
+            " ORDER BY m.role"
+        ):
+            codes.setdefault(int(row["ann_id"]), []).append(row["code_display"] or row["code_key"])
+        return [
+            {
+                "id": int(a["id"]),
+                "url": a["url"],
+                "published_on": a["published_on"],
+                "name": a["doc_name"],
+                "title": a["title"],
+                "category": a["category"],
+                "codes": codes.get(int(a["id"]), []),
+            }
+            for a in anns
+        ]
+
     def announcements_without_mention(self, match: str | None, limit: int) -> list[sqlite3.Row]:
         sql = (
             "SELECT * FROM announcement a WHERE "
