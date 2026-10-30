@@ -1,0 +1,61 @@
+# 联网端到端验收 —— 只能手动触发。
+#
+# 为什么不随 push 跑：这个任务会真实请求住建部站点（约 34 次，含一次 4MB 正文下载）。
+# 把政府站点当每次提交的压测对象既不合规也不必要；它服务于「发版前 / 改了解析器之后」的验收。
+name: e2e-live
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_home:
+        description: 保留数据目录供排查（默认不留）
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-live
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 依赖自检（运行时应为零第三方依赖）
+        run: |
+          python -c "import sys; print(sys.version)"
+          python - <<'PY'
+          import pathlib, re
+          text = pathlib.Path('pyproject.toml').read_text(encoding='utf-8')
+          m = re.search(r'^dependencies = \[(.*?)\]', text, re.S | re.M)
+          assert m, 'pyproject 缺少 dependencies 段'
+          assert not m.group(1).strip(), '运行时依赖必须为空'
+          print('运行时依赖：空 ✓')
+          PY
+
+      - name: 联网端到端（36 项断言）
+        run: |
+          if [ "${keep_home}" = "true" ]; then
+            python scripts/e2e.py --keep
+          else
+            python scripts/e2e.py
+          fi
+        env:
+          keep_home: ${{ inputs.keep_home }}
+
+      - name: 归档验收记录
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          p = pathlib.Path('docs/ACCEPTANCE.md')
+          print(p.read_text(encoding='utf-8')[:1200])
+          PY

@@ -9,6 +9,14 @@ from guiju.currency import Record
 from guiju.errors import AmbiguousTarget, GuijuError, NotIndexed
 from guiju.store.sqlite import Store
 
+#: setUp 里创建的库统一在模块结束时关闭，避免 ResourceWarning 掩盖真正的问题
+_STORES: list[Store] = []
+
+
+def tearDownModule() -> None:
+    for store in _STORES:
+        store.close()
+
 
 class FakeCurrency:
     name = "fake"
@@ -23,6 +31,7 @@ class FakeCurrency:
 def make_store() -> Store:
     tmp = Path(tempfile.mkdtemp()) / "c.db"
     store = Store(tmp)
+    _STORES.append(store)
     store.upsert_announcement(
         "https://www.mohurd.gov.cn/a1.html", "2022-01-01",
         "住房和城乡建设部关于发布国家标准《建筑防火通用规范》的公告", "建筑防火通用规范", "national",

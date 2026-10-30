@@ -10,6 +10,7 @@ from guiju.store.sqlite import Store
 class ArtifactKeyTest(unittest.TestCase):
     def setUp(self):
         self.store = Store(Path(tempfile.mkdtemp()) / "c.db")
+        self.addCleanup(self.store.close)
         self.store.upsert_announcement("https://www.mohurd.gov.cn/x.html", "2021-07-15", "标题", "工程结构通用规范", "national")
 
     def _record(self, code_key: str):

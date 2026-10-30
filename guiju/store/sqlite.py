@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import sqlite3
@@ -271,7 +272,15 @@ class Store:
         self.db.commit()
 
     def close(self) -> None:
-        self.db.close()
+        """幂等关闭。谁创建谁负责关（泄漏会以 ResourceWarning 暴露）。"""
+        with contextlib.suppress(sqlite3.ProgrammingError):  # 已关闭
+            self.db.close()
+
+    def __enter__(self) -> Store:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
 
 
 def persist_codes(store: Store, ann_id: int, codes: Codes, doc_name: str, status: str = "unknown") -> None:

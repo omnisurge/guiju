@@ -2,14 +2,19 @@
 
 > 一个人也要按流程走：流程不是给别人看的，是给"三个月后的自己"用的。
 
-## 环境
+## 本地 CI 是权威门
 
 ```bash
-python3 -m unittest discover -s tests -t .   # 单测：离线、零依赖
-python3 scripts/e2e.py --offline             # 离线冒烟
-python3 scripts/e2e.py                       # 端到端：联网，含一次正文下载
-uv tool run ruff check .                     # 静态检查（不装进运行时）
+scripts/install-hooks.sh   # 一次性：启用 .githooks/pre-push
+scripts/ci.sh              # ruff + 单测 + 离线冒烟 + 入口自检
 ```
+
+- `pre-push` 会自动跑 `scripts/ci.sh`，**没过不推**；`SKIP_CI=1 git push` 可强制跳过（不建议）。
+- **不依赖 GitHub**：本地 CI 是判断"能不能提交"的唯一依据；GitHub 上的 `ci.yml` 只是同一套门的旁证。
+- 联网的 36 项端到端验收**不在 push 上跑**（不拿政府站点当压测对象），发版前手动跑：
+  `python3 scripts/e2e.py`，或 `gh workflow run e2e-live.yml`。
+- 硬约束已写成测试（`tests/test_hygiene.py`）：CI 矩阵必须覆盖 `requires-python` 下限、
+  联网验收不得挂 push、`.gitignore` 必须挡住 `*.pdf`/`library/`/`*.db`、版本号与 CHANGELOG 同源。
 
 **运行时零第三方依赖**是有意为之（可分发性 + 合规审计）。不要为了省事往 `dependencies` 里加包。
 

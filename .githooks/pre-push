@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# pre-push：本地 CI 是权威门，没过不推。
+# 安装：scripts/install-hooks.sh（等价于 git config core.hooksPath .githooks）
+# 临时跳过：SKIP_CI=1 git push（只在明确知道后果时用）
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+if [ "${SKIP_CI:-0}" = "1" ]; then
+  echo "[pre-push] SKIP_CI=1 → 跳过本地 CI（记住这个决定是你自己做的）"
+  exit 0
+fi
+
+if [ -x scripts/ci.sh ]; then
+  scripts/ci.sh
+else
+  echo "[pre-push] 找不到 scripts/ci.sh，退回只跑单测"
+  python3 -m unittest discover -s tests -t . >/dev/null
+fi

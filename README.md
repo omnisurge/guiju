@@ -189,9 +189,16 @@ guiju status
 ## 开发
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 单测：离线、零依赖
-python3 scripts/e2e.py                          # 端到端验收：36 项断言（联网）
-python3 scripts/e2e.py --offline                # 不联网的冒烟
+scripts/install-hooks.sh    # 一次性：启用 pre-push（推送前自动跑本地 CI）
+scripts/ci.sh               # 本地 CI：ruff + 单测 + 离线冒烟 + 入口自检（不依赖网络）
+scripts/ci.sh               # 全绿才提交/推送；SKIP_CI=1 git push 可强制跳过（不建议）
+```
+
+**本地 CI 是权威门，GitHub CI 只是旁证。** 联网的 36 项端到端验收不在 push 上跑
+（不拿政府站点当压测对象），发版前手动触发：
+```bash
+python3 scripts/e2e.py                     # 本地跑
+gh workflow run e2e-live.yml               # 或在 GitHub 上手动跑并留档
 ```
 
 ```
