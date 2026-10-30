@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guiju"
+version = "0.1.0"
+description = "规矩 — 以规范为准绳，让依据随手可取。工程建设规范采集工具，只抓 *.gov.cn 公开正文。"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "guiju" }]
+keywords = ["construction", "standard", "code", "gb", "jgj", "mohurd", "cli"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Manufacturing",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+
+[project.scripts]
+guiju = "guiju.cli:main"
+gj = "guiju.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["guiju*"]

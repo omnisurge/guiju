@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 本工具的运行产物（数据不进库）
+~/.guiju/
+*.db
+*.db-journal
+*.db-wal
+
+# 抓下来的规范正文：体积大且可重建，绝不入库
+规范/
+library/
+*.pdf
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
