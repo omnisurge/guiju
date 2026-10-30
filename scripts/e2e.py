@@ -152,7 +152,16 @@ def main() -> int:
 
         # ---- 本地路径：按公告ID取正文（不依赖时效服务） ----
         code, p, _ = guiju("search", "城市给水工程项目建设标准", home=home)
-        ann_id = str((p.get("results") or [{}])[0].get("id", ""))
+        ann_id = str((p.get("results") or [{}])[0].get("id", "") or "")
+        if not ann_id:
+            for nm in (
+                "pull 按公告ID（无编号亦可归档）", "pull 幂等（公告ID路径）", "verify 通过",
+                "provenance 反查来源", "provenance 与路径无关（按 sha256）",
+                "cite 按公告ID（自解析编号）",
+            ):
+                skip(nm, "目录为空：sync 未成功，跳过后继本地路径断言")
+            return _summary_outputs(home)
+
         code, p, _ = guiju("pull", ann_id, home=home, timeout=600)
         local_path = p.get("path", "") or ""
         check("pull 按公告ID（无编号亦可归档）", code == 0 and p.get("magic") == "pdf",
@@ -208,15 +217,20 @@ def main() -> int:
         code, p, _ = guiju("cite", "钢结构设计标准", "1.0.1", home=home, timeout=240)
         check("同名多公告的编号 → 32（交人决断）", code == 32, p.get("reason", ""))
 
-        env = dict(os.environ, GUIJU_HOME=home)
-        proc = subprocess.run([sys.executable, "-m", "guiju", "status", "--json"],
-                              capture_output=True, text=True, cwd=str(ROOT), env=env)
-        check("--json 时 stdout 只有 JSON", proc.stdout.strip().startswith("{"), proc.stdout[:20])
-        check("--json 时人读输出不混入 stdout", "库：" not in proc.stdout)
+        return _summary_outputs(home)
     finally:
         if not args.keep and not args.home:
             shutil.rmtree(home, ignore_errors=True)
 
+    return _summary()
+
+
+def _summary_outputs(home: str) -> int:
+    env = dict(os.environ, GUIJU_HOME=home)
+    proc = subprocess.run([sys.executable, "-m", "guiju", "status", "--json"],
+                          capture_output=True, text=True, cwd=str(ROOT), env=env)
+    check("--json 时 stdout 只有 JSON", proc.stdout.strip().startswith("{"), proc.stdout[:20])
+    check("--json 时人读输出不混入 stdout", "库：" not in proc.stdout)
     return _summary()
 
 

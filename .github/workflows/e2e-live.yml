@@ -51,6 +51,21 @@ jobs:
           print('运行时依赖：空 ✓')
           PY
 
+      - name: 站点可达性预检（区分"环境不合格"与"产品回归"）
+        run: |
+          python - <<'PY'
+          import socket
+          import sys
+
+          host = "www.mohurd.gov.cn"
+          try:
+              print("DNS 解析:", socket.gethostbyname(host))
+          except OSError as exc:
+              print(f"::error::托管 runner 无法解析 {host}（{exc}）—— 这是跨境 DNS/网络限制，不是产品缺陷。"
+                    "联网验收请在本机跑：python3 scripts/e2e.py")
+              sys.exit(1)
+          PY
+
       - name: 联网端到端
         env:
           KEEP_HOME: ${{ inputs.keep_home }}
