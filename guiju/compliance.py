@@ -1,11 +1,14 @@
-"""合规护栏 —— 所有出站请求的唯一出口。
+"""合规护栏 —— 全仓唯一出站闸门。
 
-设计原则（刻意不提供 override 开关，因为"开发者自觉"式的合规三个月内必然失效）：
+四条铁律（刻意不提供 override 开关：靠自觉的合规，三个月内必然失效）：
 
-1. 域名白名单：只允许 *.gov.cn，其他一律拒绝
-2. 限速：默认最小间隔 1.2 秒，宁可慢，不可打
-3. 诚实 UA：声明身份，不伪装浏览器
+1. 域名白名单：只允许 *.gov.cn，且**每一次重定向**都要重新校验
+2. 限速：按 host 令牌间隔，默认最小 1.2 秒，宁可慢，不可打
+3. 诚实 UA：声明身份，不伪装浏览器（纯 ASCII，HTTP 头只接受 latin-1）
 4. 命中人机校验立即放弃 —— 不尝试绕过，放弃比绕过正确
+
+历史教训（2026-10-30 复核）：原实现只在发请求前校验白名单，而 urllib 默认自动跟随
+30x 重定向，一次跳转即可绕过白名单。现由 _GuardedRedirect 逐跳校验。
 """
 
 from __future__ import annotations
@@ -15,11 +18,15 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 
-#: 诚实 UA：声明身份，不伪装浏览器。HTTP 头只接受 latin-1，故必须纯 ASCII。
-UA = "guiju/0.1 (compliance-aware; official code fetcher)"
+from ._version import __version__
+from .errors import ComplianceDenied, SourceUnreachable
+
+#: 诚实 UA：声明身份，不伪装浏览器。必须纯 ASCII。
+UA = f"guiju/{__version__} (compliance-aware; official code fetcher)"
 ALLOWED_SUFFIX = ".gov.cn"
-MIN_INTERVAL = 1.2
+DEFAULT_MIN_INTERVAL = 1.2
 
 #: 命中这些就认定被反爬拦下，直接放弃（不重试、不换 UA、不接代理）
 BLOCK_MARKERS = (
@@ -29,71 +36,107 @@ BLOCK_MARKERS = (
     "安全验证",
     "访问过于频繁",
     "请求过于频繁",
-    "Access Denied",
-    "Forbidden",
 )
 
-
-class ComplianceError(RuntimeError):
-    """触及合规护栏。调用方应停止，而不是重试。"""
-
-
-class Unreachable(RuntimeError):
-    """网络层不可达，可稍后重试。"""
+#: 只对这些类型的响应做拦截检测（PDF 与二进制不检测，避免误伤与额外开销）
+_INSPECTABLE = ("text/html", "text/plain", "application/json")
+_MAX_INSPECT_BYTES = 2_000_000
+_INSPECT_HEAD = 8192
 
 
-_last_call = [0.0]
+@dataclass(frozen=True)
+class Response:
+    url: str          # 跟随重定向后的最终 URL
+    body: bytes
+    content_type: str
+
+    @property
+    def text(self) -> str:
+        return self.body.decode("utf-8", "ignore")
 
 
 def check_url(url: str) -> str:
+    """白名单校验。任何出站 URL（含重定向目标）都必须过这里。"""
     parts = urllib.parse.urlsplit(url)
-    host = (parts.hostname or "").lower()
     if parts.scheme not in ("https", "http"):
-        raise ComplianceError(f"仅允许 http(s)：{url}")
+        raise ComplianceDenied(f"仅允许 http(s)：{url}")
+    host = (parts.hostname or "").lower()
     if not (host == "gov.cn" or host.endswith(ALLOWED_SUFFIX)):
-        raise ComplianceError(f"非政府域名，拒绝访问：{host}")
+        raise ComplianceDenied(f"非政府域名，拒绝访问：{host or '(空)'}")
     return url
 
 
-def _throttle() -> None:
-    gap = time.monotonic() - _last_call[0]
-    if gap < MIN_INTERVAL:
-        time.sleep(MIN_INTERVAL - gap)
-    _last_call[0] = time.monotonic()
+class _GuardedRedirect(urllib.request.HTTPRedirectHandler):
+    """把白名单钉死在每一次跳转上 —— 这是本产品唯一的红线级校验。"""
+
+    max_redirections = 5
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        target = urllib.parse.urljoin(req.full_url, newurl)
+        check_url(target)
+        return super().redirect_request(req, fp, code, msg, headers, target)
 
 
-def _inspect(data: bytes) -> None:
-    """只对非 PDF 的小响应做拦截检测，避免误伤和额外开销。"""
-    if data.startswith(b"%PDF"):
+#: 自定义 opener：重定向走白名单闸门，HTTPS 用默认 CA 上下文
+#: （注意：OpenerDirector.open() 不接受 context 参数，必须在 handler 上配置）
+_opener = urllib.request.build_opener(
+    urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+    _GuardedRedirect(),
+)
+_last_call: dict[str, float] = {}
+
+
+def _throttle(host: str) -> None:
+    last = _last_call.get(host, 0.0)
+    gap = time.monotonic() - last
+    if gap < DEFAULT_MIN_INTERVAL:
+        time.sleep(DEFAULT_MIN_INTERVAL - gap)
+    _last_call[host] = time.monotonic()
+
+
+def _detect_block(resp: Response) -> None:
+    ctype = resp.content_type.lower()
+    if not any(t in ctype for t in _INSPECTABLE):
         return
-    if len(data) > 200_000:
+    if len(resp.body) > _MAX_INSPECT_BYTES:
         return
-    head = data[:6000].decode("utf-8", "ignore")
+    head = resp.body[:_INSPECT_HEAD].decode("utf-8", "ignore")
     for marker in BLOCK_MARKERS:
         if marker in head:
-            raise ComplianceError(
+            raise ComplianceDenied(
                 f"目标站点返回人机校验（命中「{marker}」）。按要求放弃，不做绕过。"
             )
 
 
-def get(url: str, referer: str | None = None, timeout: int = 60) -> tuple[bytes, str]:
-    """发一次 GET。返回 (body, content_type)。"""
+def get(url: str, referer: str | None = None, timeout: int = 60) -> Response:
+    """发一次 GET，返回 Response。这是全仓唯一允许发起网络请求的函数。"""
     check_url(url)
-    _throttle()
-    headers = {"User-Agent": UA, "Accept": "*/*", "Accept-Language": "zh-CN,zh;q=0.9"}
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    _throttle(host)
+
+    headers = {
+        "User-Agent": UA,
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
     if referer:
         headers["Referer"] = referer
     req = urllib.request.Request(url, headers=headers)
-    ctx = ssl.create_default_context()
+
     try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+        with _opener.open(req, timeout=timeout) as resp:
             body = resp.read()
-            ctype = resp.headers.get("Content-Type", "")
+            final_url = resp.geturl() or url
+            ctype = resp.headers.get("Content-Type", "") or ""
     except urllib.error.HTTPError as exc:
-        raise Unreachable(f"HTTP {exc.code}：{url}") from exc
+        raise SourceUnreachable(f"HTTP {exc.code}：{url}") from exc
+    except ComplianceDenied:
+        raise
     except ssl.SSLError as exc:
-        raise Unreachable(f"TLS 失败：{exc}") from exc
+        raise SourceUnreachable(f"TLS 失败：{exc}") from exc
     except Exception as exc:  # noqa: BLE001 - 网络异常种类多，统一归为不可达
-        raise Unreachable(f"{type(exc).__name__}：{exc}［{url}］") from exc
-    _inspect(body)
-    return body, ctype
+        raise SourceUnreachable(f"{type(exc).__name__}：{exc}［{url}］") from exc
+
+    out = Response(url=final_url, body=body, content_type=ctype)
+    _detect_block(out)
+    return out

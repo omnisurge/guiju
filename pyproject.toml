@@ -4,23 +4,58 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "guiju"
-version = "0.1.0"
-description = "规矩 — 以规范为准绳，让依据随手可取。工程建设规范采集工具，只抓 *.gov.cn 公开正文。"
+dynamic = ["version"]
+description = "规矩 — 以规范为准绳，让依据随手可取。工程建设标准公告与正文采集工具，只抓 *.gov.cn 公开内容。"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "guiju" }]
-keywords = ["construction", "standard", "code", "gb", "jgj", "mohurd", "cli"]
+authors = [{ name = "guiju contributors" }]
+keywords = ["construction", "standard", "code", "gb", "jgj", "mohurd", "cli", "agent"]
 classifiers = [
     "Environment :: Console",
-    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Construction",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Utilities",
 ]
+
+# 运行时零第三方依赖 —— 这是合规与可分发性的一部分，不要加。
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
 
 [project.scripts]
 guiju = "guiju.cli:main"
 gj = "guiju.cli:main"
 
+[project.urls]
+Documentation = "https://github.com/guiju/guiju/blob/main/docs/ARCHITECTURE.md"
+
+[tool.setuptools.dynamic]
+version = { attr = "guiju._version.__version__" }
+
 [tool.setuptools.packages.find]
 include = ["guiju*"]
+
+[tool.setuptools.package-data]
+"guiju.store" = ["schema.sql"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "SIM", "PIE", "RUF", "I", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+check_untyped_defs = true
+ignore_missing_imports = true
