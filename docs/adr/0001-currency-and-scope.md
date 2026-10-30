@@ -1,8 +1,10 @@
 # ADR 0001 · 废止 index，与 spec-currency 分层协作
 
-- 状态：**已采纳**（2026-10-30）
+- 状态：**已实现**（2026-10-30 验收通过；决策 2026-10-30 采纳）
 - 决策人：所有者（明确要求"index 必须要放弃，持续维护不可行"）
 - 影响：`guiju` 的检索路径、`cite`/`pull` 的前置条件、与 `spec-currency` 的产品边界
+- 被取代：第五节「若将来必须统一语言…」与第三节「合产品，不合代码仓」的结论
+  → 见 [ADR 0002](0002-merge-into-one-product.md)（二期，未实施）
 
 ---
 
@@ -93,7 +95,24 @@ GB 55037-2022   current   建筑防火通用规范   2023-06-01   csres
 | 名称匹配错标准 | 名称检索多候选一律 `exit 32`（`AmbiguousTarget`），禁止自动选第一个 |
 | 时效服务的 `unknown` 被当成 `current` | 状态只用于**告警**与 `--strict`，不用于"批准引用"；`unknown` 不产生"现行"结论 |
 
-## 遗留
+## 实现验收（2026-10-30）
 
-- `AGENTS.md` 的退出码表：31 的含义改为"名称检索无命中 / 时效服务无名称"，提示从"先跑 index"改为"先 sync，或确认该标准无公开正文"。
-- `batch` 形态的盘点仍归 `spec-currency`（它有断点、限流、TSV 契约），guiju 不重复实现。
+逐条对照，全部落地：
+
+| 决策 | 证据 |
+|---|---|
+| `index` 降级为可选 | `mentions` 表 0 行的库上，`which`/`cite`/`pull` 按编号全部可用 |
+| 时效端口化 + 三适配器 + 环境变量 | `guiju/currency.py`：`Currency`(Protocol) / `CommandCurrency` / `McpCurrency` / `NullCurrency` / `CachedCurrency`；`GUIJU_CURRENCY`、`GUIJU_CURRENCY_URL` 生效 |
+| `cite` 权威状态校验 | `cite JGJ 147-2004 --strict` → **exit 32**；`--offline` 跳过 |
+| `pull` 不额外查询 | 仅在解析阶段取一次状态，下载过程再无 currency 调用 |
+| 合规分层 | 正文仅 `compliance.py`（`*.gov.cn` + 逐跳校验）；`currency.py` 不落文件、不取正文 |
+| 不合仓 | 两仓独立，仅通过端口/服务协作（本条已被 ADR 0002 取代，见下） |
+
+风险缓解项均已验证：NAS 不可达 → `NullCurrency` 降级；TSV 契约由 `tests/test_currency.py` 钉住；
+名称多候选 → `exit 32`（v0.7.0 起再用"发布角色 + 正文编号核实"加一道闸）；`unknown ≠ current`。
+
+## 遗留（已清）
+
+- ✅ `AGENTS.md` 的 31 含义与提示已改（"先 sync，或确认该标准无公开正文"）。
+- ✅ `batch` 盘点的边界已澄清：**状态盘点**仍归 `spec-currency`；guiju 的 `pull --list`
+  是**批量取正文**（同一动作跑 N 次），不是重复实现盘点。
