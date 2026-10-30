@@ -11,8 +11,11 @@ scripts/ci.sh              # ruff + 单测 + 离线冒烟 + 入口自检
 
 - `pre-push` 会自动跑 `scripts/ci.sh`，**没过不推**；`SKIP_CI=1 git push` 可强制跳过（不建议）。
 - **不依赖 GitHub**：本地 CI 是判断"能不能提交"的唯一依据；GitHub 上的 `ci.yml` 只是同一套门的旁证。
-- 联网的 36 项端到端验收**不在 push 上跑**（不拿政府站点当压测对象），发版前手动跑：
-  `python3 scripts/e2e.py`，或 `gh workflow run e2e-live.yml`。
+- 联网的端到端验收**不在 push 上跑**（不拿政府站点当压测对象），发版前手动跑：
+  `python3 scripts/e2e.py`（有时效服务 → 38 项；没有 → 23 项 + 1 组 SKIP）。
+- **托管 runner 跑不了这个验收**：实测 GitHub runner 解析 `www.mohurd.gov.cn` 会
+  `Temporary failure in name resolution`（跨境 DNS 限制）。`e2e-live.yml` 只是便利入口，
+  带站点预检、遇解析失败会直接说明"环境不合格，不是产品回归"；**权威执行始终在本机**。
 - 硬约束已写成测试（`tests/test_hygiene.py`）：CI 矩阵必须覆盖 `requires-python` 下限、
   联网验收不得挂 push、`.gitignore` 必须挡住 `*.pdf`/`library/`/`*.db`、版本号与 CHANGELOG 同源。
 
