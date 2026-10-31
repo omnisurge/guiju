@@ -1,5 +1,17 @@
 # 变更记录
 
+## 0.10.0 — 2026-10-31（多源第一步：上海地方标准可下载）
+
+- **新增上海源 `shzjw`**（bzjg.zjw.sh.gov.cn）：`guiju pull --source shzjw DG/TJ08-2007`
+  直接拿到地标正文（实测 2,084,644 字节 PDF，sha256 归档，复跑 exit 10）。
+  上海没有可抓的公告页（SPA + JSON API），因此适配器以"API 模式"接入：
+  检索 `external/localStandard/list` → 下载 `api/files/webDownload`（HMAC 令牌按需现算）。
+- **`compliance.post_json`**：POST 也走同一道闸门（白名单 / 逐跳校验 / 限速 / 诚实 UA）。
+  没有为第二个源开私路。
+- 编号口径：直接采用站点给的含年版编号（`DG/TJ08-2007-2026`），
+  不套用通用解析器 —— 它会把 `-2026` 误当成年份并判成歧义。
+- 单测 101 → 107 项（API 模式的分支：命中/未命中 31/多命中 32/幂等 10）。
+
 ## 0.9.0 — 2026-10-31（断点续传：大文件不再从头再来）
 
 - **HTTP Range 续传**：`pull` 先把附件流式写入 `library/.partial/<公告+附件键>.part`，

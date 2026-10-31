@@ -32,7 +32,7 @@
 | 编号定位 | ✅ 只认「发布该编号的公告」+ 正文编号核实；同名多公告交人决断 |
 | 单测 / 端到端 | 101 项单测（离线、零依赖）/ 38 项端到端断言（`scripts/e2e.py`） |
 | 目录保鲜 | 进程内自刷新：目录为空或 >7 天时，在该次命令里顺手增量同步（无 cron / 无常驻进程） |
-| 多源 | ⏳ 仅有住建部；上海 `DG/TJ` 待接（二期） |
+| 多源 | ✅ 住建部（国标/行标公告）+ 上海（地标，`--source shzjw`）；其余源未接 |
 | MCP | ⏳ 二期 `guiju mcp`（见 `docs/adr/0002`） |
 
 ---
@@ -77,6 +77,7 @@ guiju which GB55037-2022
 guiju pull GB55037-2022 --json
 
 # 4b) 批量：给一个清单文件（清单本身就是范围，不需要再切）
+guiju pull --source shzjw DG/TJ08-2007 --json   # 上海地标（地方标准正文）
 guiju pull --list refs.txt --json
 cat refs.txt | guiju pull --list - --json          # 或走 stdin
 

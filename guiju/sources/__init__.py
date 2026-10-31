@@ -39,5 +39,6 @@ class Source(Protocol):
 
 def registry() -> dict[str, Source]:
     from .mohurd import SOURCE as mohurd
+    from .shzjw import SOURCE as shzjw
 
-    return {"mohurd": mohurd}
+    return {"mohurd": mohurd, "shzjw": shzjw}

@@ -125,6 +125,61 @@ def get(url: str, referer: str | None = None, timeout: int = 60, attempts: int =
     raise SourceUnreachable(f"重试耗尽：{url}")  # pragma: no cover
 
 
+def post_json(
+    url: str,
+    body: dict,
+    *,
+    referer: str | None = None,
+    timeout: int = 60,
+    attempts: int = 2,
+) -> dict:
+    """POST JSON 并解析响应。与 GET 走同一道闸门（白名单 / 逐跳校验 / 限速 / 诚实 UA）。
+
+    为什么 POST 也要进闸门：多数"标准查询"接口是 POST JSON，如果给它开私路，
+    白名单与限速就会在第二个源上失效。
+    """
+    import json
+
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            raw = _post_once(url, data, referer=referer, timeout=timeout)
+            return json.loads(raw.decode("utf-8", "ignore"))
+        except _Retryable as exc:
+            if attempt >= attempts:
+                raise SourceUnreachable(str(exc)) from None
+            time.sleep(1.0 * attempt)
+    raise SourceUnreachable(f"重试耗尽：{url}")  # pragma: no cover
+
+
+def _post_once(url: str, data: bytes, *, referer: str | None, timeout: int) -> bytes:
+    check_url(url)
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    _throttle(host)
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json;charset=UTF-8",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+    }
+    if referer:
+        headers["Referer"] = referer
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with _opener.open(req, timeout=timeout) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code >= 500:
+            raise _Retryable(f"HTTP {exc.code}：{url}") from exc
+        raise SourceUnreachable(f"HTTP {exc.code}：{url}") from exc
+    except ComplianceDenied:
+        raise
+    except ssl.SSLError as exc:
+        raise _Retryable(f"TLS 失败：{exc}") from exc
+    except OSError as exc:
+        raise _Retryable(f"{type(exc).__name__}：{exc}［{url}］") from exc
+
+
 class _Retryable(Exception):
     """内部标记：这类失败值得再试一次。"""
 

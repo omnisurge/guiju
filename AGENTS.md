@@ -29,6 +29,9 @@
 要一整批吗？               → guiju pull --list <文件|-> --json
    · 清单每行一个 ref，# 注释与行尾注释都支持
    · 汇总里 counts 按退出码统计，ok=false 表示有 1/20/40/50 这类严重失败
+要上海地标（DG/TJ、DB31/T）吗？ → guiju pull --source shzjw <编号|名称> --json
+   · 该源没有公告页，直接按 API 检索 + 下载；编号按站点原样（含年版，如 DG/TJ08-2007-2026）
+   · 命中多条 → 32；没有 → 31；已归档 → 10
 只要引用串吗？             → guiju cite <编号|公告ID|URL> [条款号] --json
 怀疑本地文件被改/丢失？     → guiju verify --json
 这个 PDF 哪来的？          → guiju provenance <路径> --json

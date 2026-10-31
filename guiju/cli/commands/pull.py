@@ -36,7 +36,97 @@ def default_out_dir() -> Path:
     return default_home() / "library"
 
 
+def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir: Path) -> dict:
+    """没有公告页、只有 JSON API 的源（目前是上海地标）。
+
+    流程：检索 → 判歧义 → 断点续传下载 → 内容寻址归档 → 补一条公告记录（供 cite/which 复用）。
+    """
+    from ...domain.codes import normalize_key
+    from ...errors import AmbiguousCode, NotIndexed
+
+    hits = source.find(ref)
+    if not hits:
+        raise NotIndexed(
+            f"{source.display_name}没有匹配「{ref}」的地方标准",
+            hint="换编号或名称片段再试；该源只覆盖地方标准（DG/TJ、DB31/T 等）",
+        )
+    if len(hits) > 1:
+        raise AmbiguousCode(
+            f"「{ref}」在{source.display_name}命中 {len(hits)} 条，需要人指定",
+            candidates=[
+                {"code": h["code"], "name": h["name"], "published_on": h["published_on"]}
+                for h in hits[:10]
+            ],
+        )
+
+    rec = hits[0]
+    code_key = normalize_key(rec["code"]) if rec["code"] else None
+    if not rec.get("download_url"):
+        raise BadAttachment(f"{rec['code'] or rec['name']} 在该源没有可下载的正文文件")
+
+    if not args.force and code_key:
+        existing = store.artifact_by_code(code_key)
+        if existing:
+            path = Path(existing["local_path"])
+            if path.exists() and sha256_file(path) == existing["sha256"]:
+                return {
+                    "ok": True, "already": True, "code": rec["code"],
+                    "path": str(path), "sha256": existing["sha256"],
+                    "bytes": existing["bytes"], "exit": EXIT_EXISTS,
+                }
+
+    partial_dir = out_dir / ".partial"
+    key = sha256_bytes(f"{source.id}|{rec['code'] or rec['name']}".encode())[:10]
+    part = partial_dir / f"{key}.part"
+    nbytes, magic, resumed = source.download_to(rec["download_url"], str(part))
+    if resumed:
+        render.note(f"  续传：从 {resumed} 字节处继续（共 {nbytes} 字节）")
+
+    digest = sha256_file(part)
+    dest = out_dir / (
+        naming.readable_name(code_key, rec["name"])
+        if args.readable
+        else naming.library_name(code_key, rec["name"], digest)
+    )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(part, dest)
+
+    ann_id, _ = store.upsert_announcement(
+        rec["page_url"], rec["published_on"], rec["name"], rec["name"], "local_standard"
+    )
+    store.record_artifact(
+        ann_id=ann_id, code_key=code_key, source=source.id, page_url=rec["page_url"],
+        file_url=rec["download_url"], label=rec["name"], sha256=digest, size=nbytes,
+        magic=magic, local_path=str(dest),
+    )
+    store.log_probe(source.id, rec["download_url"], 200, nbytes, "ok", rec["name"])
+    store.commit()
+
+    window = availability.state(rec["published_on"])
+    return {
+        "ok": True,
+        "source": source.id,
+        "code": rec["code"],
+        "name": rec["name"],
+        "path": str(dest),
+        "sha256": digest,
+        "bytes": nbytes,
+        "magic": magic,
+        "confidence": "parsed",
+        "status": "abolished" if rec.get("abolish_on") else "current",
+        "published_on": rec["published_on"],
+        "implement_on": rec.get("implement_on"),
+        "availability": window.value,
+        "source_page": rec["page_url"],
+        "attachment": rec["download_url"],
+        "exit": EXIT_OK,
+    }
+
+
 def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir: Path) -> dict:
+    if getattr(source, "api_mode", False):
+        return _pull_api(store, args, ref, source, out_dir)
+
     target = resolve(store, ref)
     ann = target["ann"]
     ann_id = int(ann["id"])
