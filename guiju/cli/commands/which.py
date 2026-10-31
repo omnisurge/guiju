@@ -22,6 +22,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     cur = currency_mod.CachedCurrency(store=store)
     records = cur.lookup(args.ref) if not args.offline else []
     source_name = cur.name
+    endpoint = currency_mod.endpoint_of(getattr(cur, "inner", cur))
     if not records and not args.offline and localstatus.is_local_code(args.ref):
         # 地方标准：源站自己就有现行/废止结论，不必依赖外部时效服务
         try:
@@ -49,6 +50,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "ok": True,
         "query": args.ref,
         "currency_source": source_name,
+        "currency_endpoint": endpoint,
         "currency_from_cache": bool(getattr(cur, "from_cache", False)),
         "currency_cache_age_days": getattr(cur, "cache_age_days", None),
         "currency": [r.as_payload() for r in records],

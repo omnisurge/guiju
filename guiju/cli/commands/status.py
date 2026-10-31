@@ -30,6 +30,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "db": str(store.path),
         "schema_version": 2,
         "currency_source": currency_mod.default_currency().name,
+        "currency_endpoint": currency_mod.endpoint_of(currency_mod.default_currency()),
         "probe": {row["outcome"]: row["c"] for row in probe},
         "announcements": st["announcements"],
         "editions": st["editions"],

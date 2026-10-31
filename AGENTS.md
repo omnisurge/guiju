@@ -25,6 +25,7 @@
    · 返回 currency[{code,status,name}] + announcement{id,...}
    · status: current/superseded/upcoming/withdrawn/unknown，unknown ≠ 现行
    · currency_from_cache=true 表示时效服务不可达、用的是本地缓存：结论可用但可能已过时
+   · currency_endpoint 告诉你实际用的是哪个端点（URL / 二进制路径 / 不可用原因）：配置没生效会在这里露出来
 要正文文件吗？             → guiju pull <编号|规范名|公告ID|URL> --json
    · 按名称命中多条时：同名多版本会按时效自动定版（如《绿色建筑评价标准》4 条公告 → 取现行的最新那条），
      结果里 versions 列出全部版本与选中项；只有定不出唯一现行版才返回 32 让你叫人

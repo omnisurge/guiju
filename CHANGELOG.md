@@ -1,5 +1,13 @@
 # 变更记录
 
+## 0.14.2 — 2026-10-31（GUIJU_CURRENCY_URL 曾被静默丢弃）
+
+- **修掉第二处静默不生效**：`GUIJU_CURRENCY=mcp` 时，`GUIJU_CURRENCY_URL` 会被**直接忽略**，
+  实际连的仍是默认 NAS —— 用户设了 URL 却以为生效了。现在 `arg > GUIJU_CURRENCY_URL > 默认值`。
+- **新增 `currency_endpoint` 字段**（`status` / `which`）：显示实际使用的端点
+  （MCP URL / 二进制路径 / "不可用：原因"）。配置是否生效不再需要靠猜。
+- 单测 131 → 136 项（含 mcp 覆盖优先级、端点可读性）。
+
 ## 0.14.1 — 2026-10-31（时效适配器的显式配置：照办，或者报错）
 
 - **修掉一处静默替换**：`GUIJU_CURRENCY=cmd` 而机器上没有 `spec-currency` 时，

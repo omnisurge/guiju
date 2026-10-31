@@ -230,6 +230,23 @@ class MisconfiguredCurrency:
         )
 
 
+def endpoint_of(cur: object) -> str | None:
+    """当前适配器实际使用的端点（URL / 二进制 / 缺失原因），用于 status 与 --json 结果。
+
+    没有这个字段时，"我设了 GUIJU_CURRENCY_URL 但好像没生效"只能靠猜。
+    """
+    url = getattr(cur, "url", None)
+    if url:
+        return str(url)
+    binary = getattr(cur, "binary", None)
+    if binary:
+        return str(binary)
+    reason = getattr(cur, "reason", None)
+    if reason:
+        return f"不可用：{reason}"
+    return None
+
+
 def default_currency() -> Currency:
     """优先本地二进制（快、可离线），否则 MCP 服务，最后退化为空。
 
@@ -248,7 +265,9 @@ def default_currency() -> Currency:
                 )
             return CommandCurrency(binary)
         if kind == "mcp":
-            return McpCurrency(arg or DEFAULT_MCP_URL)
+            # GUIJU_CURRENCY=mcp 曾经会忽略 GUIJU_CURRENCY_URL（用户设了 URL 却被静默丢弃，
+            # 实际连的是默认 NAS）。显式指定机制时，环境变量的每一部分都要生效。
+            return McpCurrency(arg or os.environ.get("GUIJU_CURRENCY_URL") or DEFAULT_MCP_URL)
         return MisconfiguredCurrency(f"{kind}(未知)", f"GUIJU_CURRENCY={override} 无法识别")
     binary = shutil.which(DEFAULT_CMD)
     if binary:
