@@ -211,17 +211,45 @@ def _tool_text(result: dict) -> str:
 _cache: dict[tuple[str, str], list[Record]] = {}
 
 
+class MisconfiguredCurrency:
+    """显式指定了适配器但它不可用：**查询时报错，绝不悄悄换成别的源**。
+
+    这曾经是个真问题：`GUIJU_CURRENCY=cmd` 而机器上没装 spec-currency 时，
+    代码直接往下走到自动探测，最终用了 mcp —— 用户以为走的是本地二进制，
+    实际用的是另一条链路。配置错了就要说出来。
+    """
+
+    def __init__(self, name: str, reason: str) -> None:
+        self.name = name
+        self.reason = reason
+
+    def lookup(self, code: str) -> list[Record]:
+        raise SourceUnreachable(
+            self.reason,
+            hint="可用值：cmd[:二进制路径] / mcp[:URL] / off；或先装好对应组件",
+        )
+
+
 def default_currency() -> Currency:
-    """优先本地二进制（快、可离线），否则 MCP 服务，最后退化为空。"""
-    override = os.environ.get("GUIJU_CURRENCY")  # cmd:<path> / mcp:<url> / off
+    """优先本地二进制（快、可离线），否则 MCP 服务，最后退化为空。
+
+    注意：**环境变量一旦显式指定，要么照办，要么报错**，不做静默替换。
+    """
+    override = os.environ.get("GUIJU_CURRENCY")  # cmd[:path] / mcp[:url] / off
     if override:
         kind, _, arg = override.partition(":")
         if kind == "off":
             return NullCurrency()
-        if kind == "cmd" and arg:
-            return CommandCurrency(arg)
+        if kind == "cmd":
+            binary = arg or shutil.which(DEFAULT_CMD)
+            if not binary:
+                return MisconfiguredCurrency(
+                    "cmd(缺失)", f"GUIJU_CURRENCY=cmd，但找不到 {DEFAULT_CMD} 可执行文件"
+                )
+            return CommandCurrency(binary)
         if kind == "mcp":
             return McpCurrency(arg or DEFAULT_MCP_URL)
+        return MisconfiguredCurrency(f"{kind}(未知)", f"GUIJU_CURRENCY={override} 无法识别")
     binary = shutil.which(DEFAULT_CMD)
     if binary:
         return CommandCurrency(binary)
