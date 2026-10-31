@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -21,7 +22,7 @@ from ...errors import (
     GuijuError,
     NoAttachment,
 )
-from ...files import sha256_bytes, sha256_file, write_atomic
+from ...files import sha256_bytes, sha256_file
 from ...sources import registry
 from ...store.sqlite import Store, default_home, persist_codes
 from .. import render
@@ -114,27 +115,34 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     assert choice is not None
     render.note(f"  附件 {len(atts)} 个，选定：{choice.label[:50] or choice.url[-40:]}")
 
+    # 断点续传：`.part` 以「公告 + 附件URL」为键，中途失败重跑会接着下
+    partial_dir = out_dir / ".partial"
+    key = sha256_bytes(f"{ann_id}|{choice.url}".encode())[:10]
+    part = partial_dir / f"{key}.part"
     try:
-        body, magic = source.download(choice.url, referer=ann["url"])
+        nbytes, magic, resumed = source.download_to(choice.url, str(part), referer=ann["url"])
     except BadAttachment as exc:
         store.log_probe(source.id, choice.url, None, None, "bad_attachment", choice.label)
         store.commit()
         exc.extra.setdefault("attachments", picked.as_payload().get("candidates", []))
         raise
+    if resumed:
+        render.note(f"  续传：从 {resumed} 字节处继续（共 {nbytes} 字节）")
 
-    digest = sha256_bytes(body)
+    digest = sha256_file(part)
     dest = out_dir / (
         naming.readable_name(code_key, ann["doc_name"] or "")
         if args.readable
         else naming.library_name(code_key, ann["doc_name"] or "", digest)
     )
-    write_atomic(dest, body)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(part, dest)
     store.record_artifact(
         ann_id=ann_id, code_key=code_key, source=source.id, page_url=ann["url"],
-        file_url=choice.url, label=choice.label, sha256=digest, size=len(body),
+        file_url=choice.url, label=choice.label, sha256=digest, size=nbytes,
         magic=magic, local_path=str(dest),
     )
-    store.log_probe(source.id, choice.url, 200, len(body), "ok", choice.label)
+    store.log_probe(source.id, choice.url, 200, nbytes, "ok", choice.label)
     store.commit()
 
     return {
@@ -143,7 +151,7 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
         "name": ann["doc_name"],
         "path": str(dest),
         "sha256": digest,
-        "bytes": len(body),
+        "bytes": nbytes,
         "magic": magic,
         "confidence": confidence,
         "status": status,

@@ -19,6 +19,7 @@ import html as htmllib
 import json
 import re
 import urllib.parse
+from pathlib import Path
 
 from .. import compliance
 from ..domain.attachment import Attachment
@@ -153,6 +154,24 @@ def download(file_url: str, referer: str) -> tuple[bytes, str]:
     raise BadAttachment(detail_msg)
 
 
+def download_to(file_url: str, part_path: str, referer: str) -> tuple[int, str, int]:
+    """流式下载到 `part_path`（断点续传），返回 (bytes, magic, resumed_from)。"""
+    info = compliance.download(file_url, part_path, referer=referer, timeout=180)
+    with open(part_path, "rb") as fp:
+        head = fp.read(64)
+    magic = magic_of(head)
+    if magic == MAGIC_PDF:
+        return int(info["bytes"]), magic, int(info["resumed_from"])
+
+    Path(part_path).unlink(missing_ok=True)   # 错误页不能当续传底子，否则永远拼不出 PDF
+    detail_msg = {
+        MAGIC_DOC: "附件是 .doc（多为「废止的强制性条文」，不是规范正文）",
+        MAGIC_ZIP: "附件是压缩包，需解压后人工确认内容",
+        MAGIC_HTML: "附件返回 HTML 错误页，可能链接失效或需重新解析详情页",
+    }.get(magic, f"附件不是 PDF（{info['bytes']} 字节）")
+    raise BadAttachment(detail_msg)
+
+
 def migrate_legacy_url(old_url: str) -> str | None:
     """旧版 zhengcefilelib 链接 → 现行详情页。"""
     m = re.match(r".*/zhengcefilelib/(\d{4})\d{2}/\d{8}_(\d+)\.html", old_url)
@@ -169,6 +188,7 @@ class Mohurd:
     detail = staticmethod(detail)
     attachments = staticmethod(attachments)
     download = staticmethod(download)
+    download_to = staticmethod(download_to)
 
 
 SOURCE = Mohurd()

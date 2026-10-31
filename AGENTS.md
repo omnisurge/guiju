@@ -25,6 +25,7 @@
    · 返回 currency[{code,status,name}] + announcement{id,...}
    · status: current/superseded/upcoming/withdrawn/unknown，unknown ≠ 现行
 要正文文件吗？             → guiju pull <编号|规范名|公告ID|URL> --json
+   · 断点续传：中断后重跑同一条命令会从 .partial 续下（Range 206），不必从头再来
 要一整批吗？               → guiju pull --list <文件|-> --json
    · 清单每行一个 ref，# 注释与行尾注释都支持
    · 汇总里 counts 按退出码统计，ok=false 表示有 1/20/40/50 这类严重失败

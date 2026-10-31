@@ -19,6 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 from ._version import __version__
 from .errors import ComplianceDenied, SourceUnreachable
@@ -126,6 +127,100 @@ def get(url: str, referer: str | None = None, timeout: int = 60, attempts: int =
 
 class _Retryable(Exception):
     """内部标记：这类失败值得再试一次。"""
+
+
+def download(
+    url: str,
+    part_path: str | Path,
+    *,
+    referer: str | None = None,
+    timeout: int = 180,
+    attempts: int = 2,
+    chunk_size: int = 1 << 16,
+) -> dict:
+    """流式下载到 part_path，支持 HTTP Range 续传。
+
+    为什么落 `.part` 而不直接写最终文件：最终名是内容寻址（`<名>__<sha256前12>.pdf`），
+    只有下完才知道。调用方拿到 `bytes` 后自己算 sha256 再改名。
+
+    续传条件：`part_path` 已存在且非空 → 发 `Range: bytes=<size>-`。
+    - 服务器回 206 → 追加（真续传）
+    - 服务器回 200 → 服务端不支持 Range，截断重下（不是错误，只是没省流量）
+    - 服务器回 416 → 本地已有的部分不小于远端总长，按"已完成"处理
+    """
+    part = Path(part_path)
+    part.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(1, max(1, attempts) + 1):
+        start = part.stat().st_size if part.exists() else 0
+        try:
+            _download_once(
+                url, part, start=start, referer=referer, timeout=timeout, chunk_size=chunk_size
+            )
+            return {
+                "bytes": part.stat().st_size if part.exists() else start,
+                "resumed_from": start,
+                "url": url,
+            }
+        except _Retryable as exc:
+            if attempt >= attempts:
+                raise SourceUnreachable(str(exc)) from None
+            time.sleep(1.0 * attempt)
+    raise SourceUnreachable(f"重试耗尽：{url}")  # pragma: no cover
+
+
+def _download_once(
+    url: str,
+    part: Path,
+    *,
+    start: int,
+    referer: str | None,
+    timeout: int,
+    chunk_size: int,
+) -> None:
+    check_url(url)
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    _throttle(host)
+
+    headers = {"User-Agent": UA, "Accept": "*/*", "Accept-Language": "zh-CN,zh;q=0.9"}
+    if referer:
+        headers["Referer"] = referer
+    if start:
+        headers["Range"] = f"bytes={start}-"
+    req = urllib.request.Request(url, headers=headers)
+
+    try:
+        with _opener.open(req, timeout=timeout) as resp:
+            status = getattr(resp, "status", 200) or 200
+            ctype = (resp.headers.get("Content-Type") or "").lower()
+            if ctype.startswith("text/html"):
+                head = resp.read(4096)
+                text = head.decode("utf-8", "ignore")
+                for marker in BLOCK_MARKERS:
+                    if marker in text:
+                        raise ComplianceDenied(
+                            f"目标站点返回人机校验（命中「{marker}」）。按要求放弃，不做绕过。"
+                        )
+                raise SourceUnreachable(f"附件返回 HTML 而非文件（{len(head)} 字节）：{url}")
+            append = status == 206 and start > 0
+            mode = "ab" if append else "wb"
+            with part.open(mode) as fh:
+                while True:
+                    chunk = resp.read(chunk_size)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 416 and start > 0:
+            return          # 本地部分 >= 远端：视为已完成，交给调用方改名
+        if exc.code >= 500:
+            raise _Retryable(f"HTTP {exc.code}：{url}") from exc
+        raise SourceUnreachable(f"HTTP {exc.code}：{url}") from exc
+    except ComplianceDenied:
+        raise
+    except ssl.SSLError as exc:
+        raise _Retryable(f"TLS 失败：{exc}") from exc
+    except OSError as exc:
+        raise _Retryable(f"{type(exc).__name__}：{exc}［{url}］") from exc
 
 
 def _get_once(url: str, referer: str | None = None, timeout: int = 60) -> Response:
