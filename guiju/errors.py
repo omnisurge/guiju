@@ -25,7 +25,7 @@ EXIT_TABLE = {
     EXIT_EXISTS: ("已存在且校验通过", "跳过，别重复下载"),
     EXIT_UNREACHABLE: ("源不可达（网络/5xx/超时）", "稍后重试"),
     EXIT_NO_ATTACHMENT: ("公告页没有正文附件", "换备源或按提示判定为「历史上无正文」，不是故障"),
-    EXIT_NOT_INDEXED: ("编号尚未建立索引", "先跑 guiju index"),
+    EXIT_NOT_INDEXED: ("编号无法定位到公告", "先 guiju sync 补齐目录；仍无则说明没有公开正文公告"),
     EXIT_AMBIGUOUS_CODE: ("编号存在歧义（新旧版本/多候选）", "让人从 candidates 里选，禁止自行猜测"),
     EXIT_AMBIGUOUS_ATTACHMENT: ("附件多个且无法判定", "让人从 candidates 里选，禁止自行猜测"),
     EXIT_COMPLIANCE: ("命中合规护栏", "停止，不要重试、不要换路径绕过"),
@@ -87,7 +87,7 @@ class AmbiguousAttachment(GuijuError):
 class NotIndexed(GuijuError):
     exit = EXIT_NOT_INDEXED
     reason = "not_indexed"
-    hint = "先运行：guiju index --match <关键词>"
+    hint = "先 guiju sync 补齐目录；仍无则说明本地目录没有这本规范（不是故障）"
 
 
 class AmbiguousCode(GuijuError):

@@ -38,5 +38,34 @@ class CitationTest(unittest.TestCase):
         self.assertTrue(any("歧义" in w for w in warnings))
 
 
+class StrictOfflineConflictTest(unittest.TestCase):
+    """--strict 与 --offline 相加只能静默降级，必须当场拒掉（exit 2）。"""
+
+    def test_conflict_is_bad_usage(self):
+        import io
+        import json
+        import tempfile
+        from contextlib import redirect_stdout
+        from pathlib import Path
+        from unittest import mock
+
+        from guiju.cli import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            buf = io.StringIO()
+            with (
+                mock.patch.dict("os.environ", {"GUIJU_NO_AUTO_SYNC": "1"}),
+                redirect_stdout(buf),
+            ):
+                code = main([
+                    "cite", "GB55037-2022", "5.2.1", "--offline", "--strict", "--json",
+                    "--db", str(Path(tmp) / "c.db"),
+                ])
+            payload = json.loads(buf.getvalue())
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["reason"], "bad_usage")
+        self.assertIn("--offline", payload["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

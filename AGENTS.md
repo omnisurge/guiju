@@ -36,6 +36,7 @@
    · 现行/废止由源站分栏决定（同一编号优先现行）；下载到废止版会带 status=withdrawn 并告警
    · 地标的现行性不需要外部时效服务：which/cite 在服务无记录时回落到源站
 只要引用串吗？             → guiju cite <编号|公告ID|URL> [条款号] --json
+   · --strict 与 --offline 不能同时用（做不了现行性校验 → exit 2），别把两者混着传
 怀疑本地文件被改/丢失？     → guiju verify --json
 这个 PDF 哪来的？          → guiju provenance <路径> --json
 目录为空/过期？            → 不用管：程序会自己顺手刷新（见下）

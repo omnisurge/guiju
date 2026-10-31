@@ -98,7 +98,7 @@ guiju status
 | `guiju sync` | 增量同步公告目录（遇 0 新增即停）；`--if-stale 7` 给定时任务，新则 0 请求秒退 | 是 |
 | `guiju search <关键词…>` | 本地检索公告（子串 + 模糊三层召回） | 否 |
 | `guiju which <编号\|名称>` | 权威时效 + 本地公告 + 有无正文（**推荐入口**） | 是* |
-| `guiju index` | 可选预热：解析编号建本地缓存（**已被 which 取代，非必需**） | 是 |
+| `guiju index` | **已废弃（ADR 0001）**：不再是任何命令的前置条件，待移除 | 是 |
 | `guiju show <ref>` | 名称/编号/角色/可得性/本地文件 | 否 |
 | `guiju pull <ref>` | 下载正文（流式落盘 + 断点续传），幂等，内容寻址归档 | 是 |
 | `guiju pull --list f.txt` | 按清单批量下载，汇总成功/已存在/未达成 | 是 |
@@ -213,7 +213,7 @@ guiju/
 └── cli/                 # 参数解析 + 每个命令一个文件
 ```
 
-设计文档：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · 文件裁定与实测证据：[docs/audit-2026-10-30.md](docs/audit-2026-10-30.md)
+设计文档：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · 数据源现状与边界（含"为什么某些源不接"）：[docs/sources.md](docs/sources.md)
 
 ## 许可
 

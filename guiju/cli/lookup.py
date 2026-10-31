@@ -6,7 +6,7 @@
   2. 纯数字        → 公告 ID
   3. 规范名（含汉字）→ 本地检索（不需要任何预建索引）
   4. 规范号        → ①本地已索引则直接用；②否则问时效服务拿名称 → 再走 3
-                     ↑ 这一步替代了原来的"必须先跑 guiju index"
+                     ↑ 这一步替代了原来的"必须先建全量索引"（见 ADR 0001）
 
 铁律不变：多候选报歧义（32），绝不替用户挑。
 """
@@ -156,7 +156,7 @@ def _by_code(
     if best_record is None or not best_record.name:
         raise NotIndexed(
             f"编号 {ref} 既不在本地索引中，时效服务也未返回可识别的名称",
-            hint="确认编号是否完整（含年份）；或先 guiju index --match <关键词> 建索引",
+            hint="确认编号是否完整（含年份）；或 guiju sync 后再试；仍无则本地目录里没有这本规范",
             currency=[r.as_payload() for r in records],
         )
 

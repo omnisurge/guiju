@@ -71,7 +71,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
             for c in payload["codes"]:
                 render.note(f"编号：{c['code']}　角色：{c['role']}　置信：{c['confidence']}")
         else:
-            render.note("编号：（未索引 → 运行 guiju index）")
+            render.note("编号：（尚未解析 → 跑一次 guiju pull <公告ID> 会顺带解析并落库）")
         render.note(f"正文：{local['path'] if local else '未下载'}")
         render.note(f"可得性：{payload['availability']}")
         render.note(f"  {payload['availability_note']}")

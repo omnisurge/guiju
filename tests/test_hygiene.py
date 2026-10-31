@@ -63,6 +63,23 @@ class DocConstraintTest(unittest.TestCase):
         self.assertIn(f"## {version}", changelog, f"CHANGELOG 缺少 {version} 条目")
 
 
+class NoStaleIndexAdviceTest(unittest.TestCase):
+    """ADR 0001 已废止 index 作为前置条件：任何用户可见文案都不许再推荐它。"""
+
+    def test_hints_do_not_recommend_index(self):
+        import re
+        from pathlib import Path as _P
+
+        root = _P(__file__).resolve().parent.parent / "guiju"
+        offenders = []
+        for path in root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for match in re.finditer(r"guiju index", text):
+                line = text[: match.start()].count("\n") + 1
+                offenders.append(f"{path.relative_to(root.parent)}:{line}")
+        self.assertEqual(offenders, [], f"仍有提示在推荐 guiju index：{offenders}")
+
+
 class CommandWiringTest(unittest.TestCase):
     """每个子命令都必须绑好 func —— 否则 main() 会在运行时才炸（sync 曾漏过一次）。"""
 

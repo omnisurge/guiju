@@ -23,6 +23,14 @@ def run(store: Store, args: argparse.Namespace) -> int:
 
     from ... import currency as currency_mod
 
+    if args.strict and args.offline:
+        # --strict 承诺"宁可不给，也不给不确定的引用"；离线做不了现行性校验，
+        # 两者相加只可能是静默降级 —— 按用法错误当场拒掉，不等到解析完再说。
+        raise BadUsage(
+            "--strict 需要时效服务做现行性校验，与 --offline 冲突",
+            hint="去掉 --offline 再试；或去掉 --strict，接受一份未校验现行性的引用串",
+        )
+
     # --offline 的语义是"完全不碰网络"：连时效端口都不用，而不是只跳过详情页核实
     target = resolve(
         store,
@@ -51,7 +59,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         if primary is None:
             raise NotIndexed(
                 "该公告尚未解析出标准编号",
-                hint="先 guiju index --match <关键词>；若仍无编号，说明该公告正文确实没有编号",
+                hint="该公告正文里可能确实没有编号（约 39% 如此）；用 guiju pull 取正文人工确认",
                 page_url=ann["url"],
             )
         code_key, code_display = primary["code_key"], primary["code_display"]
