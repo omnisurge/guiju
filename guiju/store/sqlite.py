@@ -254,6 +254,17 @@ class Store:
     def set_meta(self, key: str, value: str) -> None:
         self.db.execute("INSERT OR REPLACE INTO corpus_meta(k,v) VALUES(?,?)", (key, value))
 
+    def catalog_age_days(self) -> float | None:
+        """目录上次同步距今多少天；从未同步返回 None。"""
+        raw = self.get_meta("synced_at")
+        if not raw:
+            return None
+        try:
+            then = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+        return (datetime.now() - then).total_seconds() / 86400
+
     def get_meta(self, key: str, default: str = "") -> str:
         row = self.db.execute("SELECT v FROM corpus_meta WHERE k=?", (key,)).fetchone()
         return row["v"] if row else default

@@ -32,6 +32,16 @@ class ArtifactKeyTest(unittest.TestCase):
     def test_missing_returns_none(self):
         self.assertIsNone(self.store.artifact_by_code("GB 99999-2099"))
 
+    def test_catalog_age_days(self):
+        from datetime import datetime, timedelta
+
+        self.assertIsNone(self.store.catalog_age_days())  # 从未同步
+        old = datetime.now() - timedelta(days=9)
+        self.store.set_meta("synced_at", old.strftime("%Y-%m-%d %H:%M:%S"))
+        self.assertAlmostEqual(self.store.catalog_age_days(), 9.0, delta=0.01)
+        self.store.set_meta("synced_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        self.assertLess(self.store.catalog_age_days(), 0.01)
+
 
 if __name__ == "__main__":
     unittest.main()

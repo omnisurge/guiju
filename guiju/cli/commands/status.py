@@ -15,6 +15,7 @@ from .. import render
 
 def run(store: Store, args: argparse.Namespace) -> int:
     st = store.stats()
+    age = store.catalog_age_days()
     by_year = st["by_year"]
     pre = sum(c for y, c in by_year.items() if y and y.isdigit() and int(y) < FULL_TEXT_SINCE_YEAR)
     in_window = sum(c for y, c in by_year.items() if y and y.isdigit() and int(y) >= FULL_TEXT_SINCE_YEAR)
@@ -36,6 +37,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "scanned": st["scanned"],
         "artifacts": st["artifacts"],
         "synced_at": st["synced_at"],
+        "catalog_age_days": None if age is None else round(age, 2),
+        "catalog_stale": age is None or age > 7,
         "latest_published_on": store.max_published_on(),
         "coverage": {
             "full_text_since_year": FULL_TEXT_SINCE_YEAR,
@@ -46,6 +49,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "by_year": by_year,
     }
     render.emit(payload)
+    if payload["announcements"] and payload["catalog_stale"]:
+        render.note(f"目录已 {age:.1f} 天未更新：guiju sync（增量约 3 秒 / 2 个请求）")
     if not render.is_json():
         render.out(f"库：{payload['db']}（schema v{payload['schema_version']}）")
         render.out(f"公告 {st['announcements']} 条 · 版本 {st['editions']} 个 · 正文 {st['artifacts']} 份")

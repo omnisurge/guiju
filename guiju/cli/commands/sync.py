@@ -16,6 +16,23 @@ def _classify(source, title: str) -> tuple[str, str]:
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
+    # --if-stale：给定时任务用。目录还新就秒退，避免"每次都抓 33 页"的错觉。
+    if args.if_stale is not None and store.count_announcements():
+        age = store.catalog_age_days()
+        if age is not None and age <= args.if_stale:
+            payload = {
+                "ok": True,
+                "skipped": True,
+                "reason": "fresh",
+                "age_days": round(age, 2),
+                "total_in_db": store.count_announcements(),
+                "synced_at": store.get_meta("synced_at"),
+                "db": str(store.path),
+            }
+            render.emit(payload)
+            render.note(f"目录 {age:.1f} 天前同步，未超过 {args.if_stale} 天阈值，跳过（0 请求）")
+            return 0
+
     source = registry()[args.source]
     page_size = args.page_size
     page = 1
@@ -72,5 +89,12 @@ def add_parser(sub, parents) -> None:
     p = sub.add_parser("sync", parents=parents, help="同步标准公告目录（增量）")
     p.add_argument("--pages", type=int, default=0, help="最多抓取页数，0 为不限")
     p.add_argument("--page-size", type=int, default=100, help="每页条数（100 已验证完整）")
+    p.add_argument(
+        "--if-stale",
+        type=int,
+        default=None,
+        metavar="DAYS",
+        help="仅当目录超过 DAYS 天未更新时才同步（0 = 只在库为空时同步）；给定时任务用",
+    )
     p.add_argument("--source", default="mohurd", help="数据源 id")
     p.set_defaults(func=run)
