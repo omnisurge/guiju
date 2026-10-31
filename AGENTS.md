@@ -31,10 +31,11 @@
 只要引用串吗？             → guiju cite <编号|公告ID|URL> [条款号] --json
 怀疑本地文件被改/丢失？     → guiju verify --json
 这个 PDF 哪来的？          → guiju provenance <路径> --json
-目录为空/过期？            → guiju sync --json            （全量 33 页 ≈60s）
-   · 之后增量同步只抓 2 页 ≈3s（连续两页无新增即停）
-   · 定时任务用 guiju sync --if-stale 7 --json（新则 0 请求秒退）
-   · status.catalog_stale=true 说明目录 >7 天没更新
+目录为空/过期？            → 不用管：程序会自己顺手刷新（见下）
+   · search/which/pull/cite 执行前若目录为空或 >7 天，自动增量刷新（增量 ≈3s / 2 请求）
+   · 刷新失败不阻断命令，1 小时内不再重试；想强制关掉用 GUIJU_NO_AUTO_SYNC=1
+   · 手动强制刷新仍是 guiju sync --json（全量 33 页 ≈60s）；只确认新旧用 --if-stale 7
+   · status.catalog_age_days 告诉你目录多旧
 ```
 
 ---

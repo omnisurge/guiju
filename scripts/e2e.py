@@ -30,7 +30,7 @@ SKIPPED: list[tuple[str, str]] = []
 
 
 def guiju(*args: str, home: str, timeout: int = 300) -> tuple[int, dict, str]:
-    env = dict(os.environ, GUIJU_HOME=home)
+    env = dict(os.environ, GUIJU_HOME=home, GUIJU_NO_AUTO_SYNC="1")
     proc = subprocess.run(
         [sys.executable, "-m", "guiju", *args, "--json"],
         capture_output=True, text=True, timeout=timeout, cwd=str(ROOT), env=env,
@@ -226,7 +226,7 @@ def main() -> int:
 
 
 def _summary_outputs(home: str) -> int:
-    env = dict(os.environ, GUIJU_HOME=home)
+    env = dict(os.environ, GUIJU_HOME=home, GUIJU_NO_AUTO_SYNC="1")
     proc = subprocess.run([sys.executable, "-m", "guiju", "status", "--json"],
                           capture_output=True, text=True, cwd=str(ROOT), env=env)
     check("--json 时 stdout 只有 JSON", proc.stdout.strip().startswith("{"), proc.stdout[:20])

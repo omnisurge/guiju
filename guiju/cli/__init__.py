@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .. import autosync
 from ..errors import EXIT_OK, EXIT_TABLE, GuijuError
 from ..store.sqlite import Store
 from . import render
@@ -95,6 +96,15 @@ def main(argv: list[str] | None = None) -> int:
         if not getattr(args, "cmd", False):
             parser.print_help()
             return EXIT_OK
+        # 进程内目录保鲜：过期就顺手增量刷新，不依赖设备级定时任务（见 ADR 0003）
+        note = autosync.maybe_refresh(
+            store,
+            command=args.cmd,
+            offline=bool(getattr(args, "offline", False)),
+            notify=render.note,
+        )
+        if note:
+            render.note(note)
         return int(args.func(store, args))
     except GuijuError as exc:
         return _fail(exc)

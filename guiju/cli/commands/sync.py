@@ -1,87 +1,51 @@
-"""sync —— 目录增量同步。"""
+"""sync —— 目录同步的显式入口。
+
+抓取逻辑在 `guiju/syncengine.py`，与进程内自保鲜（`guiju/autosync.py`）共用同一份实现，
+所以两条路径不会长出不同的行为。
+"""
 
 from __future__ import annotations
 
 import argparse
 
-from ...domain.announcement import classify_title
-from ...sources import registry
-from ...store.sqlite import Store, now
+from ...store.sqlite import Store
+from ...syncengine import crawl
 from .. import render
 
 
-def _classify(source, title: str) -> tuple[str, str]:
-    fn = getattr(source, "classify_title", None)
-    return fn(title) if callable(fn) else classify_title(title)
-
-
 def run(store: Store, args: argparse.Namespace) -> int:
-    # --if-stale：给定时任务用。目录还新就秒退，避免"每次都抓 33 页"的错觉。
+    # --if-stale：给"我就想确认它是新的"场景；新则 0 请求秒退
     if args.if_stale is not None and store.count_announcements():
         age = store.catalog_age_days()
         if age is not None and age <= args.if_stale:
-            payload = {
-                "ok": True,
-                "skipped": True,
-                "reason": "fresh",
-                "age_days": round(age, 2),
-                "total_in_db": store.count_announcements(),
-                "synced_at": store.get_meta("synced_at"),
-                "db": str(store.path),
-            }
-            render.emit(payload)
+            render.emit(
+                {
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "fresh",
+                    "age_days": round(age, 2),
+                    "total_in_db": store.count_announcements(),
+                    "synced_at": store.get_meta("synced_at"),
+                    "db": str(store.path),
+                }
+            )
             render.note(f"目录 {age:.1f} 天前同步，未超过 {args.if_stale} 天阈值，跳过（0 请求）")
             return 0
 
-    source = registry()[args.source]
-    page_size = args.page_size
-    page = 1
-    total_new = total_seen = total = 0
-    empty_page = 0
+    def on_page(page: int, count: int, fresh: int, seen: int, total: int) -> None:
+        render.note(f"第 {page:>3} 页：{count:>3} 条，新增 {fresh:>3}（累计 {seen}/{total}）")
 
-    while True:
-        items, total = source.catalog_page(page, page_size)
-        if not items:
-            break
-        fresh = 0
-        for item in items:
-            name, category = _classify(source, item["title"])
-            _, is_new = store.upsert_announcement(
-                item["url"], item["date"], item["title"], name, category
-            )
-            fresh += int(is_new)
-        store.commit()
-        total_new += fresh
-        total_seen += len(items)
-        empty_page = empty_page + 1 if fresh == 0 else 0
-        render.note(f"第 {page:>3} 页：{len(items):>3} 条，新增 {fresh:>3}（累计 {total_seen}/{total}）")
-
-        if args.pages and page >= args.pages:
-            break
-        if empty_page >= 2:
-            render.note("连续两页无新增，增量同步完成")
-            break
-        if total and page * page_size >= total:
-            break
-        page += 1
-
-    store.set_meta("synced_at", now())
-    store.set_meta("catalog_total", str(total or store.count_announcements()))
-    store.commit()
-
-    payload = {
-        "ok": True,
-        "new": total_new,
-        "scanned": total_seen,
-        "total_reported": total,
-        "total_in_db": store.count_announcements(),
-        "latest_published_on": store.max_published_on(),
-        "synced_at": store.get_meta("synced_at"),
-        "db": str(store.path),
-    }
+    payload = crawl(
+        store,
+        page_size=args.page_size,
+        pages=args.pages,
+        source=args.source,
+        on_page=on_page,
+    )
+    payload["ok"] = True
     render.emit(payload)
     if not render.is_json():
-        render.note(f"✓ 新增 {total_new} 条，库中共 {payload['total_in_db']} 条")
+        render.note(f"✓ 新增 {payload['new']} 条，库中共 {payload['total_in_db']} 条")
     return 0
 
 
@@ -94,7 +58,6 @@ def add_parser(sub, parents) -> None:
         type=int,
         default=None,
         metavar="DAYS",
-        help="仅当目录超过 DAYS 天未更新时才同步（0 = 只在库为空时同步）；给定时任务用",
+        help="仅当目录超过 DAYS 天未更新时才同步（0 = 只在库为空时同步）",
     )
     p.add_argument("--source", default="mohurd", help="数据源 id")
-    p.set_defaults(func=run)
