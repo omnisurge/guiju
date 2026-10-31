@@ -150,6 +150,21 @@ def main() -> int:
             check("批量给出产出目录", bool(p.get("out_dir")), str(p.get("out_dir")))
             check("批量 ok 只排除严重失败（31 不算）", p.get("ok") is True)
 
+        # ---- 上海地标（独立源，不需要时效服务） ----
+        code, p, _ = guiju("pull", "--source", "shzjw", "DG/TJ08-2007", home=home, timeout=600)
+        check(
+            "上海地标可按编号下载（DG/TJ）",
+            code == 0 and p.get("magic") == "pdf" and (p.get("bytes") or 0) > 0,
+            detail_of(code, p) or f"{p.get('bytes')}B {p.get('code')}",
+        )
+        check(
+            "地标状态来自源站（现行/废止分栏）",
+            p.get("status") in ("current", "withdrawn"),
+            str(p.get("status")),
+        )
+        code, p2, _ = guiju("pull", "--source", "shzjw", "DG/TJ08-2007", home=home, timeout=600)
+        check("上海地标幂等返回 10", code == 10 and p2.get("already") is True, str(code))
+
         # ---- 本地路径：按公告ID取正文（不依赖时效服务） ----
         code, p, _ = guiju("search", "城市给水工程项目建设标准", home=home)
         ann_id = str((p.get("results") or [{}])[0].get("id", "") or "")

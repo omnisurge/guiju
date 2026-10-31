@@ -24,6 +24,7 @@
 想知道某编号是什么/是否现行？ → guiju which <编号> --json   （不需要预先索引）
    · 返回 currency[{code,status,name}] + announcement{id,...}
    · status: current/superseded/upcoming/withdrawn/unknown，unknown ≠ 现行
+   · currency_from_cache=true 表示时效服务不可达、用的是本地缓存：结论可用但可能已过时
 要正文文件吗？             → guiju pull <编号|规范名|公告ID|URL> --json
    · 断点续传：中断后重跑同一条命令会从 .partial 续下（Range 206），不必从头再来
 要一整批吗？               → guiju pull --list <文件|-> --json

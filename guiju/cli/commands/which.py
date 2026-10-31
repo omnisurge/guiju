@@ -19,7 +19,7 @@ from ..lookup import resolve
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
-    cur = currency_mod.CachedCurrency()
+    cur = currency_mod.CachedCurrency(store=store)
     records = cur.lookup(args.ref) if not args.offline else []
     source_name = cur.name
     if not records and not args.offline and localstatus.is_local_code(args.ref):
@@ -49,6 +49,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "ok": True,
         "query": args.ref,
         "currency_source": source_name,
+        "currency_from_cache": bool(getattr(cur, "from_cache", False)),
+        "currency_cache_age_days": getattr(cur, "cache_age_days", None),
         "currency": [r.as_payload() for r in records],
         "resolved": bool(target),
         "announcement": None
@@ -68,6 +70,11 @@ def run(store: Store, args: argparse.Namespace) -> int:
     if isinstance(error, AmbiguousTarget):
         payload["candidates"] = error.extra.get("candidates", [])
     render.emit(payload)
+    if payload["currency_from_cache"]:
+        render.note(
+            f"时效服务不可达，使用本地缓存（{payload['currency_cache_age_days']} 天前）："
+            "现行性可能已变化"
+        )
 
     if not render.is_json():
         status_cn = {

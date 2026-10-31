@@ -63,5 +63,24 @@ class DocConstraintTest(unittest.TestCase):
         self.assertIn(f"## {version}", changelog, f"CHANGELOG 缺少 {version} 条目")
 
 
+class CommandWiringTest(unittest.TestCase):
+    """每个子命令都必须绑好 func —— 否则 main() 会在运行时才炸（sync 曾漏过一次）。"""
+
+    def test_every_subcommand_binds_func(self):
+        import argparse
+
+        from guiju.cli import build_parser
+
+        parser = build_parser()
+        subs = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+        self.assertTrue(subs, "没有找到子命令解析器")
+        missing = [
+            name
+            for name, sub in subs[0].choices.items()
+            if sub.get_default("func") is None
+        ]
+        self.assertEqual(missing, [], f"这些子命令没绑 func：{missing}")
+
+
 if __name__ == "__main__":
     unittest.main()

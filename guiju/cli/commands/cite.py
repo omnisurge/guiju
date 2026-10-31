@@ -62,7 +62,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     )
 
     # 权威时效校验：宁可多一次查询，也不能引用一个已被替代的版本
-    status, current_hint, records = _check_currency(code_display, offline=args.offline)
+    status, current_hint, records = _check_currency(code_display, offline=args.offline, store=store)
     if status in ("superseded", "withdrawn"):
         warnings.append(
             f"该版本状态为 {status}"
@@ -99,7 +99,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     return 0
 
 
-def _check_currency(code_display: str | None, *, offline: bool):
+def _check_currency(code_display: str | None, *, offline: bool, store=None):
     """问权威时效服务：这个编号现在是什么状态。拿不到就返回 unknown，不阻断引用。"""
     from ... import currency as currency_mod
     from ...domain.codes import normalize_key
@@ -109,7 +109,7 @@ def _check_currency(code_display: str | None, *, offline: bool):
     records = []
     note = ""
     try:
-        records = currency_mod.CachedCurrency().lookup(code_display)
+        records = currency_mod.CachedCurrency(store=store).lookup(code_display)
     except SourceUnreachable:
         # 引用串本身来自本地归档，时效服务挂了只影响"是否现行"，不该整条失败
         note = "时效服务不可达：本引用未做现行性校验"

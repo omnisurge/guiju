@@ -231,14 +231,89 @@ def default_currency() -> Currency:
 
 
 class CachedCurrency:
-    """同一进程内缓存：一次命令不要为同一个编号问两次上游。"""
+    """两级缓存：进程内（同一次命令不问两次）+ 落库（下次命令、以及服务不可达时）。
 
-    def __init__(self, inner: Currency | None = None) -> None:
+    落库这一层解决一个真实问题：时效服务在私网里，断了以后"编号 → 名称"就没法回答，
+    但同一台机器上昨天刚查过的编号，没理由今天答不出来。缓存只存元数据，不存正文。
+    """
+
+    def __init__(self, inner: Currency | None = None, store: object | None = None) -> None:
         self.inner = inner or default_currency()
         self.name = self.inner.name
+        self.store = store
+        self.from_cache = False
+        self.cache_age_days: float | None = None
 
     def lookup(self, code: str) -> list[Record]:
         key = (self.name, code)
-        if key not in _cache:
-            _cache[key] = self.inner.lookup(code)
-        return _cache[key]
+        if key in _cache:
+            return _cache[key]
+        try:
+            records = self.inner.lookup(code)
+        except SourceUnreachable:
+            hit = self._load(code)
+            if hit is None:
+                raise
+            records, self.cache_age_days = hit
+            self.from_cache = True
+            _cache[key] = records
+            return records
+        if records:
+            self._save(code, records)
+        _cache[key] = records
+        return records
+
+    # ---- 落库缓存 ----
+    @staticmethod
+    def _key(code: str) -> str:
+        from .domain.codes import normalize_key
+
+        return normalize_key(code)
+
+    def _save(self, code: str, records: list[Record]) -> None:
+        if self.store is None:
+            return
+        import json
+
+        try:
+            self.store.cache_currency(  # type: ignore[attr-defined]
+                self._key(code), json.dumps([r.as_payload() for r in records], ensure_ascii=False)
+            )
+        except Exception:  # 缓存失败是可容忍的：不要让它毁掉一次正常查询
+            return
+
+    def _load(self, code: str) -> tuple[list[Record], float | None] | None:
+        if self.store is None:
+            return None
+        import json
+
+        try:
+            hit = self.store.cached_currency(self._key(code))  # type: ignore[attr-defined]
+        except Exception:
+            return None
+        if not hit:
+            return None
+        payload, fetched_at = hit
+        try:
+            rows = json.loads(payload)
+            records = [
+                Record(
+                    code=row.get("code", ""),
+                    status=row.get("status", "unknown"),
+                    name=row.get("name", ""),
+                    implement_date=row.get("implement_date", ""),
+                    source=row.get("source", ""),
+                    replaces=row.get("replaces", ""),
+                )
+                for row in rows
+            ]
+        except Exception:
+            return None
+        age = None
+        try:
+            from datetime import datetime
+
+            age = round((datetime.now() - datetime.strptime(fetched_at, "%Y-%m-%d %H:%M:%S")).total_seconds() / 86400, 2)
+        except ValueError:
+            pass
+        return records, age

@@ -61,3 +61,4 @@ def add_parser(sub, parents) -> None:
         help="仅当目录超过 DAYS 天未更新时才同步（0 = 只在库为空时同步）",
     )
     p.add_argument("--source", default="mohurd", help="数据源 id")
+    p.set_defaults(func=run)

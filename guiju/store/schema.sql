@@ -76,3 +76,10 @@ CREATE TABLE IF NOT EXISTS probe (
 );
 
 CREATE TABLE IF NOT EXISTS corpus_meta (k TEXT PRIMARY KEY, v TEXT);
+
+-- 时效查询缓存：服务不可达时仍能回答"这个编号是什么"（只存元数据，不存正文）
+CREATE TABLE IF NOT EXISTS currency_cache (
+    code_key   TEXT PRIMARY KEY,
+    payload    TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+);

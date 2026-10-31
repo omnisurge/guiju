@@ -43,6 +43,7 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
         self._migrate()
+        self._ensure_additions()
 
     # ---------------------------------------------------------------- schema
     def _migrate(self) -> None:
@@ -63,6 +64,32 @@ class Store:
         self.db.executescript(_SCHEMA_FILE.read_text(encoding="utf-8"))
         self.db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         self.db.commit()
+
+    def _ensure_additions(self) -> None:
+        """只做"加法"的结构变更：已有库升级到本版本时补表，绝不动已有数据。
+
+        为什么不上提 schema 版本：缓存表是完全可丢弃的派生数据，
+        把它算进版本迁移会让"版本对了但少张表"变成一类新故障。
+        """
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS currency_cache ("
+            "code_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at TEXT NOT NULL)"
+        )
+        self.db.commit()
+
+    def cache_currency(self, code_key: str, payload: str) -> None:
+        self.db.execute(
+            "INSERT INTO currency_cache(code_key,payload,fetched_at) VALUES(?,?,?) "
+            "ON CONFLICT(code_key) DO UPDATE SET payload=excluded.payload, fetched_at=excluded.fetched_at",
+            (code_key, payload, now()),
+        )
+        self.db.commit()
+
+    def cached_currency(self, code_key: str) -> tuple[str, str] | None:
+        row = self.db.execute(
+            "SELECT payload, fetched_at FROM currency_cache WHERE code_key=?", (code_key,)
+        ).fetchone()
+        return (row["payload"], row["fetched_at"]) if row else None
 
     def _has_tables(self) -> bool:
         row = self.db.execute(
