@@ -120,5 +120,102 @@ class PullApiModeTest(unittest.TestCase):
         self.assertEqual(len(payload["candidates"]), 2)
 
 
+class StatusDimensionTest(unittest.TestCase):
+    """站点自己分「现行/废止 × 标准/设计标准」，我们照抄，不猜。"""
+
+    def test_abolish_time_means_withdrawn(self):
+        rec = _record(
+            {
+                "standardNumber": "DG/TJ08-2021-2007",
+                "standardProjectName": "商品砌筑砂浆现场检测技术规程",
+                "releaseTime": "2007-01-01 00:00:00",
+                "abolishTime": "2026-01-01 00:00:00",
+                "standardFileId": "x",
+            }
+        )
+        self.assertEqual(rec["status"], "withdrawn")
+
+    def test_standard_type_1_is_design(self):
+        rec = _record(
+            {"standardNumber": "DBJT08-144-2026", "standardProjectName": "外墙内保温系统建筑构造",
+             "standardType": 1, "standardFileId": "y"}
+        )
+        self.assertEqual(rec["kind"], "design")
+
+    def test_find_prefers_current_over_withdrawn(self):
+        current = _record({"standardNumber": "DG/TJ08-1-2026", "standardProjectName": "甲",
+                           "standardFileId": "c"})
+        old = _record({"standardNumber": "DG/TJ08-1-1999", "standardProjectName": "甲",
+                       "abolishTime": "2026-01-01 00:00:00", "standardFileId": "o"})
+
+        def fake_search(ref, *, abolished=False, standard_type=0, page_size=30):
+            return [old] if abolished else [current]
+
+        with mock.patch.object(shzjw, "search", side_effect=fake_search):
+            hits = shzjw.find("甲")
+        self.assertEqual(hits[0]["status"], "current")
+
+    def test_find_falls_back_to_withdrawn(self):
+        old = _record({"standardNumber": "DG/TJ08-9-1999", "standardProjectName": "乙",
+                       "abolishTime": "2020-01-01 00:00:00", "standardFileId": "o"})
+
+        def fake_search(ref, *, abolished=False, standard_type=0, page_size=30):
+            return [old] if abolished else []
+
+        with mock.patch.object(shzjw, "search", side_effect=fake_search):
+            hits = shzjw.find("乙")
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["status"], "withdrawn")
+
+
+class LocalStatusTest(unittest.TestCase):
+    def test_recognises_local_codes(self):
+        from guiju import localstatus
+
+        for ref in ("DG/TJ08-2007", "DG/TJ 08-2007-2026", "DBJT08-144", "DB31/T 1010"):
+            self.assertTrue(localstatus.is_local_code(ref), ref)
+        for ref in ("GB 55037-2022", "JGJ/T450-2018", "建筑防火通用规范"):
+            self.assertFalse(localstatus.is_local_code(ref), ref)
+
+    def test_records_map_to_currency_shape(self):
+        from guiju import localstatus
+
+        hits = [
+            {"code": "DG/TJ08-2007-2026", "name": "地质灾害危险性评估技术标准",
+             "status": "current", "implement_on": "2027-02-01"},
+        ]
+        with mock.patch.object(localstatus.shzjw, "find", return_value=hits):
+            recs = localstatus.records("DG/TJ08-2007")
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0].status, "current")
+        self.assertEqual(recs[0].source, "shzjw")
+        self.assertEqual(recs[0].implement_date, "2027-02-01")
+
+
+class WhichFallbackTest(unittest.TestCase):
+    """时效服务没记录时，地方标准的现行性由源站回答（which 的 currency_source 可证）。"""
+
+    def test_which_uses_shzjw_when_currency_has_nothing(self):
+        from guiju import currency as currency_mod
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        buf = io.StringIO()
+        with (
+            mock.patch.dict("os.environ", {"GUIJU_NO_AUTO_SYNC": "1"}),
+            mock.patch.object(currency_mod.CachedCurrency, "lookup", return_value=[]),
+            mock.patch("guiju.localstatus.records",
+                       return_value=[currency_mod.Record(code="DG/TJ08-2007-2026", status="current",
+                                                        name="地质灾害危险性评估技术标准",
+                                                        source="shzjw")]),
+            redirect_stdout(buf),
+        ):
+            code = main(["which", "DG/TJ08-2007", "--db", str(Path(tmp.name) / "c.db"), "--json"])
+        payload = json.loads(buf.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["currency_source"], "shzjw")
+        self.assertEqual(payload["currency"][0]["status"], "current")
+
+
 if __name__ == "__main__":
     unittest.main()

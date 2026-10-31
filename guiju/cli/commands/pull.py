@@ -60,6 +60,11 @@ def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
         )
 
     rec = hits[0]
+    if rec["status"] == "withdrawn":
+        render.warn(
+            f"该版本在{source.display_name}已废止（{rec.get('abolish_on') or '时间未载明'}）；"
+            "正文仍归档，但引用前请确认现行版"
+        )
     code_key = normalize_key(rec["code"]) if rec["code"] else None
     if not rec.get("download_url"):
         raise BadAttachment(f"{rec['code'] or rec['name']} 在该源没有可下载的正文文件")
@@ -113,7 +118,7 @@ def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
         "bytes": nbytes,
         "magic": magic,
         "confidence": "parsed",
-        "status": "abolished" if rec.get("abolish_on") else "current",
+        "status": rec["status"],
         "published_on": rec["published_on"],
         "implement_on": rec.get("implement_on"),
         "availability": window.value,

@@ -65,10 +65,16 @@ def _record(row: dict) -> dict:
     implement = (row.get("implementationTime") or "")[:10]
     abolish = (row.get("abolishTime") or "")[:10]
     fid = row.get("standardFileId")
+    # 站点自己就分"现行 / 废止"与"标准 / 设计标准"，直接采用它的口径，
+    # 不用我们猜（abolishTime 为空 ≠ 现行，要看 isAbolish 那一栏）
+    abolished = bool(row.get("abolishTime")) or row.get("isAbolish") is True
+    is_design = row.get("standardType") == 1
     return {
         "code": code,
         "code_key": normalize_key(code) if code else None,
         "name": name,
+        "status": "withdrawn" if abolished else "current",
+        "kind": "design" if is_design else "standard",
         "published_on": published,
         "implement_on": implement,
         "abolish_on": abolish or None,
@@ -79,15 +85,21 @@ def _record(row: dict) -> dict:
     }
 
 
-def search(ref: str, *, page_size: int = 30) -> list[dict]:
-    """按编号或名称检索地方标准。返回归一化记录（可能多条，交由上层判歧义）。"""
+def search(
+    ref: str,
+    *,
+    page_size: int = 30,
+    abolished: bool = False,
+    standard_type: int = 0,
+) -> list[dict]:
+    """按编号或名称检索地方标准（单一分栏：现行/废止 × 标准/设计标准）。"""
     payload = compliance.post_json(
         f"{BASE}external/localStandard/list",
         {
             "pageNum": 1,
             "pageSize": page_size,
-            "isAbolish": False,
-            "standardType": 0,
+            "isAbolish": abolished,
+            "standardType": standard_type,
             "condition": ref,
             "publishStartDate": "",
             "publishEndDate": "",
@@ -100,17 +112,51 @@ def search(ref: str, *, page_size: int = 30) -> list[dict]:
     return [_record(row) for row in rows]
 
 
+def _design_first(ref: str) -> bool:
+    """图集/设计标准编号（DBJT…）先查 design 分栏，省一次请求。"""
+    return ref.strip().upper().replace(" ", "").startswith("DBJT")
+
+
 def find(ref: str) -> list[dict]:
-    """精确优先：编号完全相等 > 名称完全相等 > 其它（可能是模糊命中）。"""
-    hits = search(ref)
-    want_code = normalize_key(ref) if ref.strip() else ""
-    exact = [r for r in hits if r["code_key"] and r["code_key"] == want_code]
+    """定位一个地标：现行优先，找不到再查废止。
+
+    站点按「现行/废止 × 标准/设计标准」分四栏，四栏是四个独立查询；
+    常规命中只需 1–2 次请求，只有在现行栏完全没命中时才会查废止栏。
+    同一编号若两栏都有（旧版已废止），**一定保留现行那条**。
+    """
+    types = [1, 0] if _design_first(ref) else [0, 1]
+    hits: list[dict] = []
+    for stype in types:
+        hits.extend(search(ref, standard_type=stype))
+        if _exact(hits, ref):
+            break
+    if not _exact(hits, ref):
+        for stype in types:
+            hits.extend(search(ref, abolished=True, standard_type=stype))
+    return _rank(hits, ref)
+
+
+def _exact(hits: list[dict], ref: str) -> list[dict]:
+    want = normalize_key(ref.strip()) if ref.strip() else ""
+    by_code = [r for r in hits if want and r["code_key"] == want]
+    if by_code:
+        return by_code
+    return [r for r in hits if r["name"] == ref.strip()]
+
+
+def _rank(hits: list[dict], ref: str) -> list[dict]:
+    """现行优先 + 编号去重，再做精确 > 名称 > 其它 的三层筛选。"""
+    seen: dict[str, dict] = {}
+    for rec in hits:
+        key = rec["code_key"] or rec["name"]
+        old = seen.get(key)
+        if old is None or (old["status"] != "current" and rec["status"] == "current"):
+            seen[key] = rec
+    unique = list(seen.values())
+    exact = _exact(unique, ref)
     if exact:
-        return exact
-    exact_name = [r for r in hits if r["name"] == ref.strip()]
-    if exact_name:
-        return exact_name
-    return hits
+        return exact[:10]
+    return unique[:10]
 
 
 def download_to(file_url: str, part_path: str, referer: str = REFERER) -> tuple[int, str, int]:

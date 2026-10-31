@@ -32,6 +32,8 @@
 要上海地标（DG/TJ、DB31/T）吗？ → guiju pull --source shzjw <编号|名称> --json
    · 该源没有公告页，直接按 API 检索 + 下载；编号按站点原样（含年版，如 DG/TJ08-2007-2026）
    · 命中多条 → 32；没有 → 31；已归档 → 10
+   · 现行/废止由源站分栏决定（同一编号优先现行）；下载到废止版会带 status=withdrawn 并告警
+   · 地标的现行性不需要外部时效服务：which/cite 在服务无记录时回落到源站
 只要引用串吗？             → guiju cite <编号|公告ID|URL> [条款号] --json
 怀疑本地文件被改/丢失？     → guiju verify --json
 这个 PDF 哪来的？          → guiju provenance <路径> --json

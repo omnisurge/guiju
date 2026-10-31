@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 
+from ... import localstatus
 from ...domain.cite import build_citation, normalize_clause
-from ...errors import AmbiguousCode, BadUsage, NotIndexed, SourceUnreachable
+from ...errors import AmbiguousCode, BadUsage, GuijuError, NotIndexed, SourceUnreachable
 from ...store.sqlite import Store
 from .. import render
 from ..lookup import resolve
@@ -105,15 +106,24 @@ def _check_currency(code_display: str | None, *, offline: bool):
 
     if offline or not code_display:
         return "unknown", "", []
+    records = []
+    note = ""
     try:
         records = currency_mod.CachedCurrency().lookup(code_display)
     except SourceUnreachable:
         # 引用串本身来自本地归档，时效服务挂了只影响"是否现行"，不该整条失败
-        return "unknown", "时效服务不可达：本引用未做现行性校验", []
+        note = "时效服务不可达：本引用未做现行性校验"
+    if not records and localstatus.is_local_code(code_display):
+        # 地方标准：源站自己有现行/废止分栏，用它兜底
+        try:
+            records = localstatus.records(code_display)
+            note = ""
+        except GuijuError:
+            pass
     key = normalize_key(code_display)
     mine = next((r for r in records if normalize_key(r.code) == key), None)
     if mine is None:
-        return "unknown", "", records
+        return "unknown", note, records
     current = next((r.code for r in records if r.status == "current" and r.code != mine.code), "")
     return mine.status, current, records
 

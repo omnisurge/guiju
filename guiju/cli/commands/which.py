@@ -9,9 +9,10 @@ from __future__ import annotations
 import argparse
 
 from ... import currency as currency_mod
+from ... import localstatus
 from ...domain.availability import note as availability_note
 from ...domain.availability import state
-from ...errors import AmbiguousTarget, NotIndexed
+from ...errors import AmbiguousTarget, GuijuError, NotIndexed
 from ...store.sqlite import Store
 from .. import render
 from ..lookup import resolve
@@ -20,6 +21,14 @@ from ..lookup import resolve
 def run(store: Store, args: argparse.Namespace) -> int:
     cur = currency_mod.CachedCurrency()
     records = cur.lookup(args.ref) if not args.offline else []
+    source_name = cur.name
+    if not records and not args.offline and localstatus.is_local_code(args.ref):
+        # 地方标准：源站自己就有现行/废止结论，不必依赖外部时效服务
+        try:
+            records = localstatus.records(args.ref)
+            source_name = "shzjw"
+        except GuijuError:
+            records = []
 
     target = None
     error = None
@@ -39,7 +48,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     payload = {
         "ok": True,
         "query": args.ref,
-        "currency_source": cur.name,
+        "currency_source": source_name,
         "currency": [r.as_payload() for r in records],
         "resolved": bool(target),
         "announcement": None
