@@ -63,10 +63,24 @@ class DocConstraintTest(unittest.TestCase):
         self.assertIn(f"## {version}", changelog, f"CHANGELOG 缺少 {version} 条目")
 
 
-class NoStaleIndexAdviceTest(unittest.TestCase):
-    """ADR 0001 已废止 index 作为前置条件：任何用户可见文案都不许再推荐它。"""
+class IndexCommandRemovedTest(unittest.TestCase):
+    """ADR 0001 的 index 已彻底移除（v0.13.0）：既不暴露命令，也不残留推荐文案。"""
 
-    def test_hints_do_not_recommend_index(self):
+    def test_index_is_not_a_subcommand(self):
+        import argparse
+        from pathlib import Path as _P
+
+        from guiju.cli import build_parser
+
+        parser = build_parser()
+        subs = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+        self.assertNotIn("index", subs[0].choices)
+        self.assertFalse(
+            (_P(__file__).resolve().parent.parent / "guiju/cli/commands/index.py").exists(),
+            "index.py 应当已删除",
+        )
+
+    def test_no_text_recommends_index(self):
         import re
         from pathlib import Path as _P
 
@@ -75,9 +89,8 @@ class NoStaleIndexAdviceTest(unittest.TestCase):
         for path in root.rglob("*.py"):
             text = path.read_text(encoding="utf-8")
             for match in re.finditer(r"guiju index", text):
-                line = text[: match.start()].count("\n") + 1
-                offenders.append(f"{path.relative_to(root.parent)}:{line}")
-        self.assertEqual(offenders, [], f"仍有提示在推荐 guiju index：{offenders}")
+                offenders.append(f"{path.name}:{text[: match.start()].count(chr(10)) + 1}")
+        self.assertEqual(offenders, [], f"仍有文案在推荐 guiju index：{offenders}")
 
 
 class CommandWiringTest(unittest.TestCase):

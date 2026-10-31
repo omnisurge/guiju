@@ -152,7 +152,7 @@ stderr : 全部日志、进度、警告
                                      │ 只调用 application
                  ┌───────────────────▼──────────────────────┐
                  │ application/    用例编排（无正则、无 SQL）  │
-                 │   sync · index · pull · cite · verify     │
+                 │   sync · pull · cite · verify             │
                  │   provenance · resolve · status           │
                  └───────┬───────────────────────┬──────────┘
                          │                       │
@@ -187,9 +187,9 @@ guiju/
 ├── cli/
 │   ├── __init__.py        # build_parser / main
 │   ├── render.py          # JSON 与人读两种投影
-│   └── commands/          # 每命令一文件：sync.py index.py pull.py cite.py ...
+│   └── commands/          # 每命令一文件：sync.py pull.py cite.py ...
 ├── application/
-│   ├── sync.py  index.py  pull.py  cite.py  verify.py  provenance.py  resolve.py
+│   ├── sync.py  pull.py  cite.py  verify.py  provenance.py  resolve.py
 ├── domain/
 │   ├── codes.py           # 归一化 / 角色判定 / 新旧关系
 │   ├── cite.py            # 引用串（最需测试）
@@ -299,7 +299,7 @@ CREATE TABLE corpus_meta (k TEXT PRIMARY KEY, v TEXT);
 ```bash
 guiju sync [--pages N] [--page-size 100]        # 增量：遇 0 新增即停 + 尾部抽样比对
 guiju search <kw>...      [--level --status --limit --offline]
-guiju index [--match K] [--limit N] [--all]     # 详情页→编号（断点续跑）
+# guiju index 已于 v0.13.0 删除（ADR 0001）：编号解析在 pull/which 时顺带完成
 guiju show <ref>
 guiju pull <ref> [--out DIR] [--force]          # 幂等；默认 ~/.guiju/library/
 guiju cite <ref> [clause] [--strict]            # 核心价值点
@@ -321,7 +321,7 @@ guiju sources [--probe]                          # 新增：适配器健康与�
 ```
 目录条目 ──sync──► announcement (id, url, date, title, doc_name, category)
                         │
-                        ├─ index ──► mention(role,evidence) ──► edition(status)
+                        ├─ pull/which ──► mention(role,evidence) ──► edition(status)
                         │              └─ 无编号 → 保留 announcement（39% 的常态）
                         └─ pull  ──► artifact(verdict) ──► local file + sha256
                                         │
@@ -347,7 +347,7 @@ guiju sources [--probe]                          # 新增：适配器健康与�
 | 10 | 已存在且校验通过 | 跳过 |
 | 20 | 源不可达（网络/5xx/超时） | 稍后重试 |
 | 30 | 公告无附件 / 格式不符 | 换备源或报人工 |
-| 31 | 编号未索引 | 先 `index` |
+| 31 | 编号无法定位到公告 | 先 `sync`；仍无则说明无公开正文公告 |
 | **32** | 编号/公告**多候选或有歧义** | **必须让用户选**（不许猜） |
 | **33** | 附件多个且无法判定 | 报人工（附全部候选 label+url） |
 | 40 | 命中合规护栏 | **停止，不重试** |
@@ -362,7 +362,7 @@ guiju sources [--probe]                          # 新增：适配器健康与�
 | 阶段 | 交付 | 验收指标 |
 |---|---|---|
 | **M0 能站住**（1 周） | git/README/LICENSE；修 audit 缺陷 #1#2#3；schema v2 + 迁移；cli 拆分；`tests/` 三个纯逻辑测试 | 重定向越权单测通过；`pick_attachment` 对"英文版公告"返回 ambiguous 而非错文件；`cite` 矩阵 12 例全绿 |
-| **M1 能信目录**（1 周） | `sync` 全量 + 对账（`index` 已按 ADR 0001 撤销） | 目录 **3254/3254**（基线已测，33 页）；编号覆盖 ≥61%（实测基线） |
+| **M1 能信目录**（1 周） | `sync` 全量 + 对账（`index` 已按 ADR 0001 撤销，v0.13.0 删除命令本体） | 目录 **3254/3254**（基线已测，33 页）；编号覆盖 ≥61%（实测基线） |
 | **M2 能取正文**（已完成） | `pull`（单条 + `--list` 批量）+ `verify` + 内容寻址 | 2014+ 编号抽检 **0 垃圾文件**；任取一文件可 `provenance` 反查公告 URL；复跑全部命中已有（零请求） |
 | **M3 能扩展**（并入 ADR 0002 二期） | 上海 DG/TJ、四川消防两源 + 冲突仲裁（同版本多源：官方发布公告优先） | 同版本多源不重复入库（sha256 去重）；单源失效不影响其它源 |
 | **M4 能维护**（持续） | `probe` 台账 → 适配器健康度、页面指纹变更告警 | 站点改版后 24h 内能定位到失效 adapter 与失效正则 |
@@ -372,7 +372,7 @@ guiju sources [--probe]                          # 新增：适配器健康与�
 **实施进度（2026-10-30）**：M0 ✅；M1 ✅（目录对账 3254/3254，33 页 61 秒）；M2 ✅
 （单条/批量取正文、幂等复跑、弱网有界重试、编号定位两道闸）；端到端 36 项、单测 79 项全绿。
 
-**M1 的"全量 index"已被 ADR 0001 取代并撤销**：编号 → 名称改由权威时效源提供（`guiju/currency.py`），
+**M1 的"全量 index"已被 ADR 0001 取代并撤销**（v0.13.0 起命令本体也已删除）：编号 → 名称改由权威时效源提供（`guiju/currency.py`），
 名称 → 公告由本地三层召回检索完成，因此不再需要维护本地"公告 ⇄ 编号"映射。
 
 **M3 / `guiju mcp` 的归属已改**：`docs/adr/0002` 决定把 `spec-currency` 并入本产品（二期），

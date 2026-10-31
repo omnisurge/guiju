@@ -98,7 +98,6 @@ guiju status
 | `guiju sync` | 增量同步公告目录（遇 0 新增即停）；`--if-stale 7` 给定时任务，新则 0 请求秒退 | 是 |
 | `guiju search <关键词…>` | 本地检索公告（子串 + 模糊三层召回） | 否 |
 | `guiju which <编号\|名称>` | 权威时效 + 本地公告 + 有无正文（**推荐入口**） | 是* |
-| `guiju index` | **已废弃（ADR 0001）**：不再是任何命令的前置条件，待移除 | 是 |
 | `guiju show <ref>` | 名称/编号/角色/可得性/本地文件 | 否 |
 | `guiju pull <ref>` | 下载正文（流式落盘 + 断点续传），幂等，内容寻址归档 | 是 |
 | `guiju pull --list f.txt` | 按清单批量下载，汇总成功/已存在/未达成 | 是 |
@@ -128,7 +127,7 @@ guiju status
 `--json` 会返回 `mode`（`and`/`fuzzy`/`chars` 及其组合）与 `total`/`count`/`truncated`，
 每条结果带 `match`（`exact_name`/`prefix_name`/`contains_name`/`contains_code`/`fuzzy`）与 `score`。
 
-注意：**未 `index` 的条目没有编号**（`codes: []`）。名称检索不需要 index，按编号检索才需要。
+注意：**还没解析过编号的条目 `codes` 为空**——取一次正文（`guiju pull`）会顺带解析并落库。名称检索不依赖编号。
 
 ---
 
@@ -156,7 +155,7 @@ guiju status
 | 10 | 已存在且校验通过 | 跳过，别重复下载 |
 | 20 | 源不可达 | 稍后重试 |
 | 30 | 公告页没有正文附件 | 看 `hint`：pre_window 属正常事实，别重试 |
-| 31 | 编号未索引 | 先 `guiju index` |
+| 31 | 编号无法定位到公告 | 先 `guiju sync`；仍无则说明没有公开正文公告 |
 | 32 | 编号有歧义（新旧版本/多候选） | **让人选**，禁止按年份自行猜 |
 | 33 | 多个附件且无法判定 | **让人选**，禁止兜底取第一个 |
 | 40 | 命中合规护栏 | **停止**，不重试、不换路径 |

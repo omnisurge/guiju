@@ -173,19 +173,6 @@ class Store:
             for a in anns
         ]
 
-    def announcements_without_mention(self, match: str | None, limit: int) -> list[sqlite3.Row]:
-        sql = (
-            "SELECT * FROM announcement a WHERE "
-            "NOT EXISTS (SELECT 1 FROM scan s WHERE s.ann_id = a.id)"
-        )
-        params: list = []
-        if match:
-            sql += " AND (a.title LIKE ? OR a.doc_name LIKE ?)"
-            params += [f"%{match}%", f"%{match}%"]
-        sql += " ORDER BY a.published_on DESC LIMIT ?"
-        params.append(limit)
-        return self.db.execute(sql, params).fetchall()
-
     # ---------------------------------------------------------------- edition / mention
     def upsert_edition(self, key: str, display: str, title: str | None, confidence: str) -> None:
         self.db.execute(
