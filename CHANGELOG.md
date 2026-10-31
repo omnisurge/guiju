@@ -152,5 +152,5 @@ guiju which "JGJ 147-2004" → superseded
 
 - 拆分为 `cli/ commands/ domain/ store/ sources/` + `errors.py`（错误→退出码单一映射）
 - 新增 `README.md`、`AGENTS.md`、`LICENSE`、`.gitignore`
-- `data/标准公告全目录.csv` → `tests/fixtures/catalog-2026-10-30.csv`（黄金快照，线上零差异）
+- `data/标准公告全目录.csv` → `tests/fixtures/catalog-2026-10-30.csv`（黄金快照；0.7.2 已移除：没有任何测试读它，对账改由 e2e 断言）
 - 版本号单一来源：`guiju/_version.py` + `pyproject` 动态读取

@@ -21,17 +21,19 @@
 ## 一、现在怎么跑
 
 ```bash
-PY=/Users/user/.workbuddy/binaries/python/versions/3.13.12/bin/python3
-cd ~/Development/guiju
+cd <仓库根>                                      # 解释器用系统 python3（>=3.10）即可
 
-$PY -m unittest discover -s tests -t . -v     # 79 项，离线，零依赖
-$PY scripts/e2e.py                            # 36 项端到端（联网）
-$PY -m guiju status                            # 库状态 + 可得性口径
-$PY -m guiju sync                              # 首次全量 33 页 ≈ 60s
-$PY -m guiju index --match 防火 --limit 20      # 详情页 → 编号（可断点续跑）
-$PY -m guiju pull GB55037-2022 --json          # 幂等，已存在则退出 10
-$PY -m guiju cite GB55037-2022 5.2.1           # → 《…》GB 55037-2022 第5.2.1条
+python3 -m unittest discover -s tests -t . -v  # 85 项，离线，零依赖
+python3 scripts/ci.sh                           # 本地 CI（与 pre-push 同一套门，推荐）
+python3 scripts/e2e.py                          # 端到端验收（联网；有时效服务 38 项）
+
+python3 -m guiju status                         # 库状态 + 可得性口径
+python3 -m guiju sync                           # 首次全量 33 页 ≈ 60s
+python3 -m guiju pull 建筑防火通用规范 --json      # 按名称即可；幂等，已存在退出 10
+python3 -m guiju cite 建筑防火通用规范 5.2.1       # → 《建筑防火通用规范》第5.2.1条
 ```
+
+`index` 已降级为可选（ADR 0001），日常不需要跑。
 
 - 零第三方依赖（Python 3.10+ 标准库）；`pip install -e .` 后得到 `guiju` 与 `gj`
 - 数据默认 `~/.guiju/`（`catalog.db` + `library/`）；`GUIJU_HOME` 或 `--db` 覆盖
@@ -40,7 +42,7 @@ $PY -m guiju cite GB55037-2022 5.2.1           # → 《…》GB 55037-2022 第5
 ## 二、已验证的事实（别重复试，也别推翻）
 
 1. **诚实 UA 完全可用**：`guiju/<版本> (compliance-aware; official code fetcher)` 访问列表与详情均 200。**不要伪装浏览器**，这是合规底线。
-2. **目录全量 = 3254 条 / 33 页**（`pageSize=100`）。实测与 `tests/fixtures/catalog-2026-10-30.csv` 双向零差异。单页渲染上限 99 条**不丢数据** —— 旧文档"不要用 pageSize>20"的警告已作废。
+2. **目录全量 = 3254 条 / 33 页**（`pageSize=100`）。与线上对账由 `scripts/e2e.py` 断言（`db == 上游 count`），不再依赖快照文件。单页渲染上限 99 条**不丢数据** —— 旧文档"不要用 pageSize>20"的警告已作废。
 3. **列表接口**：`queryData` 必须正好六项，多传 `editType` 返回空；`pageNo` 必须塞进 `paramJson` 的 JSON 字符串；总数从 `count="3254"` 取。
 4. **条目 HTML**：日期在链接**之后**（`<span class="date-info">`），不是 `<li>` 的属性。
 5. **UA 必须纯 ASCII**（HTTP 头 latin-1），中文会 `UnicodeEncodeError`。

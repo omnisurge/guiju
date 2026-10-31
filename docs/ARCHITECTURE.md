@@ -205,7 +205,7 @@ guiju/
 │   └── __init__.py        # 白名单 + 限速 + 反爬放弃
 migrations/0001_init.sql
 tests/
-  fixtures/catalog-2026-10-30.csv
+  fixtures/catalog-page-1.html      # 列表页解析的离线夹具（唯一的测试固件）
   test_cite.py  test_codes.py  test_guard.py  test_parse_catalog.py
 ```
 
