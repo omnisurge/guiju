@@ -25,6 +25,21 @@ _CJK = re.compile(r"[\u4e00-\u9fff]")
 _CODEISH = re.compile(r"^[A-Za-z]")
 _DECISIVE_ROLES = ("primary", "target_of_revision")
 
+#: 候选里要写清"这条来自哪个源"：同名标准跨源存在（实测上海与国标有 19–20 条同名），
+#: 只给 ann_id 人能选，但看不出是住建部公告还是上海地标。
+_SOURCE_HOSTS = (
+    ("bzjg.zjw.sh.gov.cn", "shzjw", "上海"),
+    ("mohurd.gov.cn", "mohurd", "住建部"),
+)
+
+
+def source_of(url: str) -> dict:
+    host = (url or "").split("//")[-1].split("/")[0].lower()
+    for needle, sid, label in _SOURCE_HOSTS:
+        if needle in host:
+            return {"id": sid, "label": label}
+    return {"id": "unknown", "label": "未知源"}
+
 
 def resolve(
     store: Store,
@@ -90,6 +105,8 @@ def _by_name(store: Store, ref: str) -> dict:
                     "name": h.entry["name"],
                     "published_on": h.entry["published_on"],
                     "codes": h.entry["codes"],
+                    "source": source_of(h.entry["url"]),
+                    "url": h.entry["url"],
                     "match": h.match,
                 }
                 for h in decisive[:10]
@@ -197,6 +214,8 @@ def _by_code(
                     "name": h.entry["name"],
                     "published_on": h.entry["published_on"],
                     "codes": h.entry["codes"],
+                    "source": source_of(h.entry["url"]),
+                    "url": h.entry["url"],
                 }
                 for h in hits[:10]
             ],

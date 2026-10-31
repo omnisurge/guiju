@@ -141,5 +141,21 @@ class RoleAndVerificationTest(unittest.TestCase):
             resolve(self.store, "X-9", cur, fetch_detail=lambda url: "编号为GB 50099-2011")
 
 
+class SourceLabelTest(unittest.TestCase):
+    """候选里必须能看出这条来自哪个源（同名跨源是真实情况）。"""
+
+    def test_source_of(self):
+        from guiju.cli.lookup import source_of
+
+        self.assertEqual(
+            source_of("https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2024/art_1.html")["id"], "mohurd"
+        )
+        self.assertEqual(
+            source_of("https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWeb/pc/#/standardQuery?keyword=x")["id"],
+            "shzjw",
+        )
+        self.assertEqual(source_of("")["id"], "unknown")
+
+
 if __name__ == "__main__":
     unittest.main()
