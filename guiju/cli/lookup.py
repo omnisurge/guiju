@@ -59,7 +59,9 @@ def resolve(
     if ref.isdigit():
         return _by_id(store, int(ref))
     if _CJK.search(ref) and not _CODEISH.match(ref):
-        return _by_name(store, ref)
+        return _by_name(
+            store, ref, currency, allow_network=allow_network, fetch_detail=fetch_detail
+        )
     return _by_code(store, ref, currency, allow_network=allow_network, fetch_detail=fetch_detail)
 
 
@@ -87,7 +89,14 @@ def _by_id(store: Store, ann_id: int) -> dict:
     return _wrap(row, via="ann_id")
 
 
-def _by_name(store: Store, ref: str) -> dict:
+def _by_name(
+    store: Store,
+    ref: str,
+    currency: currency_mod.Currency | None = None,
+    *,
+    allow_network: bool = True,
+    fetch_detail=None,
+) -> dict:
     hits, mode = rank(store.catalog_entries(), tokens_of(ref))
     if not hits:
         raise NotIndexed(
@@ -97,6 +106,12 @@ def _by_name(store: Store, ref: str) -> dict:
     ids = {h.entry["id"] for h in hits}
     decisive = [h for h in hits if not h.entry["codes"] or True]  # 名称检索不依赖编号
     if len(ids) > 1:
+        # 同一个名字命中多条公告，绝大多数情况是**同一本标准的版本迭代**
+        # （实测《绿色建筑评价标准》2024/2019/2014/2006 各发过一次公告）。
+        # 这种情况不该把人叫来选，而是按时效服务的现行性直接定版。
+        picked = _pick_current_version(store, hits, currency, allow_network=allow_network)
+        if picked is not None:
+            return picked
         raise AmbiguousTarget(
             f"「{ref}」命中 {len(ids)} 条公告",
             candidates=[
@@ -117,6 +132,101 @@ def _by_name(store: Store, ref: str) -> dict:
     row = store.get_ann(int(best.entry["id"]))
     result = _wrap(row, via="name")
     result["match"] = best.match
+    return result
+
+
+def _pick_current_version(
+    store: Store,
+    hits: list,
+    currency: currency_mod.Currency | None,
+    *,
+    allow_network: bool = True,
+) -> dict | None:
+    """同名多条公告时，用权威时效定版；定不出唯一结论就返回 None（交回人）。
+
+    "版本迭代不是歧义"——实测《绿色建筑评价标准》有 4 条公告：
+      2024-07-11（局部修订）、2019-05-30（发布）、2014、2006
+    正文编号分别解析为 GB/T 50378-2019 / 2019 / 2014 / 无编号。
+    正确做法：先由时效服务确定**现行编号**，再在同一编号的多条公告里取**最新那条**
+    （局部修订公告比原发布公告新，正文也更全）。这就是 spec-currency 存在的理由。
+    """
+    from ..domain.codes import classify, normalize_key
+    from ..sources import registry
+    from ..store.sqlite import persist_codes
+
+    exact = [h for h in hits if h.match == "exact_name"][: _VERIFY_MAX]
+    if len(exact) < 2:
+        return None
+    if currency is None:
+        currency = currency_mod.CachedCurrency()
+
+    versions: list[dict] = []
+    for hit in exact:
+        ann = store.get_ann(int(hit.entry["id"]))
+        if ann is None:
+            continue
+        code_key = None
+        has_attachment = None
+        cached = [m for m in store.mentions_for(int(ann["id"])) if m["role"] in _DECISIVE_ROLES]
+        if cached:
+            code_key = cached[0]["code_key"]
+        elif allow_network:
+            try:
+                source = registry()["mohurd"]
+                html, text = source.detail(ann["url"])
+                has_attachment = bool(source.attachments(html))
+            except Exception:
+                continue
+            codes = classify(text, ann["doc_name"] or "")
+            persist_codes(store, int(ann["id"]), codes, ann["doc_name"] or "")
+            code_key = codes.primary_key
+        if not code_key:
+            continue
+        versions.append(
+            {
+                "ann_id": int(ann["id"]),
+                "published_on": ann["published_on"],
+                "code_key": normalize_key(code_key),
+                "name": ann["doc_name"],
+                "has_attachment": has_attachment,
+            }
+        )
+    if len(versions) < 2:
+        return None
+
+    try:
+        for v in versions:
+            records = currency.lookup(v["code_key"])
+            mine = next((r for r in records if normalize_key(r.code) == v["code_key"]), None)
+            v["status"] = mine.status if mine else "unknown"
+            v["code_display"] = mine.code if mine else v["code_key"]
+    except Exception:
+        return None
+
+    current = [v for v in versions if v["status"] == "current"]
+    if not current:
+        return None
+    # 同一现行编号可能有多条公告（原发布 + 局部修订）：取最新一条有附件的
+    with_file = [v for v in current if v["has_attachment"]]
+    win = max(with_file or current, key=lambda v: v["published_on"])
+    result = _wrap(store.get_ann(win["ann_id"]), via="name_current_version")
+    result.update(
+        code_key=win["code_key"],
+        code_display=win["code_display"],
+        confidence="parsed",
+        status=win["status"],
+        versions=[
+            {
+                "ann_id": v["ann_id"],
+                "code": v["code_display"],
+                "published_on": v["published_on"],
+                "status": v["status"],
+                "has_attachment": v["has_attachment"],
+                "chosen": v["ann_id"] == win["ann_id"],
+            }
+            for v in sorted(versions, key=lambda x: x["published_on"], reverse=True)
+        ],
+    )
     return result
 
 

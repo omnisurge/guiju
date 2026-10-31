@@ -133,6 +133,16 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
         return _pull_api(store, args, ref, source, out_dir)
 
     target = resolve(store, ref)
+    if target.get("versions"):
+        picked = next(
+            (v for v in target["versions"] if v["ann_id"] == int(target["ann"]["id"])), None
+        )
+        others = [v for v in target["versions"] if v["ann_id"] != int(target["ann"]["id"])]
+        if picked:
+            render.note(
+                f"同名 {len(target['versions'])} 版，按时效选中 {picked['code']}"
+                f"（{picked['published_on']}）；历史版本 {len(others)} 个"
+            )
     ann = target["ann"]
     ann_id = int(ann["id"])
 

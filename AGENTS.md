@@ -26,6 +26,8 @@
    · status: current/superseded/upcoming/withdrawn/unknown，unknown ≠ 现行
    · currency_from_cache=true 表示时效服务不可达、用的是本地缓存：结论可用但可能已过时
 要正文文件吗？             → guiju pull <编号|规范名|公告ID|URL> --json
+   · 按名称命中多条时：同名多版本会按时效自动定版（如《绿色建筑评价标准》4 条公告 → 取现行的最新那条），
+     结果里 versions 列出全部版本与选中项；只有定不出唯一现行版才返回 32 让你叫人
    · 断点续传：中断后重跑同一条命令会从 .partial 续下（Range 206），不必从头再来
 要一整批吗？               → guiju pull --list <文件|-> --json
    · 清单每行一个 ref，# 注释与行尾注释都支持
@@ -57,7 +59,7 @@
 | 20 | `unreachable` | 退避后重试一次；仍失败就报告"源不可达" |
 | 30 | `no_attachment` / `bad_attachment` | 读 `hint` 与 `availability`；若是 `pre_window`，这是**正常事实**，不要重试，直接向用户说明 |
 | 31 | `not_indexed` | 名称检索无命中，或时效服务也给不出名称 → 先 `guiju sync`；仍无则说明该标准没有公开正文公告（**不要重试**，先 `guiju which` 确认） |
-| 32 | `ambiguous_code` | **停下来**，把 `candidates` 原样交给人选。禁止按年份/字母序自行判断哪个是现行版 |
+| 32 | `ambiguous_code` | **停下来**，把 `candidates` 原样交给人选。禁止按年份/字母序自行判断哪个是现行版（同名多版本工具已自动定版，走到这里说明它定不出来） |
 | 33 | `ambiguous_attachment` | **停下来**，把 `candidates`（label + url）交给人选。禁止兜底取第一个 |
 | 40 | `compliance` | **立即停止**。不重试、不换 UA、不换代理、不找镜像绕过 |
 | 50 | `needs_human` | 上报维护者（多半是站点改版，修 `guiju/sources/mohurd.py`） |

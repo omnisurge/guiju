@@ -207,6 +207,14 @@ def main() -> int:
               (p.get("cite") or "")[:44])
 
         if cur_ok:
+            # 同名多公告 = 版本迭代（2024 局部修订 / 2019 发布 / 2014 / 2006）：
+            # 必须按权威时效自动定版，而不是把人叫来从 4 个同名候选里挑
+            code, p, _ = guiju("pull", "绿色建筑评价标准", home=home, timeout=900)
+            check(
+                "同名多版本 → 按时效自动定版（不返回 32）",
+                code in (0, 10) and p.get("code") == "GB/T 50378-2019" and p.get("status") == "current",
+                f"{p.get('code')} / {p.get('published_on')}",
+            )
             code, p, _ = guiju("cite", "JGJ/T450-2018", "5.2.1", home=home, timeout=240)
             check("cite 按编号", code == 0 and "第5.2.1条" in (p.get("cite") or ""), (p.get("cite") or "")[:40])
             code, p, _ = guiju("cite", "JGJ 147-2004", "1.0.1", "--strict", home=home, timeout=240)
@@ -217,8 +225,13 @@ def main() -> int:
 
         # ---- 诚实歧义与退出码契约（纯本地） ----
         code, p, _ = guiju("pull", "老年人照料设施建筑设计标准", home=home, timeout=240)
-        check("同名多公告 → 32 + candidates", code == 32 and len(p.get("candidates") or []) >= 2,
-              f"exit={code} candidates={len(p.get('candidates') or [])}")
+        if cur_ok:
+            # v0.14.0 起同名多公告会按时效自动定版；32 只留给"定不出唯一现行版"的情况
+            check("同名多公告 → 按时效定版（不再默认 32）",
+                  code in (0, 10) and bool(p.get("code")), f"exit={code} code={p.get('code')}")
+        else:
+            check("无时效服务时同名多公告仍 32（交人）",
+                  code == 32 and len(p.get("candidates") or []) >= 2, f"exit={code}")
 
         code, p, _ = guiju("provenance", "/tmp/definitely-missing.pdf", home=home)
         check("缺文件 → 30", code == 30, p.get("reason", ""))
