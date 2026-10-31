@@ -25,6 +25,23 @@
 3. **逃生开关**：命令级 `--offline`、环境变量 `GUIJU_NO_AUTO_SYNC=1` 都不触发刷新
    （CI / 离线测试 / 只读环境用）。
 
+## 反馈契约（不许静默）
+
+刷新的每一种结果都必须能被 agent 读到，**不能只写 stderr**。实现方式：`cli/main.py` 把
+`autosync.evaluate()` 的快照交给 `render.set_catalog()`，`render.emit()` 统一注入到每份
+JSON 结果的 `catalog` 字段（命令无需各自处理，也不会漏）。
+
+| state | 触发条件 | 给 agent 的信息 |
+|---|---|---|
+| `fresh` | 目录非空且 ≤7 天 | 无需动作 |
+| `refreshed` | 本次刷新成功 | `new`=新增条数；结果基于**新**目录 |
+| `refreshing` | 别的进程持锁 | `retry_after_seconds=30`，"建议 30 秒后重试" |
+| `refresh_failed` | 刷新抛错 / 冷却期 | `retry_after_seconds`（3600 或剩余秒数），结果基于旧目录 |
+| `stale` | 离线 / `GUIJU_NO_AUTO_SYNC=1` / 该命令不触发 | 明确说明"结果可能不含最新公告" |
+
+**为什么不含糊**：agent 的典型判断是"这本书不存在"（31）。目录旧时这条结论可能是错的，
+必须让它能区分"真没有"和"我只是数据旧"。
+
 ## 代价与边界
 
 | 项 | 数值 |

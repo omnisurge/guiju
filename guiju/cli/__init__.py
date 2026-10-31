@@ -96,15 +96,17 @@ def main(argv: list[str] | None = None) -> int:
         if not getattr(args, "cmd", False):
             parser.print_help()
             return EXIT_OK
-        # 进程内目录保鲜：过期就顺手增量刷新，不依赖设备级定时任务（见 ADR 0003）
-        note = autosync.maybe_refresh(
+        # 进程内目录保鲜：过期就顺手增量刷新，不依赖设备级定时任务（见 ADR 0003）。
+        # 刷新状态会注入到每份 JSON 结果，agent 不必猜"结果是不是旧的"。
+        catalog = autosync.evaluate(
             store,
             command=args.cmd,
             offline=bool(getattr(args, "offline", False)),
             notify=render.note,
         )
-        if note:
-            render.note(note)
+        render.set_catalog(catalog)
+        if catalog.get("message"):
+            render.note(catalog["message"])
         return int(args.func(store, args))
     except GuijuError as exc:
         return _fail(exc)

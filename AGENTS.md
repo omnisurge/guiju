@@ -66,6 +66,26 @@
 | `20` + 错误里带 URL/HTTP | 政府站点不可达 | 退避后重试一次 |
 | `31` | 服务是通的，但确实没有这个编号 / 名称检索无命中 | 先 `sync`；仍无则说明没有公开正文公告，别反复重试 |
 
+### 目录刷新会明确告诉你（不会静默）
+
+任何 `--json` 结果都带一个 `catalog` 字段：
+
+```jsonc
+"catalog": {"state":"fresh","age_days":0.01,"synced_at":"2026-10-31 10:10:27",
+            "announcements":3254,"new":null,"retry_after_seconds":null,"message":""}
+```
+
+| state | 含义 | 你做什么 |
+|---|---|---|
+| `fresh` | 目录是新的，本次没有刷新 | 无需动作 |
+| `refreshed` | **刚刚自动刷新过**（`new`=新增条数） | 结果基于新目录，可直接用 |
+| `refreshing` | 另一个进程正在刷新 | 结果基于旧目录；等 `retry_after_seconds`（30s）后重试 |
+| `refresh_failed` | 刷新失败或冷却中 | 结果基于旧目录；`retry_after_seconds` 后自动再试，也可 `guiju sync` |
+| `stale` | 过期但没刷新（离线 / 已禁用 / 该命令不触发） | 结果可能不含最新公告，下结论前先补同步 |
+
+**重要**：当 `state` 是 `stale` / `refresh_failed` / `refreshing` 时，
+"某本规范没有正文/没收录"这类否定结论都可能是**目录旧**造成的，先补同步再报告用户。
+
 ### cite 的额外请求与 confidence
 
 - 按**编号**引用：时效服务 1 次，无额外抓取。

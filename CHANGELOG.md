@@ -1,5 +1,15 @@
 # 变更记录
 
+## 0.8.1 — 2026-10-31（刷新不许静默：catalog 状态进 JSON）
+
+- **每份 `--json` 结果都带 `catalog` 字段**：`state`（fresh / refreshed / refreshing /
+  refresh_failed / stale）、`age_days`、`announcements`、`new`、`retry_after_seconds`、`message`。
+  由 `render.emit()` 统一注入，任何命令都不会漏。
+- **锁被占用时明确要求重试**：`state=refreshing` + `retry_after_seconds=30`，
+  而不是悄悄用旧目录给出否定结论。
+- 刷新失败进入冷却时同样如实上报剩余秒数。
+- 修：目录非空但从未记录 `synced_at` 时的格式化崩溃（`None` 格式化）。
+
 ## 0.8.0 — 2026-10-31（目录不再需要任何人照料：进程内自保鲜）
 
 - **目录自保鲜**：`search` / `which` / `pull` / `cite` 执行前若目录为空或 >7 天，

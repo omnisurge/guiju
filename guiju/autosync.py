@@ -28,15 +28,7 @@ AUTO_SYNC_COMMANDS = frozenset({"search", "which", "pull", "cite"})
 Notify = Callable[[str], None]
 
 
-def _cooldown_active(store: Store) -> bool:
-    raw = store.get_meta("auto_sync_failed_at")
-    if not raw:
-        return False
-    try:
-        last = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return False
-    return (datetime.now() - last).total_seconds() < RETRY_AFTER_SECONDS
+
 
 
 @contextlib.contextmanager
@@ -64,33 +56,98 @@ def _try_lock(store: Store):
         fh.close()
 
 
-def maybe_refresh(
+def _cooldown_left(store: Store) -> int:
+    raw = store.get_meta("auto_sync_failed_at")
+    if not raw:
+        return 0
+    try:
+        last = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return 0
+    left = RETRY_AFTER_SECONDS - (datetime.now() - last).total_seconds()
+    return max(0, int(left))
+
+
+def _snap(
+    store: Store,
+    *,
+    state: str,
+    message: str = "",
+    new: int | None = None,
+    retry_after_seconds: int | None = None,
+) -> dict:
+    age = store.catalog_age_days()
+    return {
+        "state": state,
+        "message": message,
+        "age_days": None if age is None else round(age, 2),
+        "synced_at": store.get_meta("synced_at") or None,
+        "announcements": store.count_announcements(),
+        "new": new,
+        "retry_after_seconds": retry_after_seconds,
+    }
+
+
+def evaluate(
     store: Store,
     *,
     command: str,
     offline: bool = False,
     notify: Notify | None = None,
-) -> str | None:
-    """需要在命令执行前刷新就刷新。返回一句给人看的说明（或 None）。"""
-    if offline or os.environ.get("GUIJU_NO_AUTO_SYNC") == "1":
-        return None
-    if command not in AUTO_SYNC_COMMANDS:
-        return None
+) -> dict:
+    """判断目录是否需要刷新，需要就刷。
 
+    返回值会**注入到每份 JSON 结果**（见 `render.set_catalog`），所以 agent 永远能知道：
+    这次结果基于哪个时点的目录、有没有在刷新、失败后多久可以再试。
+    状态：fresh / refreshed / refreshing / refresh_failed / stale。
+    """
     age = store.catalog_age_days()
     empty = store.count_announcements() == 0
-    if not empty and age is not None and age <= MAX_AGE_DAYS:
-        return None
-    if _cooldown_active(store):
-        return None
+    needs = empty or age is None or age > MAX_AGE_DAYS
+
+    if not needs:
+        return _snap(store, state="fresh")
+
+    if offline or os.environ.get("GUIJU_NO_AUTO_SYNC") == "1" or command not in AUTO_SYNC_COMMANDS:
+        if offline:
+            why = "离线模式"
+        elif os.environ.get("GUIJU_NO_AUTO_SYNC") == "1":
+            why = "自动刷新已禁用（GUIJU_NO_AUTO_SYNC=1）"
+        else:
+            why = "该命令不触发表更新"
+        if empty:
+            what = "目录为空"
+        elif age is None:
+            what = "目录从未记录同步时间"
+        else:
+            what = f"目录已 {age:.1f} 天未更新"
+        return _snap(
+            store,
+            state="stale",
+            message=f"{why}；{what}，本次结果可能不含最新公告（需要时跑 guiju sync）",
+        )
+
+    left = _cooldown_left(store)
+    if left > 0:
+        return _snap(
+            store,
+            state="refresh_failed",
+            message="上次目录刷新失败，冷却中；本次结果基于现有目录",
+            retry_after_seconds=left,
+        )
 
     with _try_lock(store) as locked:
         if not locked:
-            return "另一个进程正在同步目录，本次使用现有目录继续"
+            return _snap(
+                store,
+                state="refreshing",
+                message="另一个进程正在更新目录；本次结果基于现有目录，建议 30 秒后重试",
+                retry_after_seconds=30,
+            )
         # 等锁期间别人可能已经同步好了 —— 复查一次再决定要不要花请求
         age = store.catalog_age_days()
         if store.count_announcements() and age is not None and age <= MAX_AGE_DAYS:
-            return None
+            return _snap(store, state="fresh")
 
         from .syncengine import crawl
 
@@ -104,7 +161,20 @@ def maybe_refresh(
         except Exception as exc:
             store.set_meta("auto_sync_failed_at", now())
             store.commit()
-            return f"目录刷新失败（{type(exc).__name__}），按现有目录继续；{RETRY_AFTER_SECONDS // 60} 分钟内不再重试"
+            return _snap(
+                store,
+                state="refresh_failed",
+                message=(
+                    f"目录刷新失败（{type(exc).__name__}）；本次结果基于现有目录，"
+                    f"{RETRY_AFTER_SECONDS // 60} 分钟后会自动再试"
+                ),
+                retry_after_seconds=RETRY_AFTER_SECONDS,
+            )
         store.set_meta("auto_sync_failed_at", "")
         store.commit()
-        return f"目录已更新：新增 {result['new']} 条（库中 {result['total_in_db']} 条）"
+        return _snap(
+            store,
+            state="refreshed",
+            message=f"目录已更新（新增 {result['new']} 条），本次结果基于新目录",
+            new=result["new"],
+        )

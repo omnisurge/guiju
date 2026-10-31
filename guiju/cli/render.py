@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import sys
 
-_state = {"json": False, "quiet": False}
+_state = {"json": False, "quiet": False, "catalog": None}
 
 
 def configure(*, as_json: bool, quiet: bool) -> None:
@@ -20,10 +20,22 @@ def is_json() -> bool:
     return bool(_state["json"])
 
 
+def set_catalog(snapshot: dict | None) -> None:
+    """登记本次调用看到的目录状态，由 emit 统一注入，避免各命令各写一套。"""
+    _state["catalog"] = snapshot
+
+
 def emit(payload: object) -> None:
-    """结构化结果：只在 --json 时输出到 stdout。"""
-    if _state["json"]:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    """结构化结果：只在 --json 时输出到 stdout。
+
+    `catalog` 是**统一注入**的：任何 JSON 结果都带目录新鲜度，
+    agent 不必为了"结果是不是旧的"再单独问一次。
+    """
+    if not _state["json"]:
+        return
+    if isinstance(payload, dict) and "catalog" not in payload and _state["catalog"]:
+        payload = {**payload, "catalog": _state["catalog"]}
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def out(text: str) -> None:
