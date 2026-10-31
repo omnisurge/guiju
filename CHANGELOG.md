@@ -1,5 +1,16 @@
 # 变更记录
 
+## 0.14.3 — 2026-10-31（cmd 适配器实测收尾：ADR 0001 的三条路径全部验证）
+
+- 不需要 NAS：`spec-currency` 源码在本机（`~/Development/spec-currency`，Go），
+  `go build -o /tmp/spec-currency ./cmd/spec-currency` 后即可验证 `cmd` 适配器。
+- 实测结果：`currency_source: cmd`、`currency_endpoint` 指向该二进制、
+  `GB 55037-2022 → current · 建筑防火通用规范`（与 mcp 完全一致）；
+  地标 `DG/TJ08-2007 → current · 地质灾害危险性评估技术标准 · source=shzjw`，
+  与 guiju 自建上海源结论一致（同一上游，两套实现互证）。
+- 顺带确认默认优先级：PATH 上有 `spec-currency` 时不设环境变量也会优先用 `cmd`（符合 ADR 0001）。
+- 文档：ADR 0001「后续变化」把"cmd 未实测"改为已实测并附命令；验收记录同步。
+
 ## 0.14.2 — 2026-10-31（GUIJU_CURRENCY_URL 曾被静默丢弃）
 
 - **修掉第二处静默不生效**：`GUIJU_CURRENCY=mcp` 时，`GUIJU_CURRENCY_URL` 会被**直接忽略**，

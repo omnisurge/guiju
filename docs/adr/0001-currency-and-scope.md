@@ -117,7 +117,7 @@ GB 55037-2022   current   建筑防火通用规范   2023-06-01   csres
 | 提示文案清理（v0.12.1） | 代码里不再有任何文案推荐 `guiju index`；新增守卫测试防回潮 |
 | **`pull` "不额外查询"有了一处有意放宽（v0.14.0）** | 按**名称**定位且命中多版本时，会逐条抓详情页解析编号再问时效定版（最多 6 页）。这是"版本迭代不是歧义"的必要代价；解析结果落库，第二次起 0 请求。**按编号的路径仍是 1 次查询**，本决策的主体未变。 |
 | **显式配置不再静默替换（v0.14.1）** | 原先 `GUIJU_CURRENCY=cmd` 而机器没装 `spec-currency` 时，会悄悄退到 mcp。现在显式取值要么照办、要么 `exit 20` 说明原因（`currency_source: cmd(缺失)`）。 |
-| **`CommandCurrency` 未在本机实测** | 本机没有 `spec-currency` 二进制，三适配器里 mcp 与 off 已实测，cmd 只做到"代码就绪 + 单测覆盖"。要让这条结论成立，需在装有该二进制的机器上跑一次 `GUIJU_CURRENCY=cmd guiju which GB55037-2022`。 |
+| **`CommandCurrency` 已实测（2026-10-31，本机）** | 不需要 NAS：`spec-currency` 源码就在本机 `~/Development/spec-currency`（Go），`go build -o /tmp/spec-currency ./cmd/spec-currency` 即可。实测三条：<br>① `GUIJU_CURRENCY=cmd:/tmp/spec-currency guiju which GB55037-2022` → `currency_source: cmd` / `currency_endpoint: /tmp/spec-currency` / `current · 建筑防火通用规范 · 2023-06-01`（与 mcp 结果一致）；<br>② 二进制在 PATH 上时，裸 `GUIJU_CURRENCY=cmd` 也能自动探测；<br>③ 地标交叉验证：`which DG/TJ08-2007` 走 cmd → `DG/TJ08-2007-2026 · current · 地质灾害危险性评估技术标准 · source=shzjw`，与 guiju 自建上海源结论一致。<br>结论：三适配器（cmd / mcp / off）**全部实测可用**。 |
 | **`index` 命令已删除（v0.13.0）** | 本 ADR 原决策是"降级保留为可选预热"。v0.12.0 之后它已无独特用途（时效缓存 + 地标源 + `pull` 顺带解析各自覆盖），所有者于 2026-10-31 决定**删除**：命令文件、帮助与所有推荐文案一并移除，`scan` 表保留（`persist_codes` 仍在写"已解析"标记，删表要升 schema 版本，代价不值） |
 
 ## 风险与缓解
