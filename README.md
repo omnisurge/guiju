@@ -51,6 +51,8 @@ guiju --version
 gj --version                     # 等价别名
 ```
 
+> v1.0.0 发布包与完整自部署步骤：[INSTALL.md](INSTALL.md)
+
 数据默认放 `~/.guiju/`（目录库 `catalog.db` + 正文 `library/`）。用 `GUIJU_HOME` 或 `--db` 覆盖。
 
 > 若在受限沙箱里运行，`~/.guiju` 可能被安全策略拦（报 `disk I/O error`），

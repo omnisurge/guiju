@@ -10,13 +10,14 @@
 - 端口：18083（hk 的 18082 已被 kb-v2-server 占用）
 - 端点：POST /mcp，健康检查 GET /health
 - 后端：NativeCurrency，缓存目录 /var/lib/guiju/currency-cache
-- 首次部署已从官方 csres 原始页面（经 ctyun 出口）预热 GB/JGJ/CJJ 共 28 个编号的原生缓存；
+- 首次部署预热 GB/JGJ/CJJ 共 28 个编号：其中 25 个从官方 csres 原始页面（经 ctyun 出口）生成，3 个使用旧服务当日缓存记录；
   使用产品自己的 schema/TTL，不是旧 Go 缓存文件继承。缓存过期后会按 stale 规则降级并明示。
 
 ## 安装
 
     ssh hk 'mkdir -p /opt/guiju /var/lib/guiju'
-    rsync -az --delete --exclude '__pycache__' guiju/ hk:/opt/guiju/guiju/
+    tar --exclude='__pycache__' --exclude='*.pyc' -C . -cf - guiju \
+      | ssh hk 'tar -C /opt/guiju -xf -'
     scp deploy/guiju-mcp.service hk:/etc/systemd/system/guiju-mcp.service
     ssh hk 'systemctl daemon-reload && systemctl enable --now guiju-mcp'
 
