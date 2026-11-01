@@ -30,7 +30,7 @@
 
 ## 3. 源码安装
 
-    git clone git@github.com:omnisurge/guiju.git
+    git clone https://github.com/omnisurge/guiju.git
     cd guiju
     python3 -m venv .venv
     .venv/bin/python -m pip install .
