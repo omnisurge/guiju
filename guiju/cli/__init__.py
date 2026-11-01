@@ -17,6 +17,7 @@ from ..store.sqlite import Store
 from . import render
 from .commands import (
     cite,
+    mcp,
     provenance,
     pull,
     search,
@@ -28,7 +29,7 @@ from .commands import (
     which,
 )
 
-COMMANDS = (sync, search, which, show, pull, cite, verify, provenance, status, version)
+COMMANDS = (sync, search, which, show, pull, cite, verify, provenance, status, version, mcp)
 
 
 def _exit_epilog() -> str:

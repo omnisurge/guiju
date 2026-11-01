@@ -23,11 +23,12 @@
 | 能力 | 检索 + **正文 PDF 直接下载**（`Content-Disposition: attachment`） |
 | 端点 | `POST /JGBStandardWebApi/external/localStandard/list`；`GET /JGBStandardWebApi/api/files/webDownload` |
 | 令牌 | `receivedToken = HMAC_SHA256("<fileId>:<timestamp>", "jkysh2jgbstandard")`，密钥写在公开前端 bundle 里（非破解） |
-| 分栏 | 现行标准 548 / 废止标准 334 / 现行设计标准 37 / 废止设计标准 23 |
-| 状态 | **源站自己表态**，适配器照抄：`abolishTime`/`isAbolish` → `withdrawn`，否则 `current` |
+| 分栏 | 历史全量盘点（非本轮刷新）：现行标准 548 / 废止标准 334 / 现行设计标准 37 / 废止设计标准 23 |
+| 状态 | **源站自己表态**：废止请求栏、`abolishTime` 或 `isAbolish=true` 任一为废止证据即 `withdrawn`；否则沿现行栏 `current`，不按实施日期推 upcoming。`standardType` 的 0/1 字符串是已点查的真实形状 |
+| 权威性 | **所有者 2026-10-31 裁定：上海地标以上海住建委为唯一真相**；不查工标网交叉校验或兜底，不以其他源补判状态。原生单源接入已在 M3 完成，现有官方内容源与原生查询共用唯一解析核心；CLI 默认尚未切换 |
 | 编号 | 含年版（`DG/TJ08-2007-2026`），原样采用，不套通用解析器 |
-| 接入 | `guiju/sources/shzjw.py`，`api_mode = True`（没有公告页可抓） |
-| 实测 | `guiju pull --source shzjw DG/TJ08-2007` → 2,084,644 B，`%PDF-1.7`，sha256 `d4651231c9b1…` |
+| 接入 | 共享 `guiju/domain/shzjw.py`；内容源 `guiju/sources/shzjw.py` 保持 `api_mode=True`；原生 `guiju/currency/shzjw.py` 只注入查询 transport，不取正文 |
+| 实测 | 历史正文下载：`guiju pull --source shzjw DG/TJ08-2007` → 2,084,644 B，`%PDF-1.7`，sha256 `d4651231c9b1…`；M3 新增五本官方元数据实链点查（四现行、一废止），不取 PDF，详见验收记录 |
 
 ## 二、评估后不接入
 

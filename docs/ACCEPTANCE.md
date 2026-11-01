@@ -1,8 +1,149 @@
 # 验收记录
 
-> 最新一次：**v0.14.3（2026-10-31）** —— 42 项联网 / 135 项单测。
-> 时效适配器三条路径（cmd / mcp / off）均已实测；cmd 用本机构建的 `spec-currency` 验证（见 ADR 0001）。
-> 下面是 v0.7.0 的原始记录，保留作历史对照，其中的数字与"未覆盖"清单已被后续版本更新。
+> 最新离线验收：**v1.0.0（2026-11-01，发布）** —— **446 项单测** / 4 项离线冒烟 / 本地 CI 全绿；hk M4 37 个编号冒烟通过。
+> 最近完整联网验收仍为 **v0.14.3 的 42/42** 历史记录；v1.0.0 未重跑完整联网验收、未构建或更改旧 Go 仓。
+> 默认时效已切为 **native**；hk 服务与消费者切换已完成，NAS spec-currency 已停用（文件保留可回退）。后续各版本记录保留作历史对照。
+
+## v1.0.0（2026-11-01，发布）
+
+| 项 | 本次实测 |
+|---|---|
+| 代码基线 | v1.0.0 发布工作区；包含 M1–M4、guiju mcp、hk 部署 |
+| 完整单测矩阵 | Python 3.10.21、3.12.14、3.13.5 **各 446/446 通过** |
+| 本地 CI | ruff、446 单测、离线 e2e **4/4**、version/status/help 入口自检全绿 |
+| MCP | stdio + HTTP `POST /mcp`，query/verify/batch；hk 18083 健康 |
+| M4 | 可比基线 32/32；hk 37 个编号：35 有结果、2 个 DB31/T 为空、0 错误 |
+| 发布 | wheel/sdist 已构建；消费者 profile 已切到 hk；NAS spec-currency 已停用 |
+| 数据隔离 | 临时 GUIJU_HOME、GUIJU_CURRENCY=off、UV_OFFLINE=1；未修改旧 Go 仓 |
+
+## ADR 0002 期 1 · M3（2026-10-31，未发布）
+
+| 项 | 本次实测 |
+|---|---|
+| 代码基线 | v0.14.5 + 未发布 M1/M2/M3 工作区变更；未提交/推送 |
+| 完整单测矩阵 | Python 3.10.21、3.12.14、3.13.5 **各 433/433 通过** |
+| 本地 CI | ruff、433 单测、离线 e2e **4/4**、version/status/help 入口自检全绿 |
+| M3 新增测试 | **84 项**：上海核心/内容兼容、原生适配、HTTP/路由/缓存/边界回归 |
+| 官方元数据点查 | 固定官方 list 端点 **5/5**：DG/TJ08-2007-2026、DBJT08-144-2026、DGJ08-2139-2021、DBTJ08-102-2016、DG/TJ08-2021-2007；四现行、一废止，未取 PDF |
+| 默认行为 | cmd / mcp / off、旧内容下载与五字段投影不变；原生只可显式构造 |
+| 数据隔离 | 临时 GUIJU_HOME / 缓存目录、GUIJU_CURRENCY=off、UV_OFFLINE=1；未访问 NAS/旧 Go，未写真实规范库 |
+| 独立复核 | 基础号裁剪问题修复并复验关闭；冻结版 3.10 重点 171 项、12 种内存 HTTP、16 种磁盘场景通过，无剩余 M3 项 |
+
+### 核心语义与完整链路
+
+- **上海地标只认上海住建委 shzjw**：不查 csres 或其他元数据源交叉校验、补判或兜底；
+  无记录、源故障、结构异常、40 与取消都停止在本源，不转其他源。
+- 内容源与原生元数据共用唯一 guiju/domain/shzjw.py：原 _record、四栏检索、排序和
+  find 只有这一份实现；内容下载令牌/流式下载/文件校验函数保持原样，原生不导入这些出口。
+- 上海已确认编号 DG/TJ08、DGJ08、DBJT08、DBTJ08、DBJ08、DB31/T 先于通用 DB；
+  统一空白/大小写/已支持破折号，但保留官方原编号，不扩到其他省市。未确认的上海 DB31
+  写法、嵌入零宽/控制字符等保守 NoSource，绝不落通用 DB 外源。
+- 基础号读取完整四栏并返回全部严格匹配版本；显式完整版年只精确匹配该编号，
+  不会自动换成新年份，也不会因裸基础号现行记录提前停止其他栏。
+- 官方实际 standardType 为字符串 "0"/"1"，已兼容；废止请求栏即使行缺
+  isAbolish/abolishTime 也映射 withdrawn；未来实施日期仍沿源站 current，不推 upcoming。
+- 分页按 total 顺序读完整；total 漂移、短页、重复页、超页数上限、显式 success=false
+  或结构异常统一 exit 50，不把截断/失败当无命中或部分成功。
+- 缓存 namespace 升至上海官方 v2，并按源特有 accepts_record 校验精确编号/来源/状态/
+  fallback：DG/TJ08-9999 不能重放给 DG/TJ08-2007，csres/dbba 或备源记录不能伪装上海官方，
+  旧外源 namespace 不自动改名重放。
+- 内容源 13 项旧回归保持不变；旧 PullApiModeTest 的模拟下载现在显式设置临时
+  GUIJU_HOME，避免测试残留写入真实规范库（仅测试隔离，产品下载实现未改）。
+
+### 复跑
+
+~~~bash
+python3 -m unittest tests.test_shzjw_core tests.test_shzjw tests.test_currency_shzjw
+python3 -m unittest tests.test_currency_httpx tests.test_currency_boundary tests.test_currency_registry tests.test_currency_native_integration
+# 整体门禁；执行时另指定全新临时 GUIJU_HOME
+env -u GUIJU_NO_AUTO_SYNC GUIJU_CURRENCY=off UV_OFFLINE=1 bash scripts/ci.sh
+~~~
+
+官方字段投影见 [fixture 说明](../tests/fixtures/currency/README.md)。
+**未做**：M4 线上逐字段 diff、默认切换、部署、发版、旧 Go 归档；NAS 相关步骤仍受 ADR0048 冻结约束。
+shzjw 官方点查只访问固定 list 端点，未请求任何 PDF 下载链接。
+
+## ADR 0002 期 1 · M2（2026-10-31，未发布）
+
+| 项 | 本次实测 |
+|---|---|
+| 代码基线 | v0.14.5 + 未发布 M1/M2 工作区变更；未提交/推送 |
+| 完整单测矩阵 | Python 3.10.21、3.12.14、3.13.5 **各 349/349 通过** |
+| 本地 CI | ruff、349 单测、离线 e2e **4/4**、version/status/help 入口自检全绿 |
+| M2 新增测试 | **160 项**：四备源 81、磁盘缓存 26、路由/fallback/Native 36、HTTP 11、整链路 4、五源边界 1、golden 清单 1 |
+| golden | 全部 **8 份**与旧 Go 原件字节一致；长度/SHA-256 锁定，语义期望人工照录而非新解析器生成 |
+| 默认行为 | cmd / mcp / off、旧缓存和五字段投影不变；原生只可显式构造 |
+| 数据隔离 | 临时 GUIJU_HOME / 缓存目录、GUIJU_CURRENCY=off、UV_OFFLINE=1；未访问上游/NAS或真实规范库 |
+| 独立复核 | 深层 JSON 错误收口项已修复并复验关闭；冻结版无剩余 M2 项，另有 111 项最低版本选定用例及内存/临时目录场景复核通过 |
+
+### 核心语义与完整链路
+
+- 最长前缀 + ASCII 词边界，禁用/未实现路由不参与；GBX123 不能误中 GB。
+- GB/JGJ/CJJ → csres→ccsn→std_samr；JTG → csres→jtst；DB → csres→dbba。
+  主源成功空结果不访问备源，备源错误/空结果才继续，首个非空结果标记实际备源。
+- fresh 为 **age < 24h**，stale 为 **age <= 30d**，精确等号用固定时钟验证。
+  主源新空成功替换旧非空数据，负缓存重放仍区分 fresh 与 stale。
+- 当前 admit/取消/路由先于缓存读取；任意源返回 40，停止后续源、不读 stale、
+  不刷新/覆盖旧条目；QueryCancelled/KeyboardInterrupt 与编程错误也不泛化恢复。
+- schema/namespace/query/全字段/有限正时间校验；未来/零/坏时间、错状态或 JSON 结构、
+  重复键等都为 miss，合法 [] 才是负缓存；唯一临时文件+fsync+原子替换，失败保留旧完整条目。
+- 真实 HttpClient + 旧 golden + 临时 DiskCache 覆盖：主源503后CCSN兜底、重启fresh命中、
+  全链失败stale重放及备源风险保留、超过30天拒绝、相同旧缓存遇验证码仍40。
+- POST form 的编码/Accept、301/302/303转GET、307/308保留参数、跨已批准源也拒绝；
+  JSON Unicode转义/HTML实体验证码同样40，错误JSON含有界诊断片段且不重试。
+- 五个适配器均在正文出口/文件/DB/真实socket哨兵下通过；Native 不装配缓存时无持久化。
+  具体磁盘后端在 store 层显式注入，不放宽元数据适配器禁落盘约束。
+
+### 复跑
+
+```bash
+# 八份原始 golden 及全部适配器语义
+python3 -m unittest tests.test_currency_golden tests.test_currency_csres tests.test_currency_ccsn tests.test_currency_stdsamr tests.test_currency_jtst tests.test_currency_dbba
+# 整体门禁；本次实际执行另指定了全新临时 GUIJU_HOME
+env -u GUIJU_NO_AUTO_SYNC GUIJU_CURRENCY=off UV_OFFLINE=1 bash scripts/ci.sh
+```
+
+完整输入清单见 [golden manifest](../tests/fixtures/currency/manifest.json)。
+**本检查点未做**：M4 线上逐字段 diff、默认切换、部署、发版、旧 Go 归档。
+M3 已在后续检查点完成（见上），此处保留历史对照。
+
+## ADR 0002 期 1 · M1（2026-10-31，历史检查点，未发布）
+
+| 项 | 本次实测 |
+|---|---|
+| 代码基线 | v0.14.5 + M1 工作区变更；未发版、未提交/推送 |
+| Python | 3.13.5 本地 CI；3.10.21 / 3.12.14 各跑完整单测 |
+| 单测 | **189/189**（原有 135 + 新增 54） |
+| 本地 CI | ruff、单测、离线 e2e **4/4**、version/status/help 入口自检全绿 |
+| 数据隔离 | 临时 `GUIJU_HOME`；`GUIJU_CURRENCY=off`，`UV_OFFLINE=1`；不读取/改写用户规范库 |
+| 包兼容迁移 | 对照 Git 基线，10 个旧类/函数除必要相对导入层级外 AST 一致；旧导出和五字段投影不变 |
+| golden | 原始 GBK 10,039 字节，SHA-256 锁定；两个有序结果逐项比较六字段 |
+| 边界 | 原生树 AST 禁正文/存储依赖；运行时哨兵禁止正文出口、文件写入、数据库与真实出站连接 |
+| 独立复核 | 两个已复现阻断均修复并复验关闭，无剩余 M1 项 |
+
+新增回归的关键断言：
+
+- `GB 50011-2001` → superseded，发布日期 2001-07-20，实施日期 2002-01-01；
+  `GB/T 50011-2010` → current，发布日期 2010-05-31，实施日期 2010-12-01。
+  名称与 source 同时逐项对照 Go golden；缺状态只能 unknown，不推断现行。
+- HTTP：25s 超时、最多 3 次、0.5/1.5s 退避；403 不重试、429/5xx/传输故障有界重试；
+  解析、读体失败与人机校验不重发请求。
+- 标准库真实 `HTTPResponse` 的 Content-Length / chunked 截断报 20，不能伪装成空结果。
+- 标准库真实 opener + 内存 transport：中间附件在读体前拒绝；HTML 中间体只读 8192 字节；
+  GBK/UTF-8 验证码与伪装二进制立即 40 且不跟随。301/302/303/307/308、循环、
+  缺 Location、非法 scheme 均有分类回归；Python 3.10 的 308 兼容分支已覆盖。
+
+快速复跑（只有内存响应，不请求上游，也不依赖旧仓）：
+
+```bash
+python3 -m unittest tests.test_currency_csres tests.test_currency_httpx tests.test_currency_boundary
+# 全量 CI：不要全局设置 GUIJU_NO_AUTO_SYNC，它会干扰保鲜测试的受控 mock。
+env -u GUIJU_NO_AUTO_SYNC GUIJU_CURRENCY=off UV_OFFLINE=1 bash scripts/ci.sh
+```
+
+夹具来源与字节校验见 [golden 说明](../tests/fixtures/currency/README.md)。
+**本历史检查点未做**：M2 的前缀路由/备源/TTL、M3、M4 的线上逐字段 diff、默认切换、部署或发版。
+当时规划的 M3 复合源已被后续所有者“上海官方唯一真相”的单源决定取代。
 
 ## v0.13.0（2026-10-31）
 

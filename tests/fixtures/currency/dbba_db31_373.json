@@ -1,0 +1,50 @@
+{
+ "current": 1,
+ "pages": 1,
+ "records": [
+  {
+   "actDate": 1796054400000,
+   "chName": "制药工业水污染物排放标准",
+   "chargeDept": "上海市市场监督管理局",
+   "code": "DB31/ 373-2026",
+   "empty": false,
+   "industry": "上海市",
+   "issueDate": 1785340800000,
+   "pk": "5f5d86dd573202c06e7f80db47cc7efa226473e683678526fbdc8c8359f5929e",
+   "recordDate": 1785945600000,
+   "recordNo": "130885-2026",
+   "reviseStdCodes": "DB31/ 373-2010",
+   "status": "现行"
+  },
+  {
+   "actDate": 1277913600000,
+   "chName": "生物制药行业污染物排放标准",
+   "chargeDept": "上海市质量技术监督局",
+   "code": "DB31/ 373-2010",
+   "empty": false,
+   "industry": "上海市",
+   "issueDate": 1274025600000,
+   "pk": "0036b475937f096e3b428f58772be640",
+   "recordDate": 1310400000000,
+   "recordNo": "30977-2011",
+   "reviseStdCodes": "DB31/ 373-2006",
+   "status": "有更新版"
+  },
+  {
+   "actDate": 1170259200000,
+   "chName": "生物制药行业污染物排放标准",
+   "chargeDept": "上海市质量技术监督局",
+   "code": "DB31/ 373-2006",
+   "empty": false,
+   "industry": "上海市",
+   "issueDate": 1162310400000,
+   "pk": "6ccf1a4333aa39744d5bc1de369aa7d1",
+   "recordDate": 1183564800000,
+   "recordNo": "20948-2007",
+   "status": "有更新版"
+  }
+ ],
+ "searchCount": true,
+ "size": 5,
+ "total": 3
+}

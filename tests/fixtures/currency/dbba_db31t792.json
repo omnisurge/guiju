@@ -1,0 +1,23 @@
+{
+ "current": 1,
+ "pages": 1,
+ "records": [
+  {
+   "actDate": 1780243200000,
+   "chName": "硅单晶棒及单晶硅片单位产品能源消耗限额",
+   "chargeDept": "上海市市场监督管理局",
+   "code": "DB31/T 792-2026",
+   "empty": false,
+   "industry": "上海市",
+   "issueDate": 1770998400000,
+   "pk": "0f9518882c5faaf31fdef39036b6f77454c7d96d1ca45992469d263d5d2dd54a",
+   "recordDate": 1772553600000,
+   "recordNo": "129255-2026",
+   "reviseStdCodes": "DB31/ 792-2020",
+   "status": "现行"
+  }
+ ],
+ "searchCount": true,
+ "size": 5,
+ "total": 1
+}

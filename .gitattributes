@@ -1,0 +1,4 @@
+# 原始 golden 必须保留 CRLF / 字节，禁止 Git 跨平台换行转换。
+tests/fixtures/currency/*.gbk binary
+tests/fixtures/currency/*.json -text
+tests/fixtures/currency/*.html binary

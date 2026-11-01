@@ -1,0 +1,18 @@
+[
+  {
+    "code": "GB 50011-2001",
+    "name": "建筑抗震设计规范（2008年版）",
+    "status": "superseded",
+    "publish_date": "2001-07-20",
+    "implement_date": "2002-01-01",
+    "source": "csres"
+  },
+  {
+    "code": "GB/T 50011-2010",
+    "name": "建筑抗震设计标准（2024年版）",
+    "status": "current",
+    "publish_date": "2010-05-31",
+    "implement_date": "2010-12-01",
+    "source": "csres"
+  }
+]

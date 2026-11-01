@@ -72,7 +72,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     if isinstance(error, AmbiguousTarget):
         payload["candidates"] = error.extra.get("candidates", [])
     render.emit(payload)
-    if payload["currency_from_cache"]:
+    if payload["currency_from_cache"] and payload["currency_source"] != "native":
         render.note(
             f"时效服务不可达，使用本地缓存（{payload['currency_cache_age_days']} 天前）："
             "现行性可能已变化"

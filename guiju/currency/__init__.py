@@ -1,4 +1,8 @@
-"""时效端口 —— 借用 spec-currency 的权威结论，替代本地"编号索引"。
+"""时效端口与兼容门面 —— ADR 0002 M1 只搬包，不切默认适配器。
+
+原生 csres 位于 .csres，须显式构造；默认 cmd / mcp / off 选择与缓存保持原样。
+
+借用 spec-currency 的权威结论，替代本地"编号索引"。
 
 为什么 index 要放弃
 ------------------
@@ -24,43 +28,28 @@ import os
 import shutil
 import subprocess
 import urllib.request
-from dataclasses import dataclass
-from typing import Protocol
+from pathlib import Path
 
-from .errors import SourceUnreachable
+from ..errors import SourceUnreachable
+from .model import Currency as Currency
+from .model import Record as Record
 
 DEFAULT_MCP_URL = "http://100.66.1.x:18083/mcp"
 DEFAULT_CMD = "spec-currency"
 TIMEOUT = 25
 
 
-@dataclass(frozen=True)
-class Record:
-    code: str
-    status: str          # current / superseded / upcoming / withdrawn / unknown
-    name: str = ""
-    implement_date: str = ""
-    source: str = ""
-    replaces: str = ""
+def native_currency(cache_dir: str | None = None):
+    """显式构造原生时效适配器；缓存目录可用参数或 GUIJU_CURRENCY_CACHE 覆盖。"""
+    from ..store.currency import DiskCurrencyCache
+    from .native import NativeCurrency
 
-    @property
-    def is_current(self) -> bool:
-        return self.status == "current"
-
-    def as_payload(self) -> dict:
-        return {
-            "code": self.code,
-            "status": self.status,
-            "name": self.name,
-            "implement_date": self.implement_date,
-            "source": self.source,
-        }
-
-
-class Currency(Protocol):
-    name: str
-
-    def lookup(self, code: str) -> list[Record]: ...
+    selected = cache_dir if cache_dir is not None else os.environ.get("GUIJU_CURRENCY_CACHE")
+    if selected == "off":
+        return NativeCurrency()
+    root = os.environ.get("GUIJU_HOME") or os.path.expanduser("~/.guiju")
+    directory = Path(selected) if selected else Path(root) / "currency-cache"
+    return NativeCurrency(cache=DiskCurrencyCache(directory))
 
 
 class NullCurrency:
@@ -148,7 +137,10 @@ class McpCurrency:
             raise SourceUnreachable(f"时效服务响应无法解析（{self.url}）")
         return parsed, sid
 
-    def lookup(self, code: str) -> list[Record]:
+    def lookup(self, code: str, *, cache: str | None = None) -> list[Record]:
+        arguments = {"code": code}
+        if cache is not None:
+            arguments["cache"] = cache
         init, sid = self._rpc(
             {
                 "jsonrpc": "2.0",
@@ -168,7 +160,7 @@ class McpCurrency:
                 "jsonrpc": "2.0",
                 "id": 2,
                 "method": "tools/call",
-                "params": {"name": "query", "arguments": {"code": code}},
+                "params": {"name": "query", "arguments": arguments},
             },
             sid,
         )
@@ -244,13 +236,16 @@ def endpoint_of(cur: object) -> str | None:
     reason = getattr(cur, "reason", None)
     if reason:
         return f"不可用：{reason}"
+    if getattr(cur, "name", "") == "native":
+        return "native"
     return None
 
 
 def default_currency() -> Currency:
-    """优先本地二进制（快、可离线），否则 MCP 服务，最后退化为空。
+    """默认使用原生时效；显式 cmd / mcp / off 仍可覆盖，环境变量绝不静默替换。
 
-    注意：**环境变量一旦显式指定，要么照办，要么报错**，不做静默替换。
+    这是 ADR 0002 期1 M4 的默认切换点：原生内部按 TTL 管理缓存，
+    不再外包旧 CachedCurrency 的进程内 memo。
     """
     override = os.environ.get("GUIJU_CURRENCY")  # cmd[:path] / mcp[:url] / off
     if override:
@@ -268,13 +263,10 @@ def default_currency() -> Currency:
             # GUIJU_CURRENCY=mcp 曾经会忽略 GUIJU_CURRENCY_URL（用户设了 URL 却被静默丢弃，
             # 实际连的是默认 NAS）。显式指定机制时，环境变量的每一部分都要生效。
             return McpCurrency(arg or os.environ.get("GUIJU_CURRENCY_URL") or DEFAULT_MCP_URL)
+        if kind == "native":
+            return native_currency(arg or None)
         return MisconfiguredCurrency(f"{kind}(未知)", f"GUIJU_CURRENCY={override} 无法识别")
-    binary = shutil.which(DEFAULT_CMD)
-    if binary:
-        return CommandCurrency(binary)
-    if os.environ.get("GUIJU_CURRENCY_URL") or DEFAULT_MCP_URL:
-        return McpCurrency(os.environ.get("GUIJU_CURRENCY_URL") or DEFAULT_MCP_URL)
-    return NullCurrency()
+    return native_currency()
 
 
 class CachedCurrency:
@@ -292,6 +284,12 @@ class CachedCurrency:
         self.cache_age_days: float | None = None
 
     def lookup(self, code: str) -> list[Record]:
+        if self.inner.name == "native":
+            # 原生内部已按 TTL 管理缓存；不能再外包旧 CachedCurrency 的无 TTL memo。
+            records = self.inner.lookup(code)
+            self.from_cache = bool(getattr(self.inner, "from_cache", False))
+            self.cache_age_days = getattr(self.inner, "cache_age_days", None)
+            return records
         key = (self.name, code)
         if key in _cache:
             return _cache[key]
@@ -313,7 +311,7 @@ class CachedCurrency:
     # ---- 落库缓存 ----
     @staticmethod
     def _key(code: str) -> str:
-        from .domain.codes import normalize_key
+        from ..domain.codes import normalize_key
 
         return normalize_key(code)
 

@@ -51,10 +51,11 @@ class PullApiModeTest(unittest.TestCase):
         self.home = Path(self.tmp.name)
 
     def _run(self, *argv):
-        # 关掉进程内目录自保鲜：这里测的是 pull 的 API 分支，不该顺带去抓住建部目录
+        # 数据库和输出库都隔离；--db 单独指定并不会改变默认 library 目录。
         buf = io.StringIO()
         with (
-            mock.patch.dict("os.environ", {"GUIJU_NO_AUTO_SYNC": "1"}),
+            mock.patch.dict("os.environ", {"GUIJU_NO_AUTO_SYNC": "1", "GUIJU_HOME": str(self.home),
+                                            "GUIJU_CURRENCY": "off"}),
             redirect_stdout(buf),
         ):
             code = main([*argv, "--json"])
@@ -87,6 +88,7 @@ class PullApiModeTest(unittest.TestCase):
         self.assertEqual(payload["bytes"], len(PDF))
         self.assertEqual(payload["magic"], "pdf")
         self.assertTrue(Path(payload["path"]).exists())
+        self.assertTrue(Path(payload["path"]).resolve().is_relative_to(self.home.resolve()))
         self.assertEqual(payload["source"], "shzjw")
 
         # 幂等：第二条命令不再下载

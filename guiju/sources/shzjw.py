@@ -31,23 +31,27 @@ import urllib.parse
 from pathlib import Path
 
 from .. import compliance
-from ..domain.codes import normalize_key
-from ..errors import BadAttachment, NotIndexed
+from ..domain import shzjw as core
+from ..domain.codes import normalize_key as normalize_key
+from ..errors import BadAttachment, NeedsHuman, NotIndexed
 from .mohurd import MAGIC_PDF, magic_of
 
-BASE = "https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWebApi/"
-PAGE = "https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWeb/pc/#/standardQuery"
+BASE = core.BASE
+PAGE = core.PAGE
 TOKEN_KEY = b"jkysh2jgbstandard"
-REFERER = "https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWeb/pc/"
+REFERER = core.REFERER
+QUERY_URL = core.QUERY_URL
+
+# 兼容旧调用方的导出；元数据映射与排序只有 domain 中这一份实现。
+download_url = core.download_url
+_record = core.record
+_exact = core._exact
+_rank = core._rank
+_design_first = core._design_first
 
 
 def _token(file_id: str, ts: int) -> str:
     return hmac.new(TOKEN_KEY, f"{file_id}:{ts}".encode(), hashlib.sha256).hexdigest()
-
-
-def download_url(file_id: str) -> str:
-    """不带令牌的下载地址（令牌在真正下载时才生成，避免过期 URL 被归档）。"""
-    return f"{BASE}api/files/webDownload?fileId={file_id}"
 
 
 def file_id_of(url: str) -> str:
@@ -58,31 +62,15 @@ def file_id_of(url: str) -> str:
     return fid
 
 
-def _record(row: dict) -> dict:
-    code = (row.get("standardNumber") or "").strip()
-    name = (row.get("standardProjectName") or "").strip()
-    published = (row.get("releaseTime") or "")[:10]
-    implement = (row.get("implementationTime") or "")[:10]
-    abolish = (row.get("abolishTime") or "")[:10]
-    fid = row.get("standardFileId")
-    # 站点自己就分"现行 / 废止"与"标准 / 设计标准"，直接采用它的口径，
-    # 不用我们猜（abolishTime 为空 ≠ 现行，要看 isAbolish 那一栏）
-    abolished = bool(row.get("abolishTime")) or row.get("isAbolish") is True
-    is_design = row.get("standardType") == 1
-    return {
-        "code": code,
-        "code_key": normalize_key(code) if code else None,
-        "name": name,
-        "status": "withdrawn" if abolished else "current",
-        "kind": "design" if is_design else "standard",
-        "published_on": published,
-        "implement_on": implement,
-        "abolish_on": abolish or None,
-        "file_id": fid,
-        "download_url": download_url(fid) if fid else None,
-        "page_url": f"{PAGE}?keyword={urllib.parse.quote(code or name)}",
-        "editor": (row.get("editorUnitName") or "").strip(),
-    }
+def _fetch(query: dict) -> dict:
+    """内容源仍走原合规传输；无效 JSON 不再漏成 internal 或空命中。"""
+    try:
+        return compliance.post_json(QUERY_URL, query, referer=REFERER)
+    except ValueError as exc:
+        raise NeedsHuman(
+            "上海标准接口未返回有效 JSON",
+            hint="检查上海住建委查询响应；不要把解析失败当作无命中",
+        ) from exc
 
 
 def search(
@@ -92,71 +80,15 @@ def search(
     abolished: bool = False,
     standard_type: int = 0,
 ) -> list[dict]:
-    """按编号或名称检索地方标准（单一分栏：现行/废止 × 标准/设计标准）。"""
-    payload = compliance.post_json(
-        f"{BASE}external/localStandard/list",
-        {
-            "pageNum": 1,
-            "pageSize": page_size,
-            "isAbolish": abolished,
-            "standardType": standard_type,
-            "condition": ref,
-            "publishStartDate": "",
-            "publishEndDate": "",
-            "implementStartDate": "",
-            "implementEndDate": "",
-        },
-        referer=REFERER,
+    """按编号或名称检索地方标准（沿用单页及四栏参数）。"""
+    return core.search(
+        ref, fetch=_fetch, page_size=page_size, abolished=abolished, standard_type=standard_type
     )
-    rows = ((payload or {}).get("data") or {}).get("list") or []
-    return [_record(row) for row in rows]
-
-
-def _design_first(ref: str) -> bool:
-    """图集/设计标准编号（DBJT…）先查 design 分栏，省一次请求。"""
-    return ref.strip().upper().replace(" ", "").startswith("DBJT")
 
 
 def find(ref: str) -> list[dict]:
-    """定位一个地标：现行优先，找不到再查废止。
-
-    站点按「现行/废止 × 标准/设计标准」分四栏，四栏是四个独立查询；
-    常规命中只需 1–2 次请求，只有在现行栏完全没命中时才会查废止栏。
-    同一编号若两栏都有（旧版已废止），**一定保留现行那条**。
-    """
-    types = [1, 0] if _design_first(ref) else [0, 1]
-    hits: list[dict] = []
-    for stype in types:
-        hits.extend(search(ref, standard_type=stype))
-        if _exact(hits, ref):
-            break
-    if not _exact(hits, ref):
-        for stype in types:
-            hits.extend(search(ref, abolished=True, standard_type=stype))
-    return _rank(hits, ref)
-
-
-def _exact(hits: list[dict], ref: str) -> list[dict]:
-    want = normalize_key(ref.strip()) if ref.strip() else ""
-    by_code = [r for r in hits if want and r["code_key"] == want]
-    if by_code:
-        return by_code
-    return [r for r in hits if r["name"] == ref.strip()]
-
-
-def _rank(hits: list[dict], ref: str) -> list[dict]:
-    """现行优先 + 编号去重，再做精确 > 名称 > 其它 的三层筛选。"""
-    seen: dict[str, dict] = {}
-    for rec in hits:
-        key = rec["code_key"] or rec["name"]
-        old = seen.get(key)
-        if old is None or (old["status"] != "current" and rec["status"] == "current"):
-            seen[key] = rec
-    unique = list(seen.values())
-    exact = _exact(unique, ref)
-    if exact:
-        return exact[:10]
-    return unique[:10]
+    """沿用旧检索接口；在调用时注入 search，兼容调用方的 mock/覆写。"""
+    return core.find(ref, searcher=search)
 
 
 def download_to(file_url: str, part_path: str, referer: str = REFERER) -> tuple[int, str, int]:
@@ -189,8 +121,7 @@ def download(file_url: str, referer: str = REFERER) -> tuple[bytes, str]:
 
 
 def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int]:
-    payload = compliance.post_json(
-        f"{BASE}external/localStandard/list",
+    payload = _fetch(
         {
             "pageNum": page_no,
             "pageSize": page_size,
@@ -202,13 +133,10 @@ def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int]:
             "implementStartDate": "",
             "implementEndDate": "",
         },
-        referer=REFERER,
     )
-    data = (payload or {}).get("data") or {}
-    rows = data.get("list") or []
+    records, total = core.parse_page(payload)
     items = []
-    for row in rows:
-        rec = _record(row)
+    for rec in records:
         items.append(
             {
                 "date": rec["published_on"],
@@ -216,7 +144,7 @@ def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int]:
                 "title": rec["name"] or rec["code"],
             }
         )
-    return items, int(data.get("total") or 0)
+    return items, total
 
 
 class Shzjw:

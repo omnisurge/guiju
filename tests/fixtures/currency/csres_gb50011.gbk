@@ -1,0 +1,264 @@
+
+
+			
+
+
+
+
+
+
+
+ 
+
+
+
+
+<html>
+<head>
+<title>工标网-查询 【GB50011】标准</title>
+<META http-equiv=Content-Type content="text/html; charset=gbk">
+<link rel="shortcut icon" href="/images/gb.ico">
+<meta name="description" content="GB50011标准 GB50011实效">
+<meta name="keywords" content="标准搜索 标准时效 标准状态 标准查询 ">
+<link href="/css/style.css" rel="stylesheet" type="text/css">
+</head>
+<SCRIPT language=javascript src="/css/comm.js"></SCRIPT>
+<script language="javascript">
+
+function selectchange(url)
+{ 
+	document.form_Search.action=url ;
+	document.form_Search.submit();
+}
+
+function checkpage()
+{     
+     var k=0;
+     var flag=0;
+     for(k=0;k<form_Search.elements.length;k++)
+     {
+     	if(form_Search.elements[k].name=="pageno")
+     	{
+     	 	
+     		flag=1;
+     		break;
+     	}
+     }
+     if(flag==0)
+     {
+     
+     	return;
+      }
+      else if(isNaN(form_Search.elements[k].value)){
+           alert("您输入了无效页码，请输入数字");
+           form_Search.elements[k].value="";           
+           return;
+           }
+     else{  
+               var str=form_Search.elements[k].value;
+               var intvalue=0;
+		for(var i=0;i<str.length;i++){
+			if(chartoint(str.substring(i,i+1))==-1){
+				alert("您输入的页码不正确，请输入整数");
+				form_Search.elements[k].value="";
+				 return;
+			}
+			intvalue = intvalue*10+chartoint(str.substring(i,i+1));
+			
+			if((intvalue>1)||(intvalue<1)){
+			         alert("您输入的页码超出可取范围，请重输");
+			         form_Search.elements[k].value="";			         
+			         return;			         
+			}
+			
+		}
+	}	
+	
+}
+
+
+function doPage(pageNum)
+{
+		form_Search.pageNum.value=pageNum;
+		form_Search.action="/s.jsp";
+		form_Search.submit();
+}
+
+
+
+
+function doSort(aSortField)
+{
+		/*
+		if (form_Search.SortField.value==aSortField) 
+		{
+		  if (form_Search.SortWay.value=="asc"){
+		     form_Search.SortWay.value = "desc";
+			 }
+		   else	 
+		    form_Search.SortWay.value = "asc";
+		} else
+		{
+			form_Search.SortWay.value="asc";
+		}*/
+		
+		if (form_Search.SortIndex.value==aSortField) 
+		{
+		  if (form_Search.WayIndex.value==0){
+		     form_Search.WayIndex.value = 1;
+			 }
+		   else	 
+		    form_Search.WayIndex.value = 0;
+		} else
+		{
+			form_Search.WayIndex.value=0;
+		}
+		
+		form_Search.SortIndex.value=aSortField;
+		form_Search.action="/s.jsp";
+		form_Search.submit();
+}
+
+
+</script>
+
+<body bgcolor="#FFFFFF" text="#000000" topmargin=0 marginheight=0 leftmargin=0 marginwidth=0 >
+
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" align=center >
+  <form method="get" action="/s.jsp" name="form_Search" onSubmit="return dofind()">
+   <tr> 
+      <td align="center">
+
+<table width="100%" border="0" cellpadding="0" cellspacing="0" >
+  <tr>
+    <td width="215"  align="left" valign="top">&nbsp;<a href="/"></a><a href="/"><img src="/images/ny_logo.gif" alt="工标网 回首页" border="0" /></a></td>
+<td width="550" align="left"><table width="510" border="0" cellspacing="0" cellpadding="0">
+<tr>
+					  <td width="68%"><a href="/sort/index.jsp" class="slan13">标准分类</a>&nbsp; <a href="/new/index.jsp" class="slan13">最新标准</a><sup><span style="font-size: 11pt"><font color=red>New!</font></span></sup>&nbsp; <a href="/notice/index.jsp" class="slan13">标准公告</a> <a href="/info/index.jsp" class="slan13">标准动态</a>&nbsp; <a href="/bbs/index.jsp" class="slan13">标准论坛</a></td>
+				  </tr>
+				  <tr>
+					<td><input name="keyword" type="text" size="49" value="GB50011">
+         					 <input name="submit12" type="submit" value="标准搜索">&nbsp;<a href="/advanced/index.jsp" class="slan13">高级查询</a></td>
+		  </tr>
+				</table>
+   </td>
+       <td width="681" align="right"><table width="250" border="0" cellspacing="0" cellpadding="0">
+			  <tr>
+				<td align="center"><a href="/sys/help.htm" target="_blank" class="slan13">帮助</a> |  <a href="/user/logon.jsp" class="slan13">登录</a> | <a href="/user/register.jsp" class="slan13">注册</a></td>
+			  </tr>
+			  <tr>
+				<td align="center"><img src="/images/adci.gif" alt="查标准上工标网 免费查询标准最新替代作废信息" width="228" height="21"></td>
+	     </tr>
+			</table>
+  </td>
+  </tr>
+</table>
+<table width="100%" border="0" cellpadding="0" cellspacing="0">
+  <tr>
+    <td height="27" valign="top" background="/images/ny_bg1.gif" bgColor=#a1b3d4><TABLE cellSpacing=0 cellPadding=0 width="100%" border=0>
+        <TBODY>
+        <TR vAlign=center>
+          <TD width="75%" height=27 align=left vAlign=center class=crumbTrail><span class="bai12xi">&nbsp;共找到2条相关标准，现行1，作废1，耗时0.0秒</span></TD>
+          <TD width="25%" height=22 align=right vAlign=center class=helpLink>
+            <span class="bai12cu"><a href="javascript:window.external.AddFavorite('http://www.csres.com','工业标准咨询网')" class="bai12" title="收藏本站，下次需要查标准时候就来工标网">收藏本站</a></span> &nbsp;<a href="/service/web.htm" target="_blank" title="点击联系在线客服，有什么问题我们帮您解决！！" class="bai12">联系客服</a>&nbsp;</TD>
+        </TR></TBODY></TABLE></td>
+  </tr>
+</table>
+		
+</td>
+    </tr>
+	  
+    <tr> 
+      <td align="center">
+	  <table width="100%" border="0" cellspacing="1" cellpadding="0" class=heng>
+		<thead class="th1" >	 
+            <tr > 
+              <th width=18% height="23">标准编号</th>
+              <th width=50%>标准名称</th>
+              <th width=17%>发布部门</th>
+              <th width=9%>实施日期</th>
+              <th width=6%>状态</th>
+            </tr>
+            
+            <tr bgcolor="#FFFFFF"  
+			    onmouseover="mOvr(this,'#DADAFF');" 
+			    onclick="mClk(62046);" 
+                onmouseout="mOut(this,'#FFFFFF');"  title="编号：GB 50011-2001 &#xA;标题：建筑抗震设计规范（2008年版）&#xA;英文标题： &#xA;分类：P15&#xA;ICS：91.120.25 &#xA;采标情况： &#xA;替代情况：&#xA;发布部门：中华人民共和国建设部、国家质量监督检验检疫总局&#xA;发布日期：2001-07-20&#xA;发布日期：2002-01-01"> 
+              <td align="left">&nbsp;<a href="/detail/62046.html" target="_blank"><font color="#FF0000">GB 50011-2001</font></a></td>
+              <td align="left">&nbsp;<font color="#FF0000">建筑抗震设计规范（2008年版）</font></td>
+              <td ><font color="#FF0000">
+                建设部、国家质量监督.
+                </font></td>
+				<td ><font color="#FF0000">2002-01-01</font></td>
+				<td ><font color="#FF0000">作废</font></td>
+            </tr>
+            
+            <tr bgcolor="#FFFFFF"  
+			    onmouseover="mOvr(this,'#DADAFF');" 
+			    onclick="mClk(211372);" 
+                onmouseout="mOut(this,'#FFFFFF');"  title="编号：GB/T 50011-2010 &#xA;标题：建筑抗震设计标准（2024年版）&#xA;英文标题： &#xA;分类：P15&#xA;ICS：91.120.25 &#xA;采标情况： &#xA;替代情况：&#xA;发布部门：中华人民共和国住房和城乡建设部  中华人民共和国国家质量监督检验检疫总局&#xA;发布日期：2010-05-31&#xA;发布日期：2010-12-01"> 
+              <td align="left">&nbsp;<a href="/detail/211372.html" target="_blank"><font color="#000000">GB/T 50011-2010</font></a></td>
+              <td align="left">&nbsp;<font color="#000000">建筑抗震设计标准（2024年版）</font></td>
+              <td ><font color="#000000">
+                住房和城乡建设部  .
+                </font></td>
+				<td ><font color="#000000">2010-12-01</font></td>
+				<td ><font color="#000000">现行</font></td>
+            </tr>
+            
+        </table></td>
+    </tr>
+    <tr> 
+
+      <td height="19"><table width="100%" border="0" cellpadding="0" cellspacing="0">
+        <tr>
+          <td height="30">&nbsp;<span class="hei14">共有2条符合状态条件的标准，共1页</span> 
+		  	
+		  <td width="280" align="right">
+		   <input name="xx" type="checkbox" checked onClick="doState()">现行
+		   <input name="wss" type="checkbox" checked onClick="doState()"><font color="#009900">即将实施</font>
+		   <input name="zf" type="checkbox" checked onClick="doState()"><font color="#FF0000">作废</font>
+		   <input name="fz" type="checkbox" checked onClick="doState()"><font color="#FF0000">废止</font>&nbsp;</td>
+		 </td>
+        </tr>
+      </table></td>
+    </tr>
+	
+	<tr> 
+      <td align="center">&nbsp;</td>
+    </tr>
+    <tr> 
+      <td>
+ 
+
+<TABLE width="100%"  cellPadding=0 cellSpacing=0 align=center>
+  <TBODY>
+    <TR>
+      <TD align=middle vAlign=middle class="hong14">购书咨询:0898-3137 2222</TD>
+    </TR>
+    
+    <TR> 
+      <TD align=middle vAlign=middle><font color="#666666"><strong>QQ:</strong></font><a target=blank href=http://wpa.qq.com/msgrd?V=1&Uin=1197428036&Site=工标网&Menu=yes>1197428036</a>&nbsp;<a target=blank href=http://wpa.qq.com/msgrd?V=1&Uin=992023608&Site=工标网&Menu=yes>992023608</a>      <a href="https://tb.53kf.com/code/client/9007981/1" target="_blank" title="点击联系在线客服，有什么问题我们帮您解决！！"><span style="font-size:12px; color:#0000CC; text-decoration:underline">有问题？ 联系在线客服</span></a>
+</TD>
+    </TR>
+    <TR> 
+      <TD align=middle vAlign=center>版权所有2005-2021 海南讯海科技有限公司 经营许可证编号：<a href="https://beian.miit.gov.cn/" target="_blank">琼ICP备09001676号-1</a></TD>
+    </TR>
+    <TR>
+      <TD align=middle vAlign=center><a href="/pay/" target="_blank"><font color="red">付款方式</font></a> | <a href="/sys/contact.html" target="_blank">联系我们</a> | <a href="/sys/aboutus.htm" target="_blank">关于我们 </a>| <a href="/sys/partners.jsp" target="_blank">合作伙伴</a> | <a href="javascript:window.external.AddFavorite('http://www.csres.com','工标网')"> 收藏本站</a> | <a href="/sys/terms.html" target="_blank">使用条款</a></TD>
+    </TR>
+  </TBODY>
+</TABLE>
+
+</td>
+    </tr>
+<input type="hidden" name="pageSize" value="25">
+<input type="hidden" name="pageNum" value="1">
+<input type="hidden" name="SortIndex" value="1">
+<input type="hidden" name="WayIndex" value="0">
+<input type="hidden" name="nowUrl" value="">
+ </form>
+  </table>
+  </body>
+</html>
+

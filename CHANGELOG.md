@@ -1,5 +1,69 @@
 # 变更记录
 
+## 1.0.0 — 2026-11-01（产品化：guiju mcp + native 默认 + hk deployment）
+
+- 新增 `guiju mcp`：标准库 stdio JSON-RPC 与 HTTP `POST /mcp`，提供 `query / verify / batch`，
+  复用 `NativeCurrency`，默认缓存目录为 `GUIJU_HOME/currency-cache`。
+- `GUIJU_CURRENCY` 默认改为原生 `native`；`cmd / mcp / off` 仍可显式覆盖，旧 SQLite 缓存不再包裹原生。
+- 新增 hk systemd 部署单元与运行说明：`/opt/guiju`、`/var/lib/guiju`、`18083`，健康检查 `GET /health`。
+- hk 已验证 health 与 37 个 M4 编号查询（35 有结果、2 个 DB31/T 为空、0 错误），并预热 28 个 GB/JGJ/CJJ 官方页面缓存。
+- 2026-11-01 所有者授权后完成消费者端点切换，NAS spec-currency 已停止并移除 cron 自启动；文件保留可回退。
+
+## 未发布 — 2026-11-01（ADR 0002 期 1 · M4 预检）
+
+- 新增只读 M4 工具 `scripts/m4_currency_diff.py` 与纯比较模块 `guiju/currency/m4diff.py`，
+  37 个编号覆盖 GB/JGJ/CJJ/JTG/DB/DG/TJ；对比 `status / name / implement_date`。
+- 通过 hk/ctyun 出口取同一官方 csres 原始页面，与 NAS MCP 缓存逐字段核对：
+  GB/JGJ/CJJ **28/28** 一致；DG/TJ **2/2** 一致；DB31/T 双方空结果 **2/2**。
+- 修复 csres 返回 `/error/noright.html` 时被误判为合规 40 的边界，改为 `SourceUnreachable`
+  以允许备源；正文/跨源重定向仍保持 40。
+- **M4 未通过**：旧 NAS MCP 对 JTG 返回无命中、对 DBJT/DBTJ/DGJ 无能力；本机 csres 被 IP 限流。
+  默认仍为 cmd / mcp / off，未切 native；未部署、未修改 NAS、未构建旧 Go 仓。
+
+## 未发布 — 2026-10-31（ADR 0002 期 1 · M3）
+
+- 所有者裁定：上海地标以上海住建委为唯一真相；撤销 shzjw + csres 双源复合/交叉校验，
+  不移植旧 Go composite，也不新增第二份地标解析器。
+- 将原上海 _record/四栏检索/排序提取为唯一纯核心 guiju/domain/shzjw.py；内容源保留
+  原合规 POST/下载与全部旧导出，原生 guiju/currency/shzjw.py 只注入独立 JSON 查询 transport。
+- 上海已确认编号先于通用 DB 路由；统一空白/大小写/破折号身份但保留官方原编号。
+  DG/TJ08、DGJ08、DBJT08、DBTJ08、DBJ08、DB31/T 是查询归属边界，不扩到其他省市。
+- 基础号完整读取四栏并返回所有严格匹配版本；显式版年只取该完整编号，不自动用新版替换旧版。
+- 官方 standardType 接受实际字符串 "0"/"1"；废止栏缺行标记仍为 withdrawn，未来实施日期
+  不把源站 current 改成 upcoming；分页不完整/显式失败统一 exit 50，不缓存部分结果。
+- 缓存增加上海源特有精确身份校验与官方 v2 namespace：不重放错标准、外源/备源结果和旧裁剪数据；
+  无记录/源故障/40/取消均不查 csres/其他源，只允许已验证同源有界 TTL 明示降级。
+- 新增 84 项测试，全量 349 → 433；三版本各 433 通过，ruff 与离线冒烟 4/4 全绿。
+  官方查询端点仅元数据点查 5/5（四现行、一废止），未取 PDF、未访问 NAS、未切默认/部署。
+
+## 未发布 — 2026-10-31（ADR 0002 期 1 · M2）
+
+- 前缀注册表按最长匹配与 ASCII 词边界选源；GB/JGJ/CJJ → csres→ccsn→std_samr，
+  JTG → csres→jtst，DB* → csres→dbba；上海地标专门路由留给 M3（后经所有者裁定仅接 shzjw）。
+- 移植四个备源与基础号重查；主源成功空结果不换源，备源只救源故障，
+  结果显式保留 `fallback`，不得把备源结论伪装成主源。
+- `NativeCurrency` 提供显式查询编排：24h TTL、上游失败最多用 30 天内旧缓存，
+  fresh/stale/来源风险分别可见；40 与取消不能由备源或缓存恢复。
+- 具体磁盘缓存位于 `guiju/store/currency.py`，显式目录、namespace+query hash、
+  schema/时间/全字段校验、原子替换；原生元数据树仍无文件或数据库依赖。
+- 标准库 HTTP 扩展 JSON/查询表单：dbba 不发 JSON Accept，307/308 保留 POST 参数，
+  禁止跨源重定向；JSON Unicode/HTML 实体验证码同样即时 40，深层 JSON 异常归 50。
+- 八份原始 Go golden 全部按字节锁定并逐字段回归；全量单测 189 → 349。
+  本轮不切默认、不做 M3/M4、不访问 NAS，不修改或构建旧 Go 仓；未发版/提交/推送。
+
+## 未发布 — 2026-10-31（ADR 0002 期 1 · M1）
+
+- 将时效单文件迁为 `guiju/currency/` 包，保留全部旧导出、缓存和默认 cmd / mcp / off 选择；
+  原生 csres 只可显式构造，尚未切换默认查询链路。
+- 新增纯标准库元数据 HTTP 客户端（非第三方 httpx）：25s 超时、最多 3 次、0.5/1.5s 退避、
+  诚实 ASCII UA、按 host 1.2s 间隔；固定 csres 搜索出口，逐跳校验，拒绝附件/二进制与人机校验。
+  有界读取并识别 Content-Length 截断；中间跳转只采样 8192 字节，不让 urllib 无界吞体。
+- 移植 csres GBK 表格解析与号族过滤，保留发布日期/raw 证据，
+  未知/缺失状态不兜底现行；既有 CLI/TSV 五字段投影不变。
+- 原始 GBK golden 按字节迁入并锁 SHA-256 / Git 换行属性，六字段逐项对照 Go 金标准；
+  新增 54 项离线测试（含真实 HTTPResponse/opener 内存回归与禁正文/禁落盘哨兵）。
+- M1 不含 M2 路由/备源/TTL、不更改旧 Go 仓或 NAS；验收见 `docs/ACCEPTANCE.md`。
+
 ## 0.14.5 — 2026-10-31（交接文档重写）
 
 - `HANDOFF.md` 按 v0.14.4 现状重写：文档地图、跑法、**这一轮 9 个版本各做了什么**、

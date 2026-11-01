@@ -1,0 +1,182 @@
+
+
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>国家标准检索 - 交通运输标准化信息系统</title>
+<link href="/resources/bootstrap/css/bootstrap.css" rel="stylesheet" type="text/css" />
+<script type="text/javascript" src="/resources/jquery/jquery-3.7.1.min.js"></script>
+<script type="text/javascript" src="/resources/bootstrap-paginator/bootstrapv3.js"></script>
+<script type="text/javascript" src="/resources/bootstrap-paginator/bootstrap-paginator.js"></script>
+<script type="text/javascript" src="/js/common.js"></script>
+<style>
+sacinfo{font-style: normal;color: #c00;}
+.post {
+    margin-top: 15px;
+}
+.page-header {
+	margin-top:0;
+	margin-bottom:5px;
+}
+.en-code{
+	font-weight:bold;
+	color:#0A5CA8;
+
+	font-size:110%;
+}
+.s-logo {
+	display:inline-table;
+	width:60px;
+	height:60px; 
+}
+.s-logo .line11 {
+	display:block;
+	margin-bottom:5px;
+	font-size:14px;
+	line-height: 20px;
+}
+.s-logo .line22 {
+	font-size:12px;
+}
+.s-title {
+	width:100%;
+}
+.s-title td{
+	vertical-align:top; 
+}
+.s-status {
+	float:right;
+	font-weight:normal;
+	font-size:14px;
+	white-space:nowrap;
+}
+.s-title .s-status:first-child {
+	margin-top:2px;
+}
+.post-flex{
+	font-size:12px;
+	margin-top:10px;
+	margin-bottom:2px;
+}
+.post-flex time{
+	color:gray;
+}
+.panel-footer{
+	text-align: right;
+}
+
+.panel-footer .glyphicon:first-child, .post-flex .glyphicon:first-child{
+	margin-left:0;
+}
+.panel-footer .glyphicon, .post-flex .glyphicon{
+	margin-left:20px;
+}
+.post .top-media {
+	margin-left:-30px;
+}
+.post .media-inner .media-left{
+	border-left:5px #1b809e solid;
+}
+.post .media-inner .media-left span{
+	display:block;
+	width:65px;
+	text-align:right;
+}
+.post .media-inner .media-body{
+	color:gray;
+}
+.media-body span{cursor: pointer;}
+.container{padding-left:30px;width:100%;}
+.pagination{margin: 0}
+.nums{width:538px;color: #999;font-size: 12px;margin: 0 0 0 -10px;}
+.nums span{color: #FF6D00}
+
+@media (max-width: 568px){
+	.post .top-media {
+	    margin-left: 0;
+	}
+	.container{padding-left:15px;padding-right:15px;}
+	.s-logo{display:none;}
+	.panel-footer{display:none;}
+}
+</style>
+</head>
+<body>
+<div class="container">
+	<div class="nums">为您找到相关结果约&nbsp;<span>0</span>&nbsp;个</div>
+	<div class="row">
+	
+		
+		<ul id='pagebar' style="cursor:pointer; float: right;"></ul>
+	</div>
+</div>
+<script type="text/javascript">
+$(function(){
+	//点击事件
+	$(".s-title a").each(function(index){
+        var tid = $(this).attr('tid');
+        var pid = $(this).attr('pid');
+        if(tid=='BV_HB')
+        	$(this).attr("href","/hb/search/stdHBDetailed?id="+pid);
+        else if(tid=='BV_GBF_INFO'||tid=='BV_GBF_PROJECT')
+        	$(this).attr("href","/gfs/search/gfsDetailed?id="+pid);
+       	else 
+        	$(this).attr("href","/gb/search/gbDetailed?id="+pid);
+    });
+	var element = $('#pagebar');//获得数据装配的位置
+	//初始化所需数据
+	var options = {
+	    bootstrapMajorVersion:3,//版本号。3代表的是第三版本
+	    currentPage: 1, //当前页数
+	    numberOfPages: 10, //显示页码数标个数
+	    totalPages:0, //总共的数据所需要的总页数
+	    itemTexts: function (type, page, current) {  
+	    		//图标的更改显示可以在这里修改。
+	    switch (type) {
+	            case "first":  
+	                return "首页";  
+	            case "prev":  
+	                return "上一页";  
+	            case "next":  
+	                return "下一页";  
+	            case "last":  
+	                return "末页";  
+	            case "page":  
+	                return  page;  
+	        }                 
+	    }, 
+	    tooltipTitles: function (type, page, current) {
+			//如果想要去掉页码数字上面的预览功能，则在此操作。例如：可以直接return。
+	        switch (type) {
+	            case "first":
+	                return "跳转到首页";
+	            case "prev":
+	                return "跳转到上一页";
+	            case "next":
+	                return "跳转到下一页";
+	            case "last":
+	                return "跳转到最后一页";
+	            case "page":
+	                return (page === current) ? "当前页 " + page : "跳转到 " + page;
+	        }
+	    },
+	    onPageClicked: function (e, originalEvent, type, page) {  
+	        top.pageTop();
+	        document.location = changeURLArg(document.location.href,"pageNo",page);
+	    }
+	};
+	if(Number("0")>0)
+		element.bootstrapPaginator(options);	//进行初始化
+	//设置iframe高度
+	setHeight();
+});
+function setHeight(){
+	var bh = $(".container").height();
+  	$('#myiframe', window.parent.document).height(bh);
+} 
+</script>
+</body>
+</html>

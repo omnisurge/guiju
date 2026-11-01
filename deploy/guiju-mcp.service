@@ -1,0 +1,21 @@
+[Unit]
+Description=guiju MCP service (native currency)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/guiju
+Environment=PYTHONUNBUFFERED=1
+Environment=GUIJU_HOME=/var/lib/guiju
+Environment=GUIJU_CURRENCY=native
+Environment=GUIJU_CURRENCY_CACHE=/var/lib/guiju/currency-cache
+ExecStart=/usr/bin/python3 -m guiju mcp --http --host 0.0.0.0 --port 18083 --path /mcp
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=8
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "origin": "spec-currency/internal/adapter/testdata",
+  "fixtures": [
+    {
+      "file": "csres_gb50011.gbk",
+      "bytes": 10039,
+      "sha256": "142c161609a8181247e11a2b347ac291d6729572ce9251deb77c1d0c13a6b039",
+      "source": "csres"
+    },
+    {
+      "file": "ccsn_gb50011.json",
+      "bytes": 3786,
+      "sha256": "d0f4a087e94123c21be6bde675256019df5eeebda7c7058d5a6ba268263d8fa6",
+      "source": "ccsn"
+    },
+    {
+      "file": "ccsn_jgj147.json",
+      "bytes": 6217,
+      "sha256": "046dc73997b880581d6d9b621aa25ab0e7244f96cf12711b34cae3535f0ce897",
+      "source": "ccsn"
+    },
+    {
+      "file": "dbba_db31t792.json",
+      "bytes": 565,
+      "sha256": "812c0ceba9bf785b5a4d1ef78f820492699b44cb77b9e5bdca0e6ae331d5a53a",
+      "source": "dbba"
+    },
+    {
+      "file": "dbba_db31_373.json",
+      "bytes": 1354,
+      "sha256": "561278faf69d10627d563446bd2a43b2e96db9f92f7d2e7de91903bb86976c32",
+      "source": "dbba"
+    },
+    {
+      "file": "stdsamr_gbt19001.json",
+      "bytes": 1576,
+      "sha256": "8ab7d55118512e33627697418ddfd7e7b575d1c5258fa70a2504da3338278b08",
+      "source": "std_samr"
+    },
+    {
+      "file": "jtst_jtgd60.html",
+      "bytes": 7948,
+      "sha256": "ec49e688c0d43538d322365fb532d14582a732b97dec33038dff6b0dcd593d93",
+      "source": "jtst"
+    },
+    {
+      "file": "jtst_empty.html",
+      "bytes": 4992,
+      "sha256": "da27626a3c5c6d0d411d64086cc4609e1177aefd5f809342ef3c1a11efafd9ef",
+      "source": "jtst"
+    }
+  ]
+}

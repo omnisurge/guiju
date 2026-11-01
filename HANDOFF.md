@@ -1,8 +1,8 @@
 # 规矩 guiju — 交接文档
 
 > 一句话：从官方站点取工程建设标准的**目录 + 正文 + 引用串 + 现行状态**，只搬运与校验，不生产内容。
-> 状态：**v0.14.4**（2026-10-31）。单测 135 项、联网验收 42/42、本地 CI 全绿，仓库干净且已推送。
-> ADR 0001（index / 时效端口化）**已 100% 收尾**；ADR 0002（合并 spec-currency）**期 2 已完成、期 1 待开工**。
+> 状态：**v1.0.0 发布版**（2026-11-01；已提交/推送）。单测 **446 项**、Python 3.10/3.12/3.13 与本地离线 CI 全绿；hk 部署与消费者切换已验证。
+> ADR 0001（index / 时效端口化）**已 100% 收尾**；ADR 0002（合并 spec-currency）**期 2 已完成、期 1 的 M1/M2/M3/M4 已完成；M4 可比基线 32/32，默认 native 已切；guiju mcp 已部署 hk，消费者 profile 已切到 hk（DSH 重启生效），NAS spec-currency 已于 2026-11-01 停用**。默认 native，cmd / mcp / off 可显式覆盖。
 
 ## 文档地图（各司其职，不要互相抄）
 
@@ -16,14 +16,14 @@
 | `docs/adr/0002-merge-into-one-product.md` | **下一步**：合并 spec-currency、`guiju mcp`、部署形态 | 接手人 |
 | `docs/adr/0003-catalog-self-refresh.md` | 目录自保鲜（无 cron/launchd）与 `catalog` 反馈契约 | 维护者 |
 | `docs/ACCEPTANCE.md` | 验收记录（可复跑 `scripts/e2e.py`） | 所有人 |
-| `CHANGELOG.md` | 版本变更（0.9.0 → 0.14.4 的每一步都在里面） | 所有人 |
+| `CHANGELOG.md` | 版本变更（v1.0.0 及历史） | 所有人 |
 | 本文件 | 交接状态与"已验证/别重犯"的事实清单 | 接手人 |
 
 ## 一、现在怎么跑
 
 ```bash
 cd ~/Development/guiju
-python3 scripts/ci.sh            # 本地 CI（ruff → 单测 → 离线 e2e → 入口自检），pre-push 同一套门
+GUIJU_CURRENCY=off bash scripts/ci.sh  # 本地离线 CI（ruff → 单测 → 离线 e2e → 入口自检），pre-push 同一套门
 python3 scripts/e2e.py           # 联网验收（42 项，约 3 分钟；权威执行只在本机）
 uv tool install --editable .     # 已装：~/.local/bin/guiju 与 gj，任意目录可用
 
@@ -36,7 +36,7 @@ guiju cite GB55037-2022 5.2.1    # → 《建筑防火通用规范》GB 55037-20
 
 - 零第三方依赖（Python ≥3.10 标准库）；数据默认 `~/.guiju/`（`catalog.db` + `library/`），`GUIJU_HOME` / `--db` 可覆盖。
 - 受限沙箱里 `~/.guiju` 可能被拦 → `export GUIJU_HOME=/tmp/guiju`。
-- 受限环境跑测试时关掉自动保鲜：`GUIJU_NO_AUTO_SYNC=1`（否则会真去联网抓目录）。
+- 实际 CLI 的受限/离线调用用 `GUIJU_NO_AUTO_SYNC=1` 关掉自动保鲜；**不要在整套单测上全局设置它**：保鲜测试自己 mock 网络且需要检验自动刷新，强制关闭会造成 5 个假失败。阶段验收使用临时 `GUIJU_HOME` + `GUIJU_CURRENCY=off`，不接 NAS。
 
 ## 二、这一轮做了什么（版本即内容）
 
@@ -89,34 +89,54 @@ guiju cite GB55037-2022 5.2.1    # → 《建筑防火通用规范》GB 55037-20
 
 ## 四、下一步（ADR 0002）
 
-**期 2 已完成**（上海地标内容源）。剩下三期，**期 1 是唯一高风险期**：
+**期 2 已完成**（上海地标内容源）；**期 1 的 M1/M2/M3 已完成**（已随 v1.0.0 发布），M4 可比基线 32/32 且默认 native 已切；JTG/上海设计标准作为新增能力记录。hk 的 guiju mcp 已完成部署验证，DSH 消费者端点已切到 hk，NAS spec-currency 已于 2026-11-01 停用（cron 自启动已移除，文件保留可回退）：
 
 | 里程碑 | 内容 | 门禁 |
 |---|---|---|
-| **M1** | `guiju/currency/` 骨架 + httpx（超时/退避/UA）+ **csres**（GBK HTML 表格解析） | `csres_gb50011.gbk` golden 离线比对通过 |
-| **M2** | 前缀路由注册表 + fallback 链 + TTL 缓存 + `ccsn`/`stdsamr`/`jtst`/`dbba` | 8 份 golden 全过；离线可跑 |
-| **M3** | `DG/TJ` 复合源（shzjw 权威 + csres 校验） | 两源状态一致 |
-| **M4** | 与 NAS mcp **逐字段 diff**（30+ 编号，覆盖 GB/JGJ/CJJ/JTG/DB/DG/TJ） | 不一致即阻断；通过后默认走 native，`cmd`/`mcp` 降为调试通道 |
+| **M1 ✅** | `guiju/currency/` 骨架 + 标准库 httpx（超时/退避/UA）+ **csres**（GBK HTML 表格解析） | 原始 `csres_gb50011.gbk` 六字段逐项一致；54 项新增离线测试通过 |
+| **M2 ✅** | 前缀路由注册表 + fallback 链 + TTL 缓存 + `ccsn`/`stdsamr`/`jtst`/`dbba` | 8 份 golden 全过；新增 160 项离线回归，全量 349 项通过 |
+| **M3 ✅** | 上海地标仅接 `shzjw`；既有内容源与原生时效复用唯一 `domain/shzjw.py` | 新增 84 项回归、全量 433 通过；官方元数据点查 5/5；下载函数保持原样 |
+| **M4**（可比基线通过） | 与 NAS mcp **逐字段 diff**（覆盖 GB/JGJ/CJJ/DG/TJ；JTG/上海设计标准为新增能力） | 2026-11-01 只读对比：GB/JGJ/CJJ 28/28 + DG/TJ 2/2 + DB31/T 2/2 空命中，共 32/32 一致；JTG/上海设计标准旧服务无能力，作为新增能力记录；默认 native 已切 |
 
-Go 侧路由链（照抄即可，别自己发明）：
+显式调试入口为 `guiju.currency.native.NativeCurrency`；`query` 返回带来源/缓存说明的 Outcome，
+`lookup` 保持 `Currency` 端口。默认不落盘；需要持久化时显式注入
+`guiju.store.currency.DiskCurrencyCache(调用者指定目录)`，不要让适配器持有文件句柄。
+TTL 为 age < 24h；源故障降级只接受 age <= 30d，并明示年龄与上游错误；
+40/取消不能退备源或旧缓存。namespace/query/schema/时间与全字段都需校验，
+原生缓存故意不兼容旧 Go 文件格式；备源标记在 fresh/stale 重放中也不能丢。
+`Record` / `Currency` 在 `currency/model.py`，旧导出和五字段投影保持兼容；
+**尚未接 CLI 默认选择，也不要在 NativeCurrency 外再套旧 CachedCurrency 的无 TTL memo**。
+验收与跨 Python 版本结果见 `docs/ACCEPTANCE.md`，八份夹具来源见 `tests/fixtures/currency/README.md`；M4 只读对比证据见 `docs/audit/m4-currency-diff-2026-11-01.md`。
+
+2026-10-31 所有者修正并随后授权实施：**上海地标仅以上海住建委为唯一真相**。
+M3 已完成，不查 csres/其他源交叉校验或兜底，不移植 Composite。
+内容源与原生元数据共用 `guiju/domain/shzjw.py`；原生仅经固定 HTTPS:9175 的 list JSON POST，
+不经正文传输、不签下载令牌、不取 PDF、不落盘。
+上海专属路由统一空白/大小写/已支持破折号，精确限定 08 及 DB31/T，不扩到其他省市；
+DG/TJ08、DBJT08、DGJ08、DBTJ08 已有官方点查样例，DB31/T 保留既有契约入口，
+DBJ08 仅依据历史家族保守限定；这些是查询归属边界，不承诺每个编号实际已收录。
+未确认的 DB31 其它写法与上海近似非法形式保守 NoSource，绝不转通用 DB 外源。
+基础号读取完整四栏并保留全部严格匹配版本；显式版年只取该完整编号，不自动换新版。
+同源缓存还会校验精确编号/来源/状态/fallback，旧外源与旧裁剪策略 namespace 不重放。
 
 ```
 GB / JGJ / CJJ  → Fallback( csres → ccsn → stdsamr )
 JTG             → Fallback( csres → jtst )
-DB*             → Fallback( csres → dbba )
-DG/TJ           → Composite( shzjw 权威 ←→ csres 交叉校验 )
+其它 DB*        → Fallback( csres → dbba )
+上海已支持编号   → Shzjw only（唯一真相；优先路由）
 ```
 
 - `csres` 是主源：`GET http://www.csres.com/s.jsp?keyword=<号>`，**GBK 编码 HTML**，首次 TTFB 1–8s（靠重试+备源）。
 - 元数据适配器**禁止**调用 `compliance.get`、**禁止**落文件（ADR 0002 决策 5，要用测试钉住）——`csres.com` 不是 `*.gov.cn`。
 - 之后：期 3 `guiju mcp` 服务面 → 期 4 归档 spec-currency。
-- **开工前不要动 `spec-currency` 仓**，也不要往 guiju 里再塞一份地标解析器（会产生双份实现）。
+- **不要修改或构建 `spec-currency` 仓**：M1/M2 只读参考其源码与 golden，M3 未操作旧仓，离线回归现在不依赖旧仓；也不要往 guiju 里再塞一份地标解析器（会产生双份实现）。
 
 **已否决、不要再提**：特种作业/特种设备证书查询产品。三个官方站（应急部 `cx.mem.gov.cn` 瑞数反爬 412、住建部 `zlaq` 接口 400+验证码、市场监管总局 `cnse` 滑块+查询码）全部挡住自动化，且身份证号属敏感个人信息（PIPL 28–29）——已与所有者确认放弃。
 
 ## 五、红线（不可绕过，不要加 override 开关）
 
-- 只允许 `*.gov.cn`，且**每一次重定向**都要过白名单（`compliance._GuardedRedirect`）；POST 走同一道闸门。
+- **正文/内容抓取**只允许 `*.gov.cn`，且**每一次重定向**都要过白名单（`compliance._GuardedRedirect`）；内容源 POST 走同一道闸门。
+- 时效元数据仅允许 `currency/httpx.py` 的固定查询端点；不得复用为正文出口，适配器不得落文件。
 - 限速 1.2s/请求/按 host，不调快。
 - 命中验证码/人机校验即放弃（exit 40），**不尝试绕过**。
 - 只搬运不生产；不承诺条文准确性。
@@ -126,7 +146,7 @@ DG/TJ           → Composite( shzjw 权威 ←→ csres 交叉校验 )
 
 | 项 | 值 |
 |---|---|
-| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（v0.14.4） |
+| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（v1.0.0） |
 | 数据 | `~/.guiju/catalog.db`（3254 条公告）+ `library/`（内容寻址 PDF） |
 | 时效服务 | NAS `http://100.66.1.x:18083/mcp`（spec-currency，**健康**；NAS 只是有 ADR0048 的**变更冻结**，不是故障） |
 | spec-currency 源码 | `~/Development/spec-currency`（Go 1.26），**不装 PATH**；按需 build 到 `/tmp` |

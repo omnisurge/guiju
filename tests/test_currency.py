@@ -94,6 +94,21 @@ class CacheTest(unittest.TestCase):
         with self.assertRaises(SourceUnreachable):
             McpCurrency("http://127.0.0.1:9/mcp").lookup("GB 1-2020")
 
+    def test_mcp_currency_can_request_fresh_query_for_m4(self):
+        cur = McpCurrency("http://example.invalid/mcp")
+        calls = []
+
+        def fake_rpc(payload, session=None):
+            calls.append((payload, session))
+            if payload["method"] == "initialize":
+                return ({}, "session-1")
+            return ({"result": {"content": [{"type": "text", "text": "GB 1-2020\tcurrent\tX\n"}]}}, "session-1")
+
+        cur._rpc = fake_rpc
+        rows = cur.lookup("GB 1-2020", cache="off")
+        self.assertEqual(rows[0].code, "GB 1-2020")
+        self.assertEqual(calls[1][0]["params"]["arguments"], {"code": "GB 1-2020", "cache": "off"})
+
 
 if __name__ == "__main__":
     unittest.main()
