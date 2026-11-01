@@ -33,7 +33,7 @@
 | 单测 / 端到端 | 101 项单测（离线、零依赖）/ 38 项端到端断言（`scripts/e2e.py`） |
 | 目录保鲜 | 进程内自刷新：目录为空或 >7 天时，在该次命令里顺手增量同步（无 cron / 无常驻进程） |
 | 多源 | ✅ 住建部（国标/行标公告）+ 上海（地标，`--source shzjw`）；其余源未接 |
-| MCP | ✅ `guiju mcp`（stdio / HTTP；hk 38.76.165.16:18083；query/verify/batch） |
+| MCP | ✅ `guiju mcp`（stdio / HTTP；https://guiju.守夜人.中国/mcp，Bearer 认证；query/verify/batch） |
 
 ---
 

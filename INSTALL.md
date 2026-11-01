@@ -73,8 +73,9 @@
     scp deploy/guiju-mcp.service root@your-server:/etc/systemd/system/guiju-mcp.service
     ssh root@your-server 'systemctl daemon-reload && systemctl enable --now guiju-mcp'
 
-当前单元默认使用 /usr/bin/python3、/opt/guiju、/var/lib/guiju 和端口 18083。
+当前单元默认使用 /usr/bin/python3、/opt/guiju、/var/lib/guiju，并只监听 127.0.0.1:18083。
 如果服务器路径/用户不同，编辑 unit 中的 WorkingDirectory、Environment、User 和端口。
+直接对外提供时请在前面加 Caddy/nginx 反向代理和认证，不要把 18083 绑到 0.0.0.0。
 
 ### 5.3 验证
 
@@ -90,11 +91,13 @@ MCP 查询示例：
 
 ### 5.4 客户端配置
 
-MCP 客户端配置 streamable HTTP：
+MCP 客户端配置 streamable HTTP（假设已配置反向代理和 Bearer）：
 
     name: guiju
-    url: http://your-server:18083/mcp
+    url: https://your-domain.example/mcp
     transport: streamable-http
+    headers:
+      Authorization: Bearer <token>
 
 ## 6. 升级与回退
 
@@ -108,5 +111,5 @@ MCP 客户端配置 streamable HTTP：
 ## 7. 已知边界
 
 - hk 的 GB/JGJ/CJJ 依赖预热缓存和 TTL；缓存过期后需要重新预热或换出口。
-- 服务本身没有认证；对外网开放前应放在反向代理/访问控制后面。
+- 服务本身没有认证；unit 默认只监听 127.0.0.1，对外必须放在 Caddy/nginx 的反向代理和访问控制后面。
 - 正文下载只允许官方公开 .gov.cn 内容，不提供分发或镜像。
