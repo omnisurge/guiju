@@ -17,7 +17,14 @@ import re
 
 from .. import currency as currency_mod
 from ..domain.search import rank, tokens_of
-from ..errors import AmbiguousCode, AmbiguousTarget, GuijuError, NotIndexed, SourceUnreachable
+from ..errors import (
+    AmbiguousCode,
+    AmbiguousTarget,
+    BadUsage,
+    GuijuError,
+    NotIndexed,
+    SourceUnreachable,
+)
 from ..sources.mohurd import migrate_legacy_url
 from ..store.sqlite import Store
 
@@ -41,6 +48,18 @@ def source_of(url: str) -> dict:
     return {"id": "unknown", "label": "未知源"}
 
 
+def ref_is_code(ref: str) -> bool:
+    """编号形态（先问时效服务）还是名称形态（走本地检索）。
+
+    与 resolve 的入口判定保持一致：URL/纯数字/CJK 名称都不是编号，
+    which 在问时效服务前必须先做这个判断，否则名称会得到"没收录"（31）。
+    """
+    ref = (ref or "").strip()
+    if not ref or ref.lower().startswith("http") or ref.isdigit():
+        return False
+    return not (_CJK.search(ref) and not _CODEISH.match(ref))
+
+
 def resolve(
     store: Store,
     ref: str,
@@ -51,7 +70,7 @@ def resolve(
 ) -> dict:
     ref = (ref or "").strip()
     if not ref:
-        raise GuijuError("引用为空")
+        raise BadUsage("引用为空")
     currency = currency or currency_mod.CachedCurrency()
 
     if ref.lower().startswith("http"):
@@ -75,7 +94,7 @@ def _by_url(store: Store, ref: str) -> dict:
         if legacy:
             row = store.get_ann_by_url(legacy)
     if row is None:
-        raise GuijuError(
+        raise NotIndexed(
             "该链接不在本地目录中，请先运行 guiju sync",
             hint="先 guiju sync 同步目录，再重试",
         )
@@ -85,7 +104,10 @@ def _by_url(store: Store, ref: str) -> dict:
 def _by_id(store: Store, ann_id: int) -> dict:
     row = store.get_ann(ann_id)
     if row is None:
-        raise GuijuError(f"本地目录中没有 ID={ann_id} 的公告")
+        raise NotIndexed(
+            f"本地目录中没有 ID={ann_id} 的公告",
+            hint="先 guiju sync 同步目录，再重试",
+        )
     return _wrap(row, via="ann_id")
 
 

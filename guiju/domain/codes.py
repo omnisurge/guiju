@@ -21,12 +21,18 @@ _CODE_RE = re.compile(
     r"\s*(\d{2,6})\s*[-—–－]\s*(\d{4})"
 )
 _SENTENCE = re.compile(r"[。；;\n]+")
+#: 逗号也是子句边界：「批准发布X，原Y同时废止」若不按子句切，"同时废止"会溅到 X 上
+_CLAUSE = re.compile(r"[，,：:；;。\n]+")
 _TAG = re.compile(r"<[^>]+>")
 
 #: 「编号被改写」的措辞（局部修订公告的典型句式）
 _REVISION_WORDS = ("修改为", "修订为", "编号改为", "编号修改为")
+#: 「这个编号被撤销」的措辞（动词在编号之后 → 该编号是旧版）
+_VOID_WORDS = ("废止", "作废", "取消")
+#: 「代替/替代」的宾语是旧版：「X代替Y」→ X 新、Y 旧；「本标准代替Y」→ Y 旧
+_REPLACE_WORDS = ("代替", "替代")
 #: 「这个编号已被替代」的措辞
-_SUPERSEDE_WORDS = ("代替", "替代", "废止", "取消")
+_SUPERSEDE_WORDS = _REPLACE_WORDS + _VOID_WORDS
 #: 「这个编号是本次发布的」的措辞
 _PUBLISH_WORDS = ("发布", "批准发布", "印发", "施行", "实施")
 
@@ -157,19 +163,42 @@ def _role_for(sentence: str, pos: int, doc_name: str | None) -> Role:
     """按中文公告的真实句式判定角色。
 
     方向性很关键：「X 代替 Y」里 X 是新的、Y 是旧的；而「Y 同时废止」直接判旧。
-    历史实现只看关键词不看位置，导致被代替的旧编号被判成 primary —— 这正是
-    「通知单引用错版本」事故的成因。
+    动词与编号必须落在同一个子句（逗号/冒号界定的片段）里才作数 ——
+    「批准发布X，原Y同时废止」若按整句扫，"同时废止"会溅到 X 上（实测误伤）。
+
+    判定只看子句内证据；「发布/实施」这类发布措辞放宽到整句，因为
+    「编号为X，自2023年起实施」里 X 与"实施"天然分居两个子句。
     """
-    head = sentence[:pos]
-    tail = sentence[pos:]
+    bounds = [m.end() for m in _CLAUSE.finditer(sentence)]
+    clause_start = max((b for b in bounds if b <= pos), default=0)
+    ends = [m.start() for m in _CLAUSE.finditer(sentence)]
+    clause_end = min((e for e in ends if e > pos), default=len(sentence))
+    clause = sentence[clause_start:clause_end]
+    head = clause[: pos - clause_start]
+    tail = clause[pos - clause_start :]
 
     if any(w in head for w in _REVISION_WORDS):
         return Role.TARGET_OF_REVISION
-    if any(w in sentence for w in ("废止", "作废")):
+    # 「…代替/替代 X」：X 是被替代的宾语 → 旧版（「本标准代替Y」的 Y 也在这里判旧）
+    # 允许宾语串（「代替Y1、Y2」的 Y2），但不允许纯数字年份（「代替Y（1999年版）」的 X 不算）
+    if re.search(r"(?:代替|替代)(?:[^0-9A-Z]|\s*[A-Z]+/?[A-Z]*\s*\d{2,6}\s*[-—–－]\s*\d{4})*$", head):
         return Role.SUPERSEDED_REF
-    if any(w in tail for w in _SUPERSEDE_WORDS):      # 「X 代替 Y」的 Y
+    # 「X 废止/作废/取消」：动词在编号之后、且后面没有别的编号接锅 → X 是旧版
+    if re.search(r"(?:废止|作废|取消)(?:[^0-9A-Z]|\s*[A-Z]+/?[A-Z]*\s*\d{2,6}\s*[-—–－]\s*\d{4})*$", tail):
         return Role.SUPERSEDED_REF
-    if any(w in head for w in _SUPERSEDE_WORDS):      # 「X 代替 Y」的 X
+    # 「X 代替」位于子句尾部（后面没有别的编号）→ X 是旧版；
+    # 但「由X代替」里 X 是施动者（新版），是 primary 而非旧版
+    if re.search(r"(?:代替|替代)[^A-Za-z0-9]*$", tail):
+        if re.search(r"(?:由|被)[^A-Za-z0-9]*$", head):
+            return Role.PRIMARY
+        return Role.SUPERSEDED_REF
+    # 「X 代替 Y」：X 后面同子句还有"代替"且另有一个编号 → X 是新的
+    if any(w in tail for w in _REPLACE_WORDS):
+        return Role.PRIMARY
+    # 「编号为X，代替Y」：代替在下一个子句开头 → X 是新的
+    nxt = sentence[clause_end:]
+    nxt = nxt[: next((m.start() for m in _CLAUSE.finditer(nxt)), len(nxt))]
+    if re.match(r"\s*(?:代替|替代)", nxt):
         return Role.PRIMARY
     if any(w in sentence for w in _PUBLISH_WORDS):
         return Role.PRIMARY
@@ -178,25 +207,32 @@ def _role_for(sentence: str, pos: int, doc_name: str | None) -> Role:
     return Role.MENTIONED
 
 
-def _base_number(code_key: str) -> str:
-    """GB/T50362-2022 → 50362：同一标准的版本之间共享这个数。"""
-    head = code_key.rsplit("-", 1)[0]
-    return re.sub(r"^[A-Z/]+", "", head)
+def _code_stem(code_key: str) -> str:
+    """GB/T50362-2022 → GB/T50362：同一标准的版本之间共享前缀+基号，年份不算。
+
+    必须带前缀族：JGJ450-2018 与 JGJ/T450-2018 基号相同但不是同一个规范族，
+    只比基号会把修订后的 JGJ/T450-2018 误降级成旧版（实测误伤）。
+    """
+    return code_key.rsplit("-", 1)[0]
 
 
 def _demote_older(primary: Mention | None, mentions) -> list[Mention]:
-    """把「与 primary 同号但不同版本」的条目降级为 superseded_ref。
+    """把「与 primary 同族同号但不同年份」的条目降级为 superseded_ref。
 
-    实测场景：局部修订公告同页出现 JGJ450-2018（原版）与 JGJ/T450-2018（修订后）。
-    两者若是同一标准的不同版本，旧的那个就不是 primary —— 引用它等于引用废止版。
+    实测场景：公告同页出现 GB/T50362-2022（新）与 GB/T50362-2005（旧）却都没命中
+    代替/废止措辞时，同族同号的旧版就不该被当候选 —— 引用它等于引用废止版。
     """
     if primary is None:
         return list(mentions)
-    base = _base_number(primary.code_key)
+    # primary 是 ambiguous 兜底（mentioned）时不做降级：没有决定性证据就把
+    # 同族旧版降成 superseded_ref，等于把"猜"伪装成"判"。
+    if primary.role not in (Role.TARGET_OF_REVISION, Role.PRIMARY):
+        return list(mentions)
+    stem = _code_stem(primary.code_key)
     out: list[Mention] = []
     for m in mentions:
         if m.code_key != primary.code_key and m.role is not Role.SUPERSEDED_REF \
-                and _base_number(m.code_key) == base:
+                and _code_stem(m.code_key) == stem:
             m = Mention(m.code_key, m.code_display, Role.SUPERSEDED_REF, m.evidence)
         out.append(m)
     return out
@@ -217,8 +253,10 @@ def _choose_primary(mentions: tuple[Mention, ...]) -> Mention | None:
         alive = [m for m in mentions if m.role is not Role.SUPERSEDED_REF]
         if len(alive) == 1:
             return alive[0]
-        pool = alive or list(mentions)
-        return max(pool, key=lambda m: _year(m.code_key))
+        if not alive:
+            # 全是旧版时没有资格猜 primary：返回 None，交 ambiguous 给人
+            return None
+        return max(alive, key=lambda m: _year(m.code_key))
     return max(primaries, key=lambda m: _year(m.code_key))
 
 

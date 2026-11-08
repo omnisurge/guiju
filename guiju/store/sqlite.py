@@ -177,7 +177,9 @@ class Store:
     def upsert_edition(self, key: str, display: str, title: str | None, confidence: str) -> None:
         self.db.execute(
             "INSERT INTO edition(code_key,code_display,title,confidence) VALUES(?,?,?,?) "
-            "ON CONFLICT(code_key) DO UPDATE SET confidence=excluded.confidence,"
+            "ON CONFLICT(code_key) DO UPDATE SET"
+            " confidence=CASE WHEN edition.confidence='parsed' AND excluded.confidence!='parsed'"
+            " THEN edition.confidence ELSE excluded.confidence END,"
             " title=COALESCE(edition.title, excluded.title)",
             (key, display, title, confidence),
         )
@@ -324,7 +326,10 @@ def persist_codes(store: Store, ann_id: int, codes: Codes, doc_name: str, status
         if m.code_key != codes.primary_key:
             store.upsert_edition(m.code_key, m.code_display, None, "parsed")
         role = m.role.value
-        if codes.primary_key and m.code_key != codes.primary_key and m.role.value == "mentioned":
+        # 兜底降级只在 primary 是决定性证据（parsed）时成立：
+        # ambiguous 兜底 primary 没资格把同族编号判成旧版（与 domain._demote_older 一致）。
+        if (codes.primary_key and codes.confidence.value == "parsed"
+                and m.code_key != codes.primary_key and m.role.value == "mentioned"):
             role = "superseded_ref"
         store.add_mention(ann_id, m.code_key, role, m.evidence)
     store.mark_scanned(ann_id, len(codes.mentions))

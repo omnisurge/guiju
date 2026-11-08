@@ -19,6 +19,7 @@ from ...errors import (
     EXIT_OK,
     AmbiguousAttachment,
     BadAttachment,
+    BadUsage,
     GuijuError,
     NoAttachment,
 )
@@ -286,7 +287,7 @@ def _read_refs(spec: str) -> list[str]:
 def _batch(store: Store, args: argparse.Namespace, source) -> int:
     refs = _read_refs(args.list)
     if not refs:
-        raise GuijuError("清单为空：每行一个编号/名称/公告ID，以 # 开头的行为注释")
+        raise BadUsage("清单为空：每行一个编号/名称/公告ID，以 # 开头的行为注释")
 
     out_dir = Path(args.out).expanduser() if args.out else default_out_dir()
     results: list[dict] = []
@@ -343,7 +344,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         return _batch(store, args, source)
 
     if not args.ref:
-        raise GuijuError("缺少引用：给一个编号/名称/公告ID/URL，或用 --list 批量")
+        raise BadUsage("缺少引用：给一个编号/名称/公告ID/URL，或用 --list 批量")
 
     out_dir = Path(args.out).expanduser() if args.out else default_out_dir()
     payload = _pull_one(store, args, args.ref, source, out_dir)

@@ -50,5 +50,50 @@ class RoleTest(unittest.TestCase):
         self.assertEqual(codes.primary_key, "GB55037-2022")
 
 
+class DirectionTest(unittest.TestCase):
+    """「X 代替 Y」的宾语才是旧版 —— 修复前整条方向是反的（把新编号判成了旧版）。"""
+
+    def test_object_of_replace_is_superseded(self):
+        codes = classify("GB 50300-2022代替GB 50300-2013。")
+        roles = {m.code_key: m.role for m in codes.mentions}
+        self.assertIs(roles["GB50300-2022"], Role.PRIMARY)
+        self.assertIs(roles["GB50300-2013"], Role.SUPERSEDED_REF)
+
+    def test_object_chain_after_replace_word(self):
+        # 「X 代替 Y1、Y2」：两个宾语都是旧版（顿号不是子句边界）
+        codes = classify("GB/T 50001-2020代替GB/T 50001-2010、GB/T 50002-2005。")
+        roles = {m.code_key: m.role for m in codes.mentions}
+        self.assertIs(roles["GB/T50001-2020"], Role.PRIMARY)
+        self.assertIs(roles["GB/T50001-2010"], Role.SUPERSEDED_REF)
+        self.assertIs(roles["GB/T50002-2005"], Role.SUPERSEDED_REF)
+
+    def test_comma_splits_replacement_scope(self):
+        # 「，」必须切断「代替」的宾语链：逗号后新编号不是宾语
+        codes = classify("批准发布GB 50016-2022，原GB 50016-2014同时废止。")
+        roles = {m.code_key: m.role for m in codes.mentions}
+        self.assertIs(roles["GB50016-2022"], Role.PRIMARY)
+        self.assertIs(roles["GB50016-2014"], Role.SUPERSEDED_REF)
+
+    def test_passive_replacement_subject_is_primary(self):
+        # 「X 废止，由Y代替」：Y 是施动者（新版），不是旧版
+        codes = classify("经批准，JGJ 80-2016废止，由JGJ/T 80-2016代替。")
+        roles = {m.code_key: m.role for m in codes.mentions}
+        self.assertIs(roles["JGJ80-2016"], Role.SUPERSEDED_REF)
+        self.assertIs(roles["JGJ/T80-2016"], Role.PRIMARY)
+
+    def test_all_old_gives_no_primary(self):
+        # 池子全是旧版 → 无 primary，不能拿最旧的一个凑数
+        codes = classify("本标准代替JGJ 147-2004。")
+        self.assertIsNone(codes.primary_key)
+
+    def test_ambiguous_primary_does_not_demote(self):
+        # 无决定性证据时，ambiguous 兜底 primary 不允许把同族旧版降成 superseded_ref
+        codes = classify("《建筑拆除工程安全技术规范》JGJ147-2016与JGJ147-2004均已列入目录。")
+        roles = {m.code_key: m.role for m in codes.mentions}
+        self.assertIs(roles["JGJ147-2004"], Role.MENTIONED)
+        self.assertIs(roles["JGJ147-2016"], Role.MENTIONED)
+        self.assertEqual(codes.confidence, Confidence.AMBIGUOUS)
+
+
 if __name__ == "__main__":
     unittest.main()

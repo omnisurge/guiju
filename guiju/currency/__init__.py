@@ -34,7 +34,9 @@ from ..errors import SourceUnreachable
 from .model import Currency as Currency
 from .model import Record as Record
 
-DEFAULT_MCP_URL = "http://100.66.1.x:18083/mcp"
+# 公共端点走 HTTPS + Bearer（GUIJU_CURRENCY_TOKEN）；原 NAS :18083 已于 2026-11-01 退役。
+# 自托管的裸 HTTP 端点（如 hk 本机 127.0.0.1:18083）用 GUIJU_CURRENCY_URL 覆盖。
+DEFAULT_MCP_URL = "https://guiju.守夜人.中国/mcp"
 DEFAULT_CMD = "spec-currency"
 TIMEOUT = 25
 
@@ -115,13 +117,21 @@ class McpCurrency:
 
     name = "mcp"
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, token: str | None = None) -> None:
         self.url = url
+        self.token = token
+
+    def _token(self) -> str | None:
+        # 环境变量在请求时才读：进程启动后补设 token 不需要重启
+        return self.token or os.environ.get("GUIJU_CURRENCY_TOKEN") or None
 
     def _rpc(self, payload: dict, session: str | None = None) -> tuple[dict | None, str | None]:
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
         if session:
             headers["mcp-session-id"] = session
+        token = self._token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         req = urllib.request.Request(
             self.url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
         )
@@ -153,8 +163,11 @@ class McpCurrency:
                 },
             }
         )
-        if init is None:
-            return []
+        if init is None or "error" in init:
+            err = (init or {}).get("error") or {}
+            raise SourceUnreachable(
+                f"时效服务握手失败（{self.url}）：{err.get('code', '?')} {err.get('message', '无响应')}"
+            )
         result, _ = self._rpc(
             {
                 "jsonrpc": "2.0",
@@ -164,6 +177,12 @@ class McpCurrency:
             },
             sid,
         )
+        if result is not None and "error" in result:
+            # JSON-RPC 错误是"服务活着但调用失败"——绝不能静默当"没查到"（31）处理
+            err = result["error"] or {}
+            raise SourceUnreachable(
+                f"时效服务调用失败（{self.url}）：{err.get('code', '?')} {err.get('message', '未知错误')}"
+            )
         if not result:
             return []
         text = _tool_text(result)

@@ -12,15 +12,16 @@ from ... import currency as currency_mod
 from ... import localstatus
 from ...domain.availability import note as availability_note
 from ...domain.availability import state
-from ...errors import AmbiguousTarget, GuijuError, NotIndexed
+from ...errors import AmbiguousTarget, NotIndexed, SourceUnreachable
 from ...store.sqlite import Store
 from .. import render
-from ..lookup import resolve
+from ..lookup import ref_is_code, resolve
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
     cur = currency_mod.CachedCurrency(store=store)
-    records = cur.lookup(args.ref) if not args.offline else []
+    # 名称（CJK）输入时效服务必然"没收录"：只有编号形态才问时效
+    records = cur.lookup(args.ref) if (not args.offline and ref_is_code(args.ref)) else []
     source_name = cur.name
     endpoint = currency_mod.endpoint_of(getattr(cur, "inner", cur))
     if not records and not args.offline and localstatus.is_local_code(args.ref):
@@ -28,7 +29,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         try:
             records = localstatus.records(args.ref)
             source_name = "shzjw"
-        except GuijuError:
+        # 只有"源没收录 / 源不可达"才退回空记录；合规拦截等必须照常传播
+        except (NotIndexed, SourceUnreachable):
             records = []
 
     target = None
@@ -41,8 +43,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
             allow_network=not args.offline,
         )
     except (NotIndexed, AmbiguousTarget) as exc:
-        error = exc
-    except Exception as exc:
+        # 本地定位失败不算命令失败：时效结论仍然要输出，错误只在提示里说明
         error = exc
 
     ann = target["ann"] if target else None

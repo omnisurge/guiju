@@ -154,8 +154,10 @@ def evaluate(
         if notify is not None:
             if empty:
                 notify("目录为空，正在首次同步（33 页，约 60 秒）")
-            else:
+            elif age is not None:
                 notify(f"目录已 {age:.1f} 天未更新，正在增量同步（约 3 秒）")
+            else:
+                notify("目录上次同步时间未知，正在增量同步（约 3 秒）")
         try:
             result = crawl(store)
         except Exception as exc:

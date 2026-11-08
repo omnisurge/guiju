@@ -148,13 +148,21 @@ def rank(entries: list[dict], tokens: list[str]) -> tuple[list[Hit], str]:
     return _sorted(strict) + _sorted(fuzzy) + _sorted(char_hits), "+".join(parts) or "and"
 
 
+def _year_of(published_on: object) -> int:
+    """published_on 前四位是年份；非数字（"待定"）按 0 算，排在最旧。"""
+    try:
+        return int(str(published_on or "")[:4] or "0")
+    except ValueError:
+        return 0
+
+
 def _sorted(hits: list[Hit]) -> list[Hit]:
     return sorted(
         hits,
         key=lambda h: (
             -h.score,
             len(h.entry.get("name") or ""),          # 名称越短越精确
-            -(int((h.entry.get("published_on") or "0000")[:4] or 0)),
+            -_year_of(h.entry.get("published_on")),
             h.entry.get("id") or 0,
         ),
     )
