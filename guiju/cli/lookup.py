@@ -126,7 +126,7 @@ def _by_name(
             hint="先 guiju sync；若目录里确实没有这本标准，说明它没有公开正文公告",
         )
     ids = {h.entry["id"] for h in hits}
-    decisive = [h for h in hits if not h.entry["codes"] or True]  # 名称检索不依赖编号
+    ranked = hits  # 名称检索不依赖编号，hits 已按 rank 排序
     if len(ids) > 1:
         # 同一个名字命中多条公告，绝大多数情况是**同一本标准的版本迭代**
         # （实测《绿色建筑评价标准》2024/2019/2014/2006 各发过一次公告）。
@@ -146,11 +146,11 @@ def _by_name(
                     "url": h.entry["url"],
                     "match": h.match,
                 }
-                for h in decisive[:10]
+                for h in ranked[:10]
             ],
             mode=mode,
         )
-    best = decisive[0]
+    best = ranked[0]
     row = store.get_ann(int(best.entry["id"]))
     result = _wrap(row, via="name")
     result["match"] = best.match
