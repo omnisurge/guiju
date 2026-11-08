@@ -201,6 +201,7 @@ def _pick_current_version(
                 continue
             codes = classify(text, ann["doc_name"] or "")
             persist_codes(store, int(ann["id"]), codes, ann["doc_name"] or "")
+            store.commit()
             code_key = codes.primary_key
         if not code_key:
             continue
@@ -222,6 +223,9 @@ def _pick_current_version(
             mine = next((r for r in records if normalize_key(r.code) == v["code_key"]), None)
             v["status"] = mine.status if mine else "unknown"
             v["code_display"] = mine.code if mine else v["code_key"]
+    except SourceUnreachable:
+        # 时效服务挂了不是"歧义"：20 让用户重试，32 会让人对着候选干选
+        raise
     except Exception:
         return None
 

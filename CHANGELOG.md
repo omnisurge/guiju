@@ -1,5 +1,30 @@
 # 变更记录
 
+## 未发布 — 2026-11-08（高危 bug 修复：编号角色链路 + 退出码契约）
+
+- `codes._role_for` 修复「X 代替 Y」方向反转：句尾「由/被 + 代替」的被动句里
+  施动者是新版（PRIMARY），不再被判成旧版；`_demote_older` 与
+  `sqlite.persist_codes` 双双加守卫，ambiguous 兜底 primary 不再把同族旧版
+  降级/伪造成 `superseded_ref`；`upsert_edition` 的 confidence 已 `parsed`
+  后永不被覆盖降级。
+- `autosync`/`status`：目录 age 为 None 时不再 `TypeError`；`search._sorted`
+  对 `published_on='待定'` 等非数字年份归 0，不再 `ValueError`。
+- `which`：名称输入不再误把 `NoCurrencySource(31)` 当"没收录"；
+  `except Exception` 吞 `ComplianceDenied(40)` 已收窄。
+- `lookup`/`pull`：空 ref、未命中 URL/ID、空清单等用户输入错误分流到
+  `BadUsage(2)`/`NotIndexed(31)`，不再落到裸 `GuijuError(1)`。
+- `McpCurrency`：JSON-RPC `{"error":...}` 不再静默变 `[]`（伪 31），改抛
+  `SourceUnreachable(20)`；握手失败同理。
+- `McpCurrency` 新增 Bearer 认证：`GUIJU_CURRENCY_TOKEN`，请求时惰性读取，
+  `McpCurrency(url, token=...)` 可显式注入；`DEFAULT_MCP_URL` 指向
+  `https://guiju.守夜人.中国/mcp`（NAS `:18083` 已于 2026-11-01 退役）。
+- `lookup._pick_current_version`：`persist_codes` 后补 `store.commit()`
+  （此前解析结果随连接关闭回滚）；时效服务 `SourceUnreachable` 不再被
+  压成 `AmbiguousTarget(32)`，向上冒泡为 `20` 让用户重试。
+- 测试：`test_codes` 新增 `DirectionTest` 6 例；新增 `test_regressions.py`
+  10 例（_year_of / ref_is_code / resolve 退出码 / persist_codes 双向 /
+  McpCurrency error 与 Bearer）。共 16 个新断言，461 单测全绿。
+
 ## 1.0.0 — 2026-11-01（产品化：guiju mcp + native 默认 + hk deployment）
 
 - 新增 `guiju mcp`：标准库 stdio JSON-RPC 与 HTTP `POST /mcp`，提供 `query / verify / batch`，
