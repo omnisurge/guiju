@@ -1,9 +1,11 @@
 """guiju mcp 契约的离线测试：不访问网络。"""
 
 import json
+import tempfile
 import threading
 import unittest
 import urllib.request
+from unittest import mock
 
 from guiju.currency.model import Record
 from guiju.mcp import McpServer, make_http_server
@@ -41,7 +43,7 @@ class McpProtocolTest(unittest.TestCase):
         self.assertEqual(init["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual(init["result"]["serverInfo"]["name"], "guiju")
         tools = self.call("tools/list")["result"]["tools"]
-        self.assertEqual([tool["name"] for tool in tools], ["query", "verify", "batch"])
+        self.assertEqual([tool["name"] for tool in tools], ["query", "verify", "batch", "announcement"])
 
     def test_query_and_verify_text_contract(self):
         query = self.call("tools/call", {"name": "query", "arguments": {"code": "GB50011"}})
@@ -58,9 +60,52 @@ class McpProtocolTest(unittest.TestCase):
         self.assertEqual(missing["result"]["content"][0]["text"], "unknown")
 
     def test_missing_arguments_are_tool_errors(self):
-        for name in ("query", "verify", "batch"):
+        for name in ("query", "verify", "batch", "announcement"):
             response = self.call("tools/call", {"name": name, "arguments": {}})
             self.assertTrue(response["result"]["isError"], name)
+
+    def test_announcement_returns_metadata_without_download(self):
+        from guiju.cli import lookup as lookup_mod
+
+        ann = {
+            "id": 7,
+            "url": "https://www.mohurd.gov.cn/gov/zhengce/x/7.html",
+            "published_on": "2024-01-05",
+            "title": "《工程结构通用规范》发布公告",
+            "doc_name": "工程结构通用规范",
+            "category": "national",
+        }
+        target = {
+            "ann": ann, "code_key": "GB55001-2021", "code_display": "GB 55001-2021",
+            "confidence": "parsed", "status": "current",
+        }
+
+        class FakeSource:
+            id = "mohurd"
+            api_mode = False
+
+            def detail(self, url):
+                self.detail_calls = getattr(self, "detail_calls", 0) + 1
+                return ("<html>body</html>", "正文")
+
+            def attachments(self, html):
+                from guiju.domain.attachment import Attachment
+
+                return [Attachment(url="https://www.mohurd.gov.cn/file/gb55001.pdf", label="正文")]
+
+        source = FakeSource()
+        with tempfile.TemporaryDirectory() as home,             mock.patch.dict("os.environ", {"GUIJU_HOME": home}),             mock.patch.object(lookup_mod, "resolve", return_value=target),             mock.patch("guiju.sources.registry", return_value={"mohurd": source}):
+            response = self.call(
+                "tools/call", {"name": "announcement", "arguments": {"ref": "GB 55001-2021"}})
+            payload = json.loads(response["result"]["content"][0]["text"])
+            self.assertFalse(response["result"]["isError"])
+            self.assertEqual(payload["announcement_id"], 7)
+            self.assertEqual(payload["code"], "GB 55001-2021")
+            self.assertEqual(payload["attachment_url"], "https://www.mohurd.gov.cn/file/gb55001.pdf")
+            # 只回元数据与链接：不得下载或落盘文件
+            import os
+            self.assertEqual(
+                [f for f in os.listdir(home) if f.endswith(".pdf")], [])
 
     def test_notifications_and_unknown_methods(self):
         self.assertIsNone(self.call("notifications/initialized", include_id=False))

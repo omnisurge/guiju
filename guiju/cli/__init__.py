@@ -18,18 +18,16 @@ from . import render
 from .commands import (
     cite,
     mcp,
-    provenance,
     pull,
     search,
     show,
     status,
     sync,
-    verify,
     version,
     which,
 )
 
-COMMANDS = (sync, search, which, show, pull, cite, verify, provenance, status, version, mcp)
+COMMANDS = (sync, search, which, show, pull, cite, status, version, mcp)
 
 
 def _exit_epilog() -> str:

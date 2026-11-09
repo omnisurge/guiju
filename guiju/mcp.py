@@ -1,7 +1,8 @@
-"""guiju MCP 服务面：query / verify / batch 的纯标准库 JSON-RPC。
+"""guiju MCP 服务面：query / verify / batch / announcement 的纯标准库 JSON-RPC。
 
 默认 stdio；--http 时提供 POST /mcp。业务后端只依赖 Currency.lookup，
 不在这里复制适配器、正文下载或旧 spec-currency 逻辑。
+announcement 只回公告元数据（编号/名称/可得性/附件链接）；会抓公告页解析附件，但不下载正文、不写盘。
 """
 
 from __future__ import annotations
@@ -46,6 +47,15 @@ TOOLS = (
             "type": "object",
             "properties": {"list": {"type": "string"}, "out": {"type": "string"}, "cache": {"type": "string"}},
             "required": ["list"],
+        },
+    },
+    {
+        "name": "announcement",
+        "description": "按编号/规范名/公告ID/公告URL定位公告并抓公告页解析附件链接，返回元数据（不下载正文、不落盘）。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"ref": {"type": "string"}},
+            "required": ["ref"],
         },
     },
 )
@@ -143,6 +153,65 @@ class McpServer:
             f"总数 {len(codes)} | 完成 {completed} | 跳过 {skipped} | 失败 {failed} | 无源 {unmatched} | 盘点表 {out_path or '(未输出文件，仅统计)'}"
         )
 
+    def _announcement(self, arguments: dict) -> dict:
+        """公告元数据解析：与 pull 同源定位，但只回链接，不下文件、不写盘。"""
+        ref = str(arguments.get("ref") or "").strip()
+        if not ref:
+            return _error_result("缺少 ref 参数")
+        from .cli import lookup
+        from .domain import attachment as att_domain
+        from .domain import availability
+        from .sources import registry
+        from .store.sqlite import Store
+
+        store = Store()
+        try:
+            target = lookup.resolve(store, ref, currency=self.backend)
+            ann = target["ann"]
+            window = availability.state(ann["published_on"])
+            source_id = lookup.source_of(ann["url"])["id"]
+            source = registry().get(source_id) or registry()["mohurd"]
+            choice = None
+            candidates: list = []
+            if getattr(source, "api_mode", False):
+                # API 源没有公告页可抓（shzjw）：正文链接在检索结果里，不在页面上
+                verdict = "api_mode"
+            else:
+                html, _ = source.detail(ann["url"])
+                atts = source.attachments(html)
+                picked = att_domain.pick(
+                    atts, ann["doc_name"] or "", announcement_title=ann["title"])
+                choice = picked.choice if picked.ok else None
+                candidates = (picked.as_payload() or {}).get("candidates") or []
+                verdict = "ok" if picked.ok else getattr(
+                    picked.verdict, "value", str(picked.verdict))
+            payload = {
+                "ok": True,
+                "announcement_id": ann["id"],
+                "code": target.get("code_display") or target.get("code_key"),
+                "name": ann["doc_name"],
+                "published_on": ann["published_on"],
+                "title": ann["title"],
+                "category": ann["category"],
+                "page_url": ann["url"],
+                "source": source_id,
+                "availability": window.value,
+                "status": target.get("status") or "",
+                "confidence": target.get("confidence") or "",
+                "attachment_verdict": verdict,
+                "attachment_url": choice.url if choice else None,
+                "attachment_label": choice.label if choice else None,
+                "attachment_candidates": candidates,
+            }
+            return _text_result(json.dumps(payload, ensure_ascii=False))
+        except GuijuError as exc:
+            # 保留完整 payload（reason/hint/candidates）：32 歧义时
+            # candidates 正是调用方要拿给人看的那部分
+            return _text_result(
+                json.dumps(exc.payload(), ensure_ascii=False), error=True)
+        finally:
+            store.close()
+
     def _call(self, name: str, arguments: dict) -> dict:
         if name == "query":
             return self._query(arguments)
@@ -150,6 +219,8 @@ class McpServer:
             return self._verify(arguments)
         if name == "batch":
             return self._batch(arguments)
+        if name == "announcement":
+            return self._announcement(arguments)
         return _error_result(f"未知工具：{name}")
 
     def handle(self, payload: dict) -> dict | None:

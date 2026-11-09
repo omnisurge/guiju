@@ -119,7 +119,7 @@ def _check_currency(code_display: str | None, *, offline: bool, store=None):
     try:
         records = currency_mod.CachedCurrency(store=store).lookup(code_display)
     except SourceUnreachable:
-        # 引用串本身来自本地归档，时效服务挂了只影响"是否现行"，不该整条失败
+        # 引用串本身来自本地目录，时效服务挂了只影响"是否现行"，不该整条失败
         note = "时效服务不可达：本引用未做现行性校验"
     if not records and localstatus.is_local_code(code_display):
         # 地方标准：源站自己有现行/废止分栏，用它兜底

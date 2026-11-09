@@ -80,7 +80,7 @@ class AutoSyncTest(unittest.TestCase):
     def test_unrelated_command_reports_stale(self):
         self._seed()
         with mock.patch("guiju.syncengine.crawl", side_effect=AssertionError("不该联网")):
-            snap = autosync.evaluate(self.store, command="verify")
+            snap = autosync.evaluate(self.store, command="status")
         self.assertEqual(snap["state"], "stale")
         self.assertIn("不触发", snap["message"])
 

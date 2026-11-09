@@ -141,7 +141,7 @@ def magic_of(body: bytes) -> str:
 
 
 def download(file_url: str, referer: str) -> tuple[bytes, str]:
-    """下载附件并做魔数判定。非 PDF 一律报错，绝不写入归档。"""
+    """下载附件并做魔数判定。非 PDF 一律报错，绝不落盘。"""
     resp = compliance.get(file_url, referer=referer, timeout=180)
     magic = magic_of(resp.body)
     if magic == MAGIC_PDF:

@@ -22,7 +22,7 @@ EXIT_NEEDS_HUMAN = 50
 EXIT_TABLE = {
     EXIT_OK: ("成功", "继续"),
     EXIT_USAGE: ("输入无法解析（参数/条款号）", "按 hint 修正输入，不要重试同样的输入"),
-    EXIT_EXISTS: ("已存在且校验通过", "跳过，别重复下载"),
+    EXIT_EXISTS: ("本地已有同名文件", "跳过，别重复下载"),
     EXIT_UNREACHABLE: ("源不可达（网络/5xx/超时）", "稍后重试"),
     EXIT_NO_ATTACHMENT: ("公告页没有正文附件", "换备源或按提示判定为「历史上无正文」，不是故障"),
     EXIT_NOT_INDEXED: ("编号无法定位到公告", "先 guiju sync 补齐目录；仍无则说明没有公开正文公告"),

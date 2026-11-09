@@ -1,4 +1,4 @@
-"""pull —— 下载正文（单个或批量），幂等，绝不把非 PDF 写进归档。
+"""pull —— 下载正文（单个或批量），幂等，绝不把非 PDF 落盘。
 
 批量形态是为真实工作流准备的：监理部一次要取一整份规范台账。
 """
@@ -23,9 +23,9 @@ from ...errors import (
     GuijuError,
     NoAttachment,
 )
-from ...files import sha256_bytes, sha256_file
+from ...files import default_out_dir, find_cached, sha256_bytes, sha256_file
 from ...sources import registry
-from ...store.sqlite import Store, default_home, persist_codes
+from ...store.sqlite import Store, persist_codes
 from .. import render
 from ..lookup import resolve
 
@@ -33,14 +33,10 @@ from ..lookup import resolve
 _SEVERE = (1, 20, 40, 50)
 
 
-def default_out_dir() -> Path:
-    return default_home() / "library"
-
-
 def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir: Path) -> dict:
     """没有公告页、只有 JSON API 的源（目前是上海地标）。
 
-    流程：检索 → 判歧义 → 断点续传下载 → 内容寻址归档 → 补一条公告记录（供 cite/which 复用）。
+    流程：检索 → 判歧义 → 断点续传下载 → 按指纹命名落盘 → 补一条公告记录（供 cite/which 复用）。
     """
     from ...domain.codes import normalize_key
     from ...errors import AmbiguousCode, NotIndexed
@@ -64,25 +60,24 @@ def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     if rec["status"] == "withdrawn":
         render.warn(
             f"该版本在{source.display_name}已废止（{rec.get('abolish_on') or '时间未载明'}）；"
-            "正文仍归档，但引用前请确认现行版"
+            "正文仍下载，但引用前请确认现行版"
         )
     code_key = normalize_key(rec["code"]) if rec["code"] else None
     if not rec.get("download_url"):
         raise BadAttachment(f"{rec['code'] or rec['name']} 在该源没有可下载的正文文件")
 
-    if not args.force and code_key:
-        existing = store.artifact_by_code(code_key)
-        if existing:
-            path = Path(existing["local_path"])
-            if path.exists() and sha256_file(path) == existing["sha256"]:
-                return {
-                    "ok": True, "already": True, "code": rec["code"],
-                    "path": str(path), "sha256": existing["sha256"],
-                    "bytes": existing["bytes"], "exit": EXIT_EXISTS,
-                }
+    if not args.force:
+        cached = find_cached(out_dir, code_key, rec["name"], readable=args.readable)
+        if cached:
+            path, digest = cached
+            return {
+                "ok": True, "already": True, "code": rec["code"],
+                "path": str(path), "sha256": digest,
+                "bytes": path.stat().st_size, "exit": EXIT_EXISTS,
+            }
 
     partial_dir = out_dir / ".partial"
-    key = sha256_bytes(f"{source.id}|{rec['code'] or rec['name']}".encode())[:10]
+    key = sha256_bytes(f"{source.id}|{rec['code'] or rec['name']}|{rec['download_url']}".encode())[:10]
     part = partial_dir / f"{key}.part"
     nbytes, magic, resumed = source.download_to(rec["download_url"], str(part))
     if resumed:
@@ -97,13 +92,8 @@ def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     dest.parent.mkdir(parents=True, exist_ok=True)
     os.replace(part, dest)
 
-    ann_id, _ = store.upsert_announcement(
+    store.upsert_announcement(
         rec["page_url"], rec["published_on"], rec["name"], rec["name"], "local_standard"
-    )
-    store.record_artifact(
-        ann_id=ann_id, code_key=code_key, source=source.id, page_url=rec["page_url"],
-        file_url=rec["download_url"], label=rec["name"], sha256=digest, size=nbytes,
-        magic=magic, local_path=str(dest),
     )
     store.log_probe(source.id, rec["download_url"], 200, nbytes, "ok", rec["name"])
     store.commit()
@@ -158,19 +148,16 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     confidence = target.get("confidence") or "unknown"
     status = target.get("status") or ""
 
-    # 幂等快路径：已知编号且归档完好时，连详情页都不必抓（批量复跑的关键）
+    # 幂等快路径：下载目录已有同名文件且指纹一致时，连详情页都不必抓（批量复跑的关键）
     if not args.force:
-        existing = (
-            store.artifact_by_code(code_key) if code_key else store.artifact_by_announcement(ann_id)
-        )
-        if existing:
-            path = Path(existing["local_path"])
-            if path.exists() and sha256_file(path) == existing["sha256"]:
-                return {
-                    "ok": True, "already": True, "code": code_display or code_key,
-                    "path": str(path), "sha256": existing["sha256"], "bytes": existing["bytes"],
-                    "exit": EXIT_EXISTS,
-                }
+        cached = find_cached(out_dir, code_key, ann["doc_name"] or "", readable=args.readable)
+        if cached:
+            path, digest = cached
+            return {
+                "ok": True, "already": True, "code": code_display or code_key,
+                "path": str(path), "sha256": digest, "bytes": path.stat().st_size,
+                "exit": EXIT_EXISTS,
+            }
 
     html, text = source.detail(ann["url"])
     codes = classify(text, ann["doc_name"] or "")
@@ -182,20 +169,18 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     confidence = confidence if target.get("confidence") else codes.confidence.value
 
     if not code_key:
-        render.warn("公告正文未解析出编号：按公告名称归档，cite 将不可用")
+        render.warn("公告正文未解析出编号：按公告名称命名文件，cite 将不可用")
 
     if status in ("superseded", "withdrawn"):
         render.warn(f"该版本状态为 {status}；现行版用 guiju which {code_key} 查")
 
-    existing = (
-        store.artifact_by_code(code_key) if code_key else store.artifact_by_announcement(ann_id)
-    )
-    if existing and not args.force:
-        path = Path(existing["local_path"])
-        if path.exists() and sha256_file(path) == existing["sha256"]:
+    if not args.force:
+        cached = find_cached(out_dir, code_key, ann["doc_name"] or "", readable=args.readable)
+        if cached:
+            path, digest = cached
             return {
                 "ok": True, "already": True, "code": code_display, "path": str(path),
-                "sha256": existing["sha256"], "bytes": existing["bytes"], "exit": EXIT_EXISTS,
+                "sha256": digest, "bytes": path.stat().st_size, "exit": EXIT_EXISTS,
             }
 
     atts = source.attachments(html)
@@ -243,11 +228,6 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     )
     dest.parent.mkdir(parents=True, exist_ok=True)
     os.replace(part, dest)
-    store.record_artifact(
-        ann_id=ann_id, code_key=code_key, source=source.id, page_url=ann["url"],
-        file_url=choice.url, label=choice.label, sha256=digest, size=nbytes,
-        magic=magic, local_path=str(dest),
-    )
     store.log_probe(source.id, choice.url, 200, nbytes, "ok", choice.label)
     store.commit()
 
@@ -351,7 +331,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     render.emit(payload)
     if not render.is_json():
         if payload.get("already"):
-            render.note(f"= 已存在且校验通过：{payload['path']}")
+            render.note(f"= 已有同名文件：{payload['path']}")
         else:
             label = payload.get("code") or payload.get("name") or ""
             render.note(f"✓ {label} → {payload['path']}（{payload['bytes'] / 1048576:.1f} MB）")
@@ -363,8 +343,8 @@ def add_parser(sub, parents) -> None:
     p = sub.add_parser("pull", parents=parents, help="下载规范正文（单条或批量，幂等）")
     p.add_argument("ref", nargs="?", default=None, help="编号 / 规范名 / 公告ID / 公告URL")
     p.add_argument("--list", default=None, help="批量清单文件（每行一个 ref，- 表示 stdin）")
-    p.add_argument("--out", default=None, help="归档目录（默认 ~/.guiju/library）")
-    p.add_argument("--readable", action="store_true", help="用人类可读文件名（默认内容寻址）")
+    p.add_argument("--out", default=None, help="下载目录（默认 ~/.guiju/library）")
+    p.add_argument("--readable", action="store_true", help="用人类可读文件名（默认带 sha256 指纹；同名文件在就跳过、不校验内容）")
     p.add_argument("--force", action="store_true", help="已存在也重新下载")
     p.add_argument("--source", default="mohurd")
     p.set_defaults(func=run)

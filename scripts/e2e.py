@@ -134,7 +134,7 @@ def main() -> int:
             path = p.get("path", "") or ""
             check("pull 按编号成功", code == 0 and p.get("magic") == "pdf" and (p.get("bytes") or 0) > 0,
                   f"{p.get('bytes')}B code={p.get('code')}")
-            check("pull 内容寻址命名", "__" in Path(path).name and Path(path).suffix == ".pdf",
+            check("pull 指纹命名", "__" in Path(path).name and Path(path).suffix == ".pdf",
                   Path(path).name[:48])
             check("pull 用实施日窗口选中原版公告（2018）",
                   "2018" in str(p.get("source_page", "")), p.get("source_page", "")[-28:])
@@ -170,34 +170,18 @@ def main() -> int:
         ann_id = str((p.get("results") or [{}])[0].get("id", "") or "")
         if not ann_id:
             for nm in (
-                "pull 按公告ID（无编号亦可归档）", "pull 幂等（公告ID路径）", "verify 通过",
-                "provenance 反查来源", "provenance 与路径无关（按 sha256）",
+                "pull 按公告ID（无编号亦可下载）", "pull 幂等（公告ID路径）",
                 "cite 按公告ID（自解析编号）",
             ):
                 skip(nm, "目录为空：sync 未成功，跳过后继本地路径断言")
             return _summary_outputs(home)
 
         code, p, _ = guiju("pull", ann_id, home=home, timeout=600)
-        local_path = p.get("path", "") or ""
-        check("pull 按公告ID（无编号亦可归档）", code == 0 and p.get("magic") == "pdf",
+        check("pull 按公告ID（无编号亦可下载）", code == 0 and p.get("magic") == "pdf",
               detail_of(code, p) or f"{p.get('bytes')}B code={p.get('code')}")
 
         code, p, _ = guiju("pull", ann_id, home=home, timeout=600)
         check("pull 幂等（公告ID路径）", code == 10 and p.get("already") is True)
-
-        code, p, _ = guiju("verify", home=home)
-        check("verify 通过", code == 0 and p.get("ok") is True and p.get("total", 0) >= 1,
-              detail_of(code, p) or f"total={p.get('total')}")
-
-        code, p, _ = guiju("provenance", local_path, home=home)
-        url = str((p.get("announcement") or {}).get("url", ""))
-        check("provenance 反查来源", code == 0 and url.startswith("https://www.mohurd.gov.cn"), url[-24:])
-
-        moved = str(Path(local_path).with_name("renamed-for-test.pdf"))
-        shutil.copy2(local_path, moved)
-        code, p, _ = guiju("provenance", moved, home=home)
-        check("provenance 与路径无关（按 sha256）", code == 0 and bool(p.get("sha256")))
-        Path(moved).unlink(missing_ok=True)
 
         # ---- 引用串：按公告ID自解析编号（不需要时效服务） ----
         code, p, _ = guiju("search", "建筑防火通用规范", home=home)
@@ -232,9 +216,6 @@ def main() -> int:
         else:
             check("无时效服务时同名多公告仍 32（交人）",
                   code == 32 and len(p.get("candidates") or []) >= 2, f"exit={code}")
-
-        code, p, _ = guiju("provenance", "/tmp/definitely-missing.pdf", home=home)
-        check("缺文件 → 30", code == 30, p.get("reason", ""))
 
         code, p, _ = guiju("cite", fire_id, "not-a-clause", home=home)
         check("非法条款号 → 2", code == 2 and p.get("reason") == "bad_usage", p.get("reason", ""))

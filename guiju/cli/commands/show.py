@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from ...domain.availability import note as availability_note
 from ...domain.availability import state
+from ...files import default_out_dir, find_cached
 from ...store.sqlite import Store
 from .. import render
 from ..lookup import resolve
@@ -19,22 +19,24 @@ def run(store: Store, args: argparse.Namespace) -> int:
     mentions = store.mentions_for(ann_id)
     code_key = target.get("code_key")
 
-    artifact = store.artifact_by_code(code_key) if code_key else None
-    if artifact is None:
-        for m in mentions:
-            artifact = store.artifact_by_code(m["code_key"])
-            if artifact:
-                break
-
+    # 本地文件只看下载目录（默认 ~/.guiju/library）：pull 的命名是可复现的，
+    # 按编号/公告名 glob 回来即可；带指纹的文件还会顺手校验内容没被改过。
+    keys = [code_key, *(m["code_key"] for m in mentions), None]
     local = None
-    if artifact:
-        path = Path(artifact["local_path"])
-        local = {
-            "path": str(path),
-            "sha256": artifact["sha256"],
-            "bytes": artifact["bytes"],
-            "exists": path.exists(),
-        }
+    for key in dict.fromkeys(keys):
+        for readable in (False, True):
+            found = find_cached(default_out_dir(), key, ann["doc_name"] or "", readable=readable)
+            if found:
+                path, digest = found
+                local = {
+                    "path": str(path),
+                    "sha256": digest,
+                    "bytes": path.stat().st_size,
+                    "exists": True,
+                }
+                break
+        if local:
+            break
 
     window = state(ann["published_on"])
     payload = {

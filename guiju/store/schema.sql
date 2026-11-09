@@ -44,25 +44,6 @@ CREATE TABLE IF NOT EXISTS scan (
     codes_found   INTEGER NOT NULL DEFAULT 0
 );
 
--- 正文文件：独立于编号存在，允许「无编号但有正文」
-CREATE TABLE IF NOT EXISTS artifact (
-    id            INTEGER PRIMARY KEY,
-    ann_id        INTEGER NOT NULL REFERENCES announcement(id) ON DELETE CASCADE,
-    code_key      TEXT,
-    source        TEXT NOT NULL DEFAULT 'mohurd',
-    page_url      TEXT NOT NULL,
-    file_url      TEXT NOT NULL,
-    label         TEXT,
-    sha256        TEXT NOT NULL UNIQUE,
-    bytes         INTEGER,
-    magic         TEXT,
-    pages         INTEGER,
-    verdict       TEXT NOT NULL DEFAULT 'ok',
-    local_path    TEXT,
-    fetched_at    TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_artifact_code ON artifact(code_key);
-
 -- 每次出站请求的韧性台账（M4 观测的数据源）
 CREATE TABLE IF NOT EXISTS probe (
     id            INTEGER PRIMARY KEY,

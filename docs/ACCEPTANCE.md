@@ -3,6 +3,9 @@
 > 最新离线验收：**v1.0.0（2026-11-01，发布）** —— **446 项单测** / 4 项离线冒烟 / 本地 CI 全绿；hk M4 37 个编号冒烟通过。
 > 最近完整联网验收仍为 **v0.14.3 的 42/42** 历史记录；v1.0.0 未重跑完整联网验收、未构建或更改旧 Go 仓。
 > 默认时效已切为 **native**；hk 服务与消费者切换已完成，NAS spec-currency 已停用（文件保留可回退）。后续各版本记录保留作历史对照。
+>
+> **按语（2026-11-09）**：本地归档注册表已撤销（artifact 表、`verify`/`provenance` 命令删除），
+> 正文归档归 kb-system，幂等靠文件名 sha256 指纹。下文中 verify/provenance 相关行属历史验收记录，不再适用。
 
 ## v1.0.0（2026-11-01，发布）
 
@@ -212,9 +215,9 @@ env -u GUIJU_NO_AUTO_SYNC GUIJU_CURRENCY=off UV_OFFLINE=1 bash scripts/ci.sh
 | 16 | pull 实施日窗口选中原版公告 | `art/2018/art_17339_236618` |
 | 17 | pull 幂等 | exit **10** |
 | 18 | 同名多公告 → 32 + candidates | 2 个候选 |
-| 19 | verify 通过 | total=1 |
-| 20 | provenance 反查来源 | mohurd 公告 URL |
-| 21 | provenance 与路径无关 | 改名后仍命中（按 sha256） |
+| 19 | ~~verify 通过~~（命令已撤销） | total=1（历史） |
+| 20 | ~~provenance 反查来源~~（命令已撤销） | mohurd 公告 URL（历史） |
+| 21 | ~~provenance 与路径无关~~（命令已撤销） | 改名后仍命中（历史） |
 | 22 | cite 按编号 | `《老年人照料设施建筑设计标准》JGJ/T 450-2018 第5.2.1条` |
 | 23 | cite 带权威状态 | `current` |
 | 24 | cite 按编号（另一本） | `《建筑防火通用规范》GB 55037-2022 第5.2.1条` |
@@ -238,7 +241,7 @@ env -u GUIJU_NO_AUTO_SYNC GUIJU_CURRENCY=off UV_OFFLINE=1 bash scripts/ci.sh
 | 第 1 轮 | 20 成功 + 2 条 exit 32（同名多公告） | ~6 min | 164 MB |
 | 加"有界核实"后 | **全部成功** | 63 s | 171 MB |
 | 复跑（断点/续跑） | **全部 exit 10，零网络请求** | **0.67 s** | — |
-| `verify` | 全部文件异常 0 | 秒级 | — |
+| `verify`（命令已撤销） | 全部文件异常 0 | 秒级 | — |
 
 **"有界核实"**：按名称命中 2–6 条公告时，逐条抓详情页比对正文编号，命中唯一即锁定；
 超过 6 条退回人工（32）。这是**查证**不是猜测，代价最多 6 次请求。
@@ -265,7 +268,7 @@ env -u GUIJU_NO_AUTO_SYNC GUIJU_CURRENCY=off UV_OFFLINE=1 bash scripts/ci.sh
 
 ## 已知边界（不是缺陷，是现实）
 
-1. **网络依赖**：`sync` / `pull` / `which` 需联网；`search` / `show` / `verify` / `provenance` 纯本地。
+1. **网络依赖**：`sync` / `pull` / `which` 需联网；`search` / `show` 纯本地。
 2. **时效服务单点**（v0.12.0 起部分缓解）：NAS 不可达时，**查过的编号**可用本地缓存回答
    （`currency_from_cache=true`）；**没查过的**仍然拿不到名称。地标不受影响（源站直接给状态）。
    原先"这是 index 仍保留的唯一理由"已不成立 —— index 去留见 ADR 0001「后续变化」。

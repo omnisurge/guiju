@@ -30,22 +30,19 @@
    · 按名称命中多条时：同名多版本会按时效自动定版（如《绿色建筑评价标准》4 条公告 → 取现行的最新那条），
      结果里 versions 列出全部版本与选中项；只有定不出唯一现行版才返回 32 让你叫人
    · 断点续传：中断后重跑同一条命令会从 .partial 续下（Range 206），不必从头再来
+   · 幂等按文件名 sha256 指纹判定（不再落库注册表）；exit 10 即文件已在，path 直接用
 要一整批吗？               → guiju pull --list <文件|-> --json
    · 清单每行一个 ref，# 注释与行尾注释都支持
    · 汇总里 counts 按退出码统计，ok=false 表示有 1/20/40/50 这类严重失败
 要启动/调用 MCP 服务吗？     → guiju mcp [--http --host HOST --port PORT]
-   · 工具：query / verify / batch；默认 stdio，--http 提供 POST /mcp 与 GET /health
+   · 工具：query / verify / batch / announcement；默认 stdio，--http 提供 POST /mcp 与 GET /health
 要上海地标（DG/TJ、DB31/T）吗？ → guiju pull --source shzjw <编号|名称> --json
    · 该源没有公告页，直接按 API 检索 + 下载；编号按站点原样（含年版，如 DG/TJ08-2007-2026）
-   · 命中多条 → 32；没有 → 31；已归档 → 10
+   · 命中多条 → 32；没有 → 31；已有文件 → 10
    · 现行/废止由源站分栏决定（同一编号优先现行）；下载到废止版会带 status=withdrawn 并告警
    · 地标的现行性不需要外部时效服务：which/cite 在服务无记录时回落到源站
 只要引用串吗？             → guiju cite <编号|公告ID|URL> [条款号] --json
    · --strict 与 --offline 不能同时用（做不了现行性校验 → exit 2），别把两者混着传
-怀疑本地文件被改/丢失？     → guiju verify --json [--repair]
-   · --repair：扫描 library，把挪了位置的文件按 sha256 重新对位（repaired 状态），
-     并列出库内未登记的文件（orphans）；只对 missing 有效，modified 不会自动修
-这个 PDF 哪来的？          → guiju provenance <路径> --json
 目录为空/过期？            → 不用管：程序会自己顺手刷新（见下）
    · search/which/pull/cite 执行前若目录为空或 >7 天，自动增量刷新（增量 ≈3s / 2 请求）
    · 刷新失败不阻断命令，1 小时内不再重试；想强制关掉用 GUIJU_NO_AUTO_SYNC=1
@@ -122,7 +119,7 @@
 ### 2. 编号可能不存在，也可能不止一个
 
 约 39% 的公告正文里没有标准编号（如"工作计划""产品标准"类）。此时：
-- `code` 为 `null`（`pull` 仍可下载，按名称归档）
+- `code` 为 `null`（`pull` 仍可下载，按名称命名文件）
 - `cite` 会失败（31）—— 这是正确的，不要编一个编号出来
 
 **现行性以 `spec-currency` 的权威结论为准**（`which`/`cite` 自带），不要据年份或页面上"修改为"字样自行判断。
@@ -171,7 +168,7 @@ JSON 的 `codes[].role` 会告诉你身份：
  "candidates":[{"label":"…","url":"…"}]}
 
 // status
-{"ok":true,"announcements":3254,"editions":N,"artifacts":M,"synced_at":"…",
+{"ok":true,"announcements":3254,"editions":N,"mentions":M,"synced_at":"…",
  "coverage":{"full_text_since_year":2014,"in_window":1777,"pre_window":1477,"statement":"…"}}
 ```
 
@@ -183,7 +180,7 @@ JSON 的 `codes[].role` 会告诉你身份：
 公告（政府网页，3254 条）
    └─ 可能包含 1..N 个标准编号（39% 没有）
          └─ 每个编号是一个版本（有 role：新 / 旧 / 修订后）
-               └─ 可能有 1 份正文（PDF，sha256 内容寻址）
+               └─ 可能有 1 份正文（PDF，文件名带 sha256 指纹）
                      └─ 可用于生成引用串（cite）
 ```
 

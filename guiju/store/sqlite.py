@@ -205,13 +205,6 @@ class Store:
             (ann_id,),
         ).fetchall()
 
-    def artifact_by_announcement(self, ann_id: int) -> sqlite3.Row | None:
-        """没有编号的公告（约 39%）也要能幂等：按公告找已归档文件。"""
-        return self.db.execute(
-            "SELECT * FROM artifact WHERE ann_id = ? ORDER BY fetched_at DESC, id DESC LIMIT 1",
-            (int(ann_id),),
-        ).fetchone()
-
     def find_by_code(self, key: str) -> list[sqlite3.Row]:
         exact = self.db.execute(
             "SELECT m.code_key, m.role, m.evidence, e.code_display, e.status, e.confidence, a.*"
@@ -229,43 +222,6 @@ class Store:
             " WHERE m.code_key LIKE ? ORDER BY a.published_on DESC LIMIT 20",
             (f"%{key}%",),
         ).fetchall()
-
-    # ---------------------------------------------------------------- artifact
-    def record_artifact(
-        self, *, ann_id: int, code_key: str | None, source: str, page_url: str, file_url: str,
-        label: str, sha256: str, size: int, magic: str, local_path: str, verdict: str = "ok",
-    ) -> None:
-        self.db.execute(
-            "INSERT INTO artifact(ann_id,code_key,source,page_url,file_url,label,sha256,bytes,"
-            "magic,verdict,local_path,fetched_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) "
-            "ON CONFLICT(sha256) DO UPDATE SET local_path=excluded.local_path, verdict=excluded.verdict",
-            (ann_id, code_key, source, page_url, file_url, label, sha256, size, magic,
-             verdict, local_path, now()),
-        )
-
-    def artifact_by_code(self, code_key: str) -> sqlite3.Row | None:
-        """按编号找归档。对空格/大小写不敏感 —— 展示号（GB 55001-2021）与
-        归一化号（GB55001-2021）必须指向同一条记录，否则幂等快路径会永远打不中。"""
-        key = (code_key or "").replace(" ", "").upper()
-        return self.db.execute(
-            "SELECT * FROM artifact WHERE REPLACE(UPPER(code_key),' ','') = ?"
-            " ORDER BY fetched_at DESC, id DESC LIMIT 1",
-            (key,),
-        ).fetchone()
-
-    def artifact_by_sha(self, sha256: str) -> sqlite3.Row | None:
-        return self.db.execute("SELECT * FROM artifact WHERE sha256 = ?", (sha256,)).fetchone()
-
-    def repoint_artifact(self, sha256: str, local_path: str) -> None:
-        """文件被挪动后把登记的 local_path 指回新位置。
-
-        local_path 本来就是缓存字段（sha256 才是身份），重指只是修缓存。"""
-        self.db.execute(
-            "UPDATE artifact SET local_path=? WHERE sha256=?", (local_path, sha256)
-        )
-
-    def all_artifacts(self) -> list[sqlite3.Row]:
-        return self.db.execute("SELECT * FROM artifact ORDER BY code_key, id").fetchall()
 
     # ---------------------------------------------------------------- probe / meta
     def log_probe(self, source: str, url: str, status: int | None, size: int | None,
@@ -305,7 +261,6 @@ class Store:
             "editions": q("SELECT COUNT(*) c FROM edition").fetchone()["c"],
             "mentions": q("SELECT COUNT(*) c FROM mention").fetchone()["c"],
             "scanned": q("SELECT COUNT(*) c FROM scan").fetchone()["c"],
-            "artifacts": q("SELECT COUNT(*) c FROM artifact").fetchone()["c"],
             "by_year": {r["y"]: r["c"] for r in by_year},
             "synced_at": self.get_meta("synced_at"),
         }

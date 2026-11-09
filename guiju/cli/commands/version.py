@@ -18,7 +18,6 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "catalog_synced_at": stats["synced_at"] or "未同步",
         "announcements": stats["announcements"],
         "editions": stats["editions"],
-        "artifacts": stats["artifacts"],
         "db": str(store.path),
     }
     render.emit(payload)

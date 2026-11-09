@@ -2,6 +2,11 @@
 
 > 定稿：2026-10-30。取代 `docs/建筑规范CLI-蓝图.md` 的第三～七节。
 > 文件裁定见 `docs/audit-2026-10-30.md`。
+>
+> **修订（2026-11-09）**：归档责任划给 kb-system 后，本地不再有正文注册表：
+> `artifact` 表、`verify`/`provenance` 命令已删除，幂等改由文件名里的
+> sha256 指纹现场判定（`guiju/files.py`）。正文第四节仍按"设计时"行文，
+> 涉及 `artifact`/`verify`/`provenance` 的部分以本按语为准，正文不再逐处改。
 
 ---
 
@@ -71,7 +76,7 @@ guiju mcp        # stdio JSON-RPC，手写 ~150 行，不需要 MCP SDK
 | 4 | `--version --json` 报参数错误 | ❌ | clap 同样要求 `global = true`，不声明就报一样的错。那是 API 设计问题 |
 | 5 | `EXIT_OK if results else EXIT_OK` 死分支 | ✅ | clippy 默认开 `if_same_then_else`（ruff 同能力需另配规则） |
 | 6 | `--out` 默认写当前目录 | ❌ | 设计取舍 |
-| 7 | provenance 依赖绝对路径 | ❌ | 设计取舍 |
+| 7 | provenance 依赖绝对路径 | ❌ | 设计取舍（该命令已于 2026-11-09 撤销，见顶部按语） |
 | 8 | 响应体大小阈值漏检 | ❌ | 逻辑阈值 |
 | 9 | 限速不分 host | ❌ | 状态建模，两条语言都得自己写 |
 | 10 | 无 schema 迁移机制 | ❌ | 工程纪律 |
@@ -255,6 +260,8 @@ CREATE TABLE mention (
 );
 
 -- 正文文件（独立于编号，允许"无编号但有正文"）
+-- 【2026-11-09 撤销】artifact 表已删除：正文归档归 kb-system，本地目录只留文件，
+-- 幂等靠文件名 sha256 指纹现场复核（find_cached），不再落库。
 CREATE TABLE artifact (
   id            INTEGER PRIMARY KEY,
   ann_id        INTEGER NOT NULL REFERENCES announcement(id),
@@ -303,8 +310,8 @@ guiju search <kw>...      [--level --status --limit --offline]
 guiju show <ref>
 guiju pull <ref> [--out DIR] [--force]          # 幂等；默认 ~/.guiju/library/
 guiju cite <ref> [clause] [--strict]            # 核心价值点
-guiju verify [--all] [--deep]                   # sha256/魔数/页数
-guiju provenance <path>                          # 按 sha256 反查，与路径无关
+# verify / provenance 已删除（2026-11-09）：正文归档归 kb-system，
+# 本地幂等与完整性靠文件名 sha256 指纹，来源经 MCP announcement 工具回查。
 guiju status [--json]                            # 新增：目录水位/覆盖度/失败分布
 guiju sources [--probe]                          # 新增：适配器健康与最近失败
 
@@ -323,10 +330,10 @@ guiju sources [--probe]                          # 新增：适配器健康与�
                         │
                         ├─ pull/which ──► mention(role,evidence) ──► edition(status)
                         │              └─ 无编号 → 保留 announcement（39% 的常态）
-                        └─ pull  ──► artifact(verdict) ──► local file + sha256
+                        └─ pull  ──► local file（文件名带 sha256 指纹）
                                         │
-                                        ├─ verify ──► ok / missing / modified
-                                        └─ provenance ──► 反查公告+附件原始 URL
+                                        ├─ 幂等：find_cached 现场复核指纹
+                                        └─ 来源：MCP announcement 工具回查
 ```
 
 **可得性分档**（必须写进 README，不许吹成"全库可下载"）：
@@ -363,7 +370,7 @@ guiju sources [--probe]                          # 新增：适配器健康与�
 |---|---|---|
 | **M0 能站住**（1 周） | git/README/LICENSE；修 audit 缺陷 #1#2#3；schema v2 + 迁移；cli 拆分；`tests/` 三个纯逻辑测试 | 重定向越权单测通过；`pick_attachment` 对"英文版公告"返回 ambiguous 而非错文件；`cite` 矩阵 12 例全绿 |
 | **M1 能信目录**（1 周） | `sync` 全量 + 对账（`index` 已按 ADR 0001 撤销，v0.13.0 删除命令本体） | 目录 **3254/3254**（基线已测，33 页）；编号覆盖 ≥61%（实测基线） |
-| **M2 能取正文**（已完成） | `pull`（单条 + `--list` 批量）+ `verify` + 内容寻址 | 2014+ 编号抽检 **0 垃圾文件**；任取一文件可 `provenance` 反查公告 URL；复跑全部命中已有（零请求） |
+| **M2 能取正文**（已完成） | `pull`（单条 + `--list` 批量）+ 文件名指纹幂等 | 2014+ 编号抽检 **0 垃圾文件**；复跑全部命中已有（零请求） |
 | **M3 能扩展**（ADR 0002 期 1 M3 已完成） | 上海地标仅接 `shzjw` 单源（所有者 2026-10-31 裁定，不引入双源冲突仲裁） | 官方状态照抄；无记录/故障不换外源；离线回归通过 |
 | **M4 能维护**（持续） | `probe` 台账 → 适配器健康度、页面指纹变更告警 | 站点改版后 24h 内能定位到失效 adapter 与失效正则 |
 

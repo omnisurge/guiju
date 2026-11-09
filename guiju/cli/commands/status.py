@@ -36,7 +36,6 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "editions": st["editions"],
         "mentions": st["mentions"],
         "scanned": st["scanned"],
-        "artifacts": st["artifacts"],
         "synced_at": st["synced_at"],
         "catalog_age_days": None if age is None else round(age, 2),
         "catalog_stale": age is None or age > 7,
@@ -57,7 +56,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
             render.note("目录上次同步时间未知：guiju sync（增量约 3 秒 / 2 个请求）")
     if not render.is_json():
         render.out(f"库：{payload['db']}（schema v{payload['schema_version']}）")
-        render.out(f"公告 {st['announcements']} 条 · 版本 {st['editions']} 个 · 正文 {st['artifacts']} 份")
+        render.out(f"公告 {st['announcements']} 条 · 版本 {st['editions']} 个 · 提及 {st['mentions']} 处")
         render.out(f"同步于 {st['synced_at'] or '尚未同步'}")
         render.out(f"时效服务：{payload['currency_source']}　请求台账：{payload['probe'] or '无'}")
         render.out(f"可得性：{coverage_statement()}")
