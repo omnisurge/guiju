@@ -1,5 +1,16 @@
 # 变更记录
 
+## 未发布 — 2026-11-09（verify --repair：挪动文件的指纹对位）
+
+- 对账 audit-2026-10-30 第 7/10 条：provenance 主键 sha256 与 user_version
+  迁移机制在 M0 重构（0d96403）已落地，audit 表按旧实现描述，勾销。
+- 新增 `guiju verify --repair`：扫描 library（`--dir` 可改），把挪了位置的
+  归档文件按 sha256 重新对位（结果状态 `repaired`），并列出库内未登记文件
+  `orphans`；`local_path` 本就是缓存字段，身份仍是内容指纹。
+  只修 missing，modified 仍上报 50。新增 `Store.repoint_artifact`。
+- 测试：`test_verify_repair.py` 4 例（missing 上报 / 重指 local_path /
+  orphan 与 ok 不动 / .partial 跳过）。
+
 ## 未发布 — 2026-11-08（高危 bug 修复：编号角色链路 + 退出码契约）
 
 - `codes._role_for` 修复「X 代替 Y」方向反转：句尾「由/被 + 代替」的被动句里

@@ -256,6 +256,14 @@ class Store:
     def artifact_by_sha(self, sha256: str) -> sqlite3.Row | None:
         return self.db.execute("SELECT * FROM artifact WHERE sha256 = ?", (sha256,)).fetchone()
 
+    def repoint_artifact(self, sha256: str, local_path: str) -> None:
+        """文件被挪动后把登记的 local_path 指回新位置。
+
+        local_path 本来就是缓存字段（sha256 才是身份），重指只是修缓存。"""
+        self.db.execute(
+            "UPDATE artifact SET local_path=? WHERE sha256=?", (local_path, sha256)
+        )
+
     def all_artifacts(self) -> list[sqlite3.Row]:
         return self.db.execute("SELECT * FROM artifact ORDER BY code_key, id").fetchall()
 

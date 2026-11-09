@@ -42,7 +42,9 @@
    · 地标的现行性不需要外部时效服务：which/cite 在服务无记录时回落到源站
 只要引用串吗？             → guiju cite <编号|公告ID|URL> [条款号] --json
    · --strict 与 --offline 不能同时用（做不了现行性校验 → exit 2），别把两者混着传
-怀疑本地文件被改/丢失？     → guiju verify --json
+怀疑本地文件被改/丢失？     → guiju verify --json [--repair]
+   · --repair：扫描 library，把挪了位置的文件按 sha256 重新对位（repaired 状态），
+     并列出库内未登记的文件（orphans）；只对 missing 有效，modified 不会自动修
 这个 PDF 哪来的？          → guiju provenance <路径> --json
 目录为空/过期？            → 不用管：程序会自己顺手刷新（见下）
    · search/which/pull/cite 执行前若目录为空或 >7 天，自动增量刷新（增量 ≈3s / 2 请求）
