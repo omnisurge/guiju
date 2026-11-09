@@ -1,5 +1,23 @@
 # 变更记录
 
+## 1.1.0 — 2026-11-09（去本地注册表 + MCP announcement）
+
+- **撤销本地归档注册表**：删除 `artifact` 表、`verify`/`provenance` 命令与
+  `Store` 相关查询；`~/.guiju/library` 降为纯文件缓存，正文归档归 kb-system。
+  旧库里残留的 artifact 表不迁移、不清理（孤儿表，无害）。
+- `pull` 幂等改由文件名 sha256 指纹**现场判定**：`find_cached`/
+  `default_out_dir` 收编进 `guiju/files.py`（pull 与 show 共用）；
+  `glob.escape` 修正主干含 `[]*` 元字符时的模式失真；
+  `.part` 续传键补 `download_url`，同名公告换链不串档；
+  `--readable` 显式标注"在就算有、不校验内容"。
+- MCP 新增 `announcement` 工具：按编号/名称/公告ID/URL 定位公告，
+  抓公告页解析附件链接，**只回元数据**（不下载正文、不落盘）；
+  错误路径保留 `GuijuError.payload()` 完整 JSON（reason/hint/candidates）。
+- `show` 不再查库，改按命名规则在下载目录 glob 命中本地文件。
+- 文档对齐：AGENTS/README/ARCHITECTURE（修订按语）/ACCEPTANCE（历史注记）。
+- 测试：新增 `test_find_cached.py` 6 例（指纹命中/改坏漏检/readable/元字符转义）；
+  删除 `test_verify_repair.py`。466 项单测 + 4 项离线冒烟全绿。
+
 ## 未发布 — 2026-11-09（verify --repair：挪动文件的指纹对位）
 
 - 对账 audit-2026-10-30 第 7/10 条：provenance 主键 sha256 与 user_version
