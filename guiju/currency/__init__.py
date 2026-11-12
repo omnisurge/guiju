@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from ..errors import SourceUnreachable
 from .model import Currency as Currency
@@ -36,7 +37,9 @@ from .model import Record as Record
 
 # 公共端点走 HTTPS + Bearer（GUIJU_CURRENCY_TOKEN）；原 NAS :18083 已于 2026-11-01 退役。
 # 自托管的裸 HTTP 端点（如 hk 本机 127.0.0.1:18083）用 GUIJU_CURRENCY_URL 覆盖。
-DEFAULT_MCP_URL = "https://guiju.守夜人.中国/mcp"
+# 常量本身存 punycode（等价于 guiju.守夜人.中国），避免任何一层把原始
+# IDN 直接喂给 http.client；用户自定义 URL 由 McpCurrency 构造器统一归一化。
+DEFAULT_MCP_URL = "https://guiju.xn--gmqx6we1b.xn--fiqs8s/mcp"
 DEFAULT_CMD = "spec-currency"
 TIMEOUT = 25
 
@@ -112,13 +115,35 @@ class CommandCurrency:
         return parse_tsv(proc.stdout)
 
 
+def _idna_url(url: str) -> str:
+    """把 URL 里的 IDN 域名转成 punycode，其余部分原样保留。
+
+    http.client 写 Host 头用 latin-1 编码，中文域名（如 guiju.守夜人.中国）会在
+    第一次请求时就抛 UnicodeEncodeError，被统一归为 SourceUnreachable —— 整个
+    mcp 路径必死。域名交给 DNS 前必须是 ASCII，所以构造时统一归一化。
+    """
+    parts = urlsplit(url)
+    host = parts.hostname
+    if not host or host.isascii():
+        return url
+    userinfo = ""
+    if parts.username:
+        userinfo = parts.username
+        if parts.password:
+            userinfo += ":" + parts.password
+        userinfo += "@"
+    port = f":{parts.port}" if parts.port is not None else ""
+    netloc = f"{userinfo}{host.encode('idna').decode('ascii')}{port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+
+
 class McpCurrency:
     """通过 spec-currency 的 MCP server（streamable-http）查询。"""
 
     name = "mcp"
 
     def __init__(self, url: str, token: str | None = None) -> None:
-        self.url = url
+        self.url = _idna_url(url)
         self.token = token
 
     def _token(self) -> str | None:

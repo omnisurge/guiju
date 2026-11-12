@@ -16,12 +16,15 @@ from __future__ import annotations
 import re
 
 from .. import currency as currency_mod
+from ..currency.model import QueryCancelled
 from ..domain.search import rank, tokens_of
 from ..errors import (
     AmbiguousCode,
     AmbiguousTarget,
     BadUsage,
+    ComplianceDenied,
     GuijuError,
+    NeedsHuman,
     NotIndexed,
     SourceUnreachable,
 )
@@ -197,6 +200,10 @@ def _pick_current_version(
                 source = registry()["mohurd"]
                 html, text = source.detail(ann["url"])
                 has_attachment = bool(source.attachments(html))
+            except (NeedsHuman, ComplianceDenied, QueryCancelled):
+                # 契约错误不是"这条公告抓取失败"：50/40/取消必须冒到 CLI 决策表，
+                # 绝不能用 continue 降级成 32 歧义或漏候选。
+                raise
             except Exception:
                 continue
             codes = classify(text, ann["doc_name"] or "")
@@ -225,6 +232,9 @@ def _pick_current_version(
             v["code_display"] = mine.code if mine else v["code_key"]
     except SourceUnreachable:
         # 时效服务挂了不是"歧义"：20 让用户重试，32 会让人对着候选干选
+        raise
+    except (NeedsHuman, ComplianceDenied, QueryCancelled):
+        # 同上：50/40/取消按契约上抛，不能吞成"定不了版"再落到 32。
         raise
     except Exception:
         return None
@@ -414,6 +424,10 @@ def _verify_by_primary_code(store: Store, hits: list, key: str, fetch_detail=Non
             continue
         try:
             text = fetch_detail(ann["url"])
+        except (NeedsHuman, ComplianceDenied, QueryCancelled):
+            # 详情页的契约错误（站点改版/验证码/取消）必须按 50/40 上抛；
+            # 静默 continue 会把"查证失败"伪装成"正文编号对不上"。
+            raise
         except Exception:
             continue
         codes = classify(text, ann["doc_name"] or "")

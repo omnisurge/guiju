@@ -213,15 +213,25 @@ class McpServer:
             store.close()
 
     def _call(self, name: str, arguments: dict) -> dict:
-        if name == "query":
-            return self._query(arguments)
-        if name == "verify":
-            return self._verify(arguments)
-        if name == "batch":
-            return self._batch(arguments)
-        if name == "announcement":
-            return self._announcement(arguments)
-        return _error_result(f"未知工具：{name}")
+        try:
+            if name == "query":
+                return self._query(arguments)
+            if name == "verify":
+                return self._verify(arguments)
+            if name == "batch":
+                return self._batch(arguments)
+            if name == "announcement":
+                return self._announcement(arguments)
+            return _error_result(f"未知工具：{name}")
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            # 工具内部异常（sqlite、网络、解析等任何非 GuijuError）不得
+            # 冒到调用方：stdio 会杀死整个服务循环，HTTP 线程会断连。
+            import traceback
+
+            traceback.print_exc(file=sys.stderr)
+            return _error_result("工具执行失败（内部错误，见服务端 stderr）")
 
     def handle(self, payload: dict) -> dict | None:
         if not isinstance(payload, dict):
@@ -314,7 +324,12 @@ def make_http_server(server: McpServer, host: str, port: int, path: str = DEFAUL
             except (ValueError, UnicodeDecodeError):
                 self._send(400, b'{"error":"invalid json"}')
                 return
-            response = server.handle(payload)
+            try:
+                response = server.handle(payload)
+            except Exception:
+                # 兜底：handle 内部异常也不能断连裸奔
+                response = {"jsonrpc": "2.0", "id": None,
+                            "error": {"code": -32603, "message": "服务端内部错误"}}
             if response is None:
                 self._send(202, b"")
                 return

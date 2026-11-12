@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -68,13 +69,19 @@ def check_url(url: str) -> str:
 
 
 class _GuardedRedirect(urllib.request.HTTPRedirectHandler):
-    """把白名单钉死在每一次跳转上 —— 这是本产品唯一的红线级校验。"""
+    """把白名单钉死在每一次跳转上 —— 这是本产品唯一的红线级校验。
+
+    校验之外还要对跳转目标重新节流：白名单是 host 级，跳去另一个
+    *.gov.cn 子站时若不复算间隔，一次跨站重定向就绕过对目标的限速。"""
 
     max_redirections = 5
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         target = urllib.parse.urljoin(req.full_url, newurl)
         check_url(target)
+        host = (urllib.parse.urlsplit(target).hostname or "").lower()
+        if host:
+            _throttle(host)
         return super().redirect_request(req, fp, code, msg, headers, target)
 
 
@@ -85,14 +92,19 @@ _opener = urllib.request.build_opener(
     _GuardedRedirect(),
 )
 _last_call: dict[str, float] = {}
+#: 读-睡-写必须互斥：MCP --http 是 ThreadingHTTPServer，并发线程会读到
+#: 同一个 last 然后都不睡，等于对同一 host 并发绕过限速。锁包住 sleep
+#: 会让跨 host 请求也串行——偏保守，但政府站点宁可慢不可打，方向正确。
+_throttle_lock = threading.Lock()
 
 
 def _throttle(host: str) -> None:
-    last = _last_call.get(host, 0.0)
-    gap = time.monotonic() - last
-    if gap < DEFAULT_MIN_INTERVAL:
-        time.sleep(DEFAULT_MIN_INTERVAL - gap)
-    _last_call[host] = time.monotonic()
+    with _throttle_lock:
+        last = _last_call.get(host, 0.0)
+        gap = time.monotonic() - last
+        if gap < DEFAULT_MIN_INTERVAL:
+            time.sleep(DEFAULT_MIN_INTERVAL - gap)
+        _last_call[host] = time.monotonic()
 
 
 def _detect_block(resp: Response) -> None:

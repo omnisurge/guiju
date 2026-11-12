@@ -28,15 +28,25 @@ def crawl(
     source: str = "mohurd",
     on_page: PageHook | None = None,
 ) -> dict:
-    """抓取目录直到完整或无可新增（连续两页 0 新增即停）。"""
+    """抓取目录直到完整或无可新增（连续两页 0 新增即停）。
+
+    早停前提：上一轮的 corpus_meta["catalog_complete"] == "1"（目录已爬到底）。
+    否则静默早停会掩盖缺口：首轮爬一半失败，重跑时前几页全是已入库条目，
+    连续两页 0 新增即停，缺口之后的内容永远爬不到，而 synced_at 照常刷新。
+    截断（--pages 截停的轮次）既不写 synced_at 也不置 catalog_complete。
+    """
     src = registry()[source]
     page = 1
     new_total = seen = total = 0
     quiet_pages = 0
+    # 上一轮已完整才允许增量早停；未知（默认/截断后）必须爬到底
+    was_complete = store.get_meta("catalog_complete") == "1"
+    completed = truncated = False
 
     while True:
         items, total = src.catalog_page(page, page_size)
         if not items:
+            completed = True
             break
         fresh = 0
         for item in items:
@@ -53,14 +63,19 @@ def crawl(
             on_page(page, len(items), fresh, seen, total)
 
         if pages and page >= pages:
+            truncated = True
             break
-        if quiet_pages >= 2:
+        if was_complete and quiet_pages >= 2:
             break
         if total and page * page_size >= total:
+            completed = True
             break
         page += 1
 
-    store.set_meta("synced_at", now())
+    complete = completed or was_complete
+    if complete and not truncated:
+        store.set_meta("catalog_complete", "1")
+        store.set_meta("synced_at", now())
     store.set_meta("catalog_total", str(total or store.count_announcements()))
     store.commit()
     return {
@@ -70,5 +85,7 @@ def crawl(
         "total_in_db": store.count_announcements(),
         "latest_published_on": store.max_published_on(),
         "synced_at": store.get_meta("synced_at"),
+        "complete": complete,
+        "truncated": truncated,
         "db": str(store.path),
     }
