@@ -25,7 +25,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     local = None
     for key in dict.fromkeys(keys):
         for readable in (False, True):
-            found = find_cached(default_out_dir(), key, ann["doc_name"] or "", readable=readable)
+            found = find_cached(default_out_dir(), key, ann["doc_name"] or "", readable=readable, ann_id=ann_id)
             if found:
                 path, digest = found
                 local = {

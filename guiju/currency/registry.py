@@ -76,7 +76,8 @@ class Registry:
                           ensure_ascii=True, separators=(",", ":"))
 
 
-def default_registry(client: HttpClient | None = None, *, cancelled: Callable[[], bool] | None = None) -> Registry:
+def default_registry(client: HttpClient | None = None, *, cancelled: Callable[[], bool] | None = None,
+                     admit: Callable[[str], None] | None = None) -> Registry:
     # 延迟导入只为避免兼容门面在启动旧 CLI 时装配所有原生源；这里没有网络动作。
     from .ccsn import CcsnCurrency
     from .dbba import DbbaCurrency
@@ -92,12 +93,15 @@ def default_registry(client: HttpClient | None = None, *, cancelled: Callable[[]
 
     registry = Registry()
     registry.register(Route("csres", ("GB", "JGJ", "CJJ"), lambda: FallbackCurrency(
-        "csres", CsresCurrency(client), CcsnCurrency(client), StdSamrCurrency(client), cancelled=cancelled)))
+        "csres", CsresCurrency(client), CcsnCurrency(client), StdSamrCurrency(client), cancelled=cancelled, admit=admit)))
     registry.register(Route("csres", ("JTG",), lambda: FallbackCurrency(
-        "csres", CsresCurrency(client), JtstCurrency(client), cancelled=cancelled)))
+        "csres", CsresCurrency(client), JtstCurrency(client), cancelled=cancelled, admit=admit)))
     registry.register(Route("csres", ("DB",), lambda: FallbackCurrency(
-        "csres", CsresCurrency(client), DbbaCurrency(client), cancelled=cancelled),
+        "csres", CsresCurrency(client), DbbaCurrency(client), cancelled=cancelled, admit=admit),
         code_filter=lambda code: not owns_shanghai_namespace(code)))
-    registry.register(Route("shzjw", SHANGHAI_PREFIXES, lambda: ShzjwCurrency(client, cancelled=cancelled),
+    # "DB31" 单独列前缀：裸 DB31（不带 /T）也走上海路由，由 is_shanghai_code 细判；
+    # 不并入 SHANGHAI_PREFIXES，避免改变该常量在 owns_shanghai_namespace 处的语义。
+    registry.register(Route("shzjw", (*SHANGHAI_PREFIXES, "DB31"),
+                            lambda: ShzjwCurrency(client, cancelled=cancelled),
                             normalizer=normalize_code, code_filter=is_shanghai_code))
     return registry

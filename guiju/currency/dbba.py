@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from datetime import datetime, timedelta, timezone
 
 from ..errors import NeedsHuman
@@ -57,6 +58,18 @@ class DbbaCurrency:
 
     def __init__(self, client: HttpClient | None = None) -> None:
         self.client = client if client is not None else HttpClient()
+        self.pagination: dict = {"fetched_pages": 0, "total": 0, "has_more": False}
+
+    def close(self) -> None:
+        close = getattr(self.client, "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> "DbbaCurrency":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def lookup(self, code: str) -> list[Record]:
         if not code.strip():
@@ -65,6 +78,20 @@ class DbbaCurrency:
         def fetch(term: str) -> list[Record]:
             # dbba 见到 Accept: application/json 会返回 HTML 跳转页，不能补上。
             raw = self.client.post_form(SEARCH_URL, {"current": "1", "size": "20", "key": term}, accept=None)
-            return parse_dbba(raw)
+            # total 在响应里但分页契约未确认：如实报告只取了第 1 页（size=20）。
+            total = json_int(decode_json(self.name, raw), "total", self.name) or 0
+            records = parse_dbba(raw)
+            self.pagination = {"fetched_pages": 1, "total": total, "has_more": total > len(records)}
+            if total > len(records):
+                warnings.warn(
+                    f"dbba 返回 total={total} 条、仅取回第 1 页 {len(records)} 条：结果可能不完整",
+                    RuntimeWarning, stacklevel=2,
+                )
+            elif total > 0 and not records:
+                warnings.warn(
+                    f"dbba 报 total={total} 但 0 条记录：可能是响应结构改版",
+                    RuntimeWarning, stacklevel=2,
+                )
+            return records
 
         return query_with_base_fallback(code, fetch)

@@ -130,8 +130,11 @@ JSON 的 `codes[].role` 会告诉你身份：
 |---|---|---|
 | `target_of_revision` | 局部修订后改写的新编号 | ✅ |
 | `primary` | 本次公告发布的版本 | ✅ |
+| `weak_primary` | 弱证据指向的新版（只有名称命中/动词管不到本编号） | ❌ 需要人确认 |
 | `superseded_ref` | 被代替/废止的旧版本 | ❌ 不要引用它 |
 | `mentioned` | 提到了但判不出身份 | ⚠️ 需要人确认 |
+
+`weak_primary` 单独出现不算数：同一公告若没有 `primary`/`target_of_revision` 级别的强证据，工具会判 ambiguous（32）交人，不会拿弱证据替人定版。
 
 ### 3. 引用串可能带 warnings
 

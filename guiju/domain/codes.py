@@ -18,7 +18,7 @@ from .._compat import StrEnum
 #: 长前缀必须排在短前缀前面，否则 GB/T 会被 GB 抢先匹配
 _CODE_RE = re.compile(
     r"(GB/T|GB|JGJ/T|JGJ|CJJ/T|CJJ|CJ/T|DG/TJ|DGJ|DB\d{2}/T|T/CECS)"
-    r"\s*(\d{2,6})\s*[-—–－]\s*(\d{4})"
+    r"\s*(\d{1,6})\s*[-—–－]\s*(\d{4})"   # 1位序号也存在（实测 CJJ 1-1990），别为"多半两位"漏判
 )
 _SENTENCE = re.compile(r"[。；;\n]+")
 #: 逗号也是子句边界：「批准发布X，原Y同时废止」若不按子句切，"同时废止"会溅到 X 上

@@ -111,4 +111,4 @@ class ComplianceDenied(GuijuError):
 class NeedsHuman(GuijuError):
     exit = EXIT_NEEDS_HUMAN
     reason = "needs_human"
-    hint = "页面结构可能已改版：只需修 guiju/sources/mohurd.py 顶部的正则与常量"
+    hint = "页面结构可能已改版：检查对应源适配器（sources/ 目录下的 mohurd.py、shzjw.py 等）顶部的正则与常量"

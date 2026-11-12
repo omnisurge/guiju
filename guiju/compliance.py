@@ -156,7 +156,16 @@ def post_json(
     for attempt in range(1, max(1, attempts) + 1):
         try:
             raw = _post_once(url, data, referer=referer, timeout=timeout)
-            return json.loads(raw.decode("utf-8", "ignore"))
+            try:
+                return json.loads(raw.decode("utf-8", "ignore"))
+            except json.JSONDecodeError as exc:
+                # WAF/网关常把 403/登录页以 200+HTML 返回：JSON 解析会炸成裸 ValueError
+                # 冒到 CLI 变 exit 1（程序缺陷），实际是源不可达 → 归到 SourceUnreachable(20)。
+                # 失败信息只截头部几行，HTML 整页进 stderr 没有信息量。
+                head = raw.decode("utf-8", "ignore").strip().splitlines()[:3]
+                raise SourceUnreachable(
+                    f"POST 返回的不是 JSON（{len(raw)} 字节，前 3 行：{head}）：{url}"
+                ) from exc
         except _Retryable as exc:
             if attempt >= attempts:
                 raise SourceUnreachable(str(exc)) from None
@@ -190,6 +199,25 @@ def _post_once(url: str, data: bytes, *, referer: str | None, timeout: int) -> b
         raise _Retryable(f"TLS 失败：{exc}") from exc
     except OSError as exc:
         raise _Retryable(f"{type(exc).__name__}：{exc}［{url}］") from exc
+
+
+def _remote_length(url: str, *, referer: str | None, timeout: int) -> int | None:
+    """HEAD 取 Content-Length；拿不准（4xx/无头字段/网络错）返回 None。
+
+    只服务于 416 校验这一个场景，不为别的流程多生请求。"""
+    try:
+        check_url(url)
+        host = (urllib.parse.urlsplit(url).hostname or "").lower()
+        _throttle(host)
+        headers = {"User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9"}
+        if referer:
+            headers["Referer"] = referer
+        req = urllib.request.Request(url, headers=headers, method="HEAD")
+        with _opener.open(req, timeout=timeout) as resp:
+            length = resp.headers.get("Content-Length")
+        return int(length) if length is not None and str(length).isdigit() else None
+    except Exception:
+        return None
 
 
 class _Retryable(Exception):
@@ -278,7 +306,17 @@ def _download_once(
                     fh.write(chunk)
     except urllib.error.HTTPError as exc:
         if exc.code == 416 and start > 0:
-            return          # 本地部分 >= 远端：视为已完成，交给调用方改名
+            # 416 多半是"本地已下完"（部分 ≥ 远端总长）；但也可能是 .part 损坏超界。
+            # 别盲信：HEAD 对一次 Content-Length，对不上就删掉重下一次（仅此一次）。
+            remote = _remote_length(url, referer=referer, timeout=timeout)
+            if remote is None or remote == start:
+                # 问不出长度时维持旧结论（接受），避免 HEAD 缺陷反过来撕毁续传
+                return
+            part.unlink(missing_ok=True)
+            _download_once(
+                url, part, start=0, referer=referer, timeout=timeout, chunk_size=chunk_size
+            )
+            return
         if exc.code >= 500:
             raise _Retryable(f"HTTP {exc.code}：{url}") from exc
         raise SourceUnreachable(f"HTTP {exc.code}：{url}") from exc

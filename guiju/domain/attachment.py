@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import re
+import urllib.parse
 from dataclasses import dataclass
 
 from .._compat import StrEnum
@@ -66,8 +67,13 @@ def _norm(s: str) -> str:
 
 
 def _is_pdf(att: Attachment) -> bool:
-    blob = f"{att.url} {att.label}".lower()
-    return ".pdf" in blob or "pdf" in blob
+    # 「是不是 PDF」只看文件扩展：URL 路径以 .pdf 结尾（剥掉 query/fragment），
+    # 或标签里出现独立的 ".pdf" 字样。裸 "pdf" 子串会误伤：实测「X规范PDF版.zip」、
+    # 「xxpdfyy」这类名字都含 pdf 却不是 PDF。
+    path = urllib.parse.urlsplit(att.url).path.lower()
+    if path.endswith(".pdf"):
+        return True
+    return re.search(r"\.pdf\b", att.label.lower()) is not None
 
 
 def pick(atts: list[Attachment], doc_name: str = "", *, announcement_title: str = "") -> Pick:

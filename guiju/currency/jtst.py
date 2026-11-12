@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import urllib.parse
+import warnings
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -110,7 +111,11 @@ def _row(tr: _Node) -> Record | None:
 
 
 def parse_jtst(raw: bytes) -> list[Record]:
-    """UTF-8 原始字节的纯解析；只认源站状态，不推断历史旧号。"""
+    """UTF-8 原始字节的纯解析；只认源站状态，不推断历史旧号。
+
+    页面含表格行但一条都解析不出来时发 RuntimeWarning：空结果页合法、
+    解析失败不许静默成"无命中"。
+    """
     try:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -118,8 +123,15 @@ def parse_jtst(raw: bytes) -> list[Record]:
     parser = _TreeParser()
     parser.feed(text.replace("\r\n", "\n").replace("\r", "\n"))
     parser.close()
-    return [record for node in _walk(parser.root)
-            if isinstance(node, _Node) and node.tag == "tr" and (record := _row(node)) is not None]
+    rows = [node for node in _walk(parser.root)
+            if isinstance(node, _Node) and node.tag == "tr"]
+    records = [record for node in rows if (record := _row(node)) is not None]
+    if rows and not records:
+        warnings.warn(
+            f"jtst 页面含 {len(rows)} 个 tr 但 0 条可解析记录：可能是站点改版或布局行误判",
+            RuntimeWarning, stacklevel=2,
+        )
+    return records
 
 
 class JtstCurrency:
@@ -128,6 +140,19 @@ class JtstCurrency:
 
     def __init__(self, client: HttpClient | None = None) -> None:
         self.client = client if client is not None else HttpClient()
+        # HTML 列表页无总数字段：has_more=None 表示"无法判定"，不猜 False。
+        self.pagination: dict = {"fetched_pages": 0, "total": None, "has_more": None}
+
+    def close(self) -> None:
+        close = getattr(self.client, "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> "JtstCurrency":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def lookup(self, code: str) -> list[Record]:
         if not code.strip():
@@ -135,6 +160,8 @@ class JtstCurrency:
 
         def fetch(term: str) -> list[Record]:
             query = urllib.parse.urlencode({"tid": "", "op": "", "q": term})
-            return parse_jtst(self.client.get(f"{SEARCH_URL}?{query}", accept="text/html"))
+            records = parse_jtst(self.client.get(f"{SEARCH_URL}?{query}", accept="text/html"))
+            self.pagination = {"fetched_pages": 1, "total": None, "has_more": None}
+            return records
 
         return query_with_base_fallback(code, fetch)

@@ -356,9 +356,10 @@ def _by_code(
             currency=[r.as_payload() for r in records],
             resolved_name=best_record.name,
         )
+    hits = _best_name_hits(hits, search_name)
     ids = {h.entry["id"] for h in hits}
     ann_name = hits[0].entry.get("name") or hits[0].entry.get("doc_name")
-    suspicious = len(ids) > 1 or not _name_matches(ann_name, search_name)
+    suspicious = len(ids) > 1 or _name_match_level(ann_name, search_name) == 0
     if allow_network and suspicious:
         verified = _verify_by_primary_code(store, hits[:_VERIFY_MAX], key, fetch_detail)
         if verified:
@@ -543,12 +544,31 @@ def _norm_name(name: str | None) -> str:
     return "".join(ch for ch in (name or "") if ch.isalnum())
 
 
-def _name_matches(doc_name: str | None, search_name: str) -> bool:
-    """公告名与权威名称是否指向同一本书（互含即视作一致）。"""
+def _name_match_level(doc_name: str | None, search_name: str) -> int:
+    """公告名与权威名称的吻合等级：3 完全一致 / 2 规范化后一致 / 1 仅互含 / 0 不吻合。
+
+    旧版只看"互含"布尔，导致同一分支里"正好同名"与"名字嵌进去"待遇相同——
+    前者是强证据、后者只是线索。分级后调用方可以只在"没有更好候选"时才用弱匹配。
+    """
+    if not doc_name or not search_name:
+        return 0
+    if doc_name.strip() == search_name.strip():
+        return 3
     left, right = _norm_name(doc_name), _norm_name(search_name)
     if not left or not right:
-        return False
-    return left in right or right in left
+        return 0
+    if left == right:
+        return 2
+    return 1 if (left in right or right in left) else 0
+
+
+def _best_name_hits(hits: list, search_name: str) -> list:
+    """按最高吻合等级收窄候选：有精确命中就丢"仅互含"的噪音，没有再降级。"""
+    levels = [_name_match_level(h.entry.get("name") or h.entry.get("doc_name"), search_name) for h in hits]
+    best = max(levels, default=0)
+    if best == 0:
+        return hits
+    return [h for h, lv in zip(hits, levels) if lv == best]
 
 
 def _is_english(record) -> bool:
@@ -571,16 +591,23 @@ def _filter_by_version_window(hits: list, implement_date: str) -> list:
     """
     if len(hits) <= 1 or not implement_date:
         return hits
+    # 无日期记录不该被窗口过滤：滤掉的前提是"日期晚于实施日"这条证据，
+    # 没日期就没有证据，留在候选里让后续判断/交人。
     dated = [h for h in hits if (h.entry.get("published_on") or "9999-99-99") <= implement_date]
-    return dated or hits
+    undated = [h for h in hits if not h.entry.get("published_on")]
+    return dated + undated or hits
 
 
 def _dedupe(rows) -> list:
+    """同一 code_key 只留一行（展示去重）；但空 code_key 不是重复——
+    它们只是"没编到号"的不同公告，按公告身份（id，其次 url）区分，
+    否则一堆"工作计划/产品标准"会塌成一条。"""
     seen: set[str] = set()
     out = []
     for r in rows:
-        if r["code_key"] in seen:
+        key = r["code_key"] or "#" + str(r.get("id") or r.get("url") or len(out))
+        if key in seen:
             continue
-        seen.add(r["code_key"])
+        seen.add(key)
         out.append(r)
     return out

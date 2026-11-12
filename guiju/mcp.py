@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -16,10 +17,13 @@ from urllib.parse import urlsplit
 from ._version import __version__
 from .currency.model import Currency, Record
 from .currency.native import NativeCurrency
-from .errors import GuijuError
+from .errors import GuijuError, NeedsHuman
 
 PROTOCOL_VERSIONS = ("2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 DEFAULT_PATH = "/mcp"
+# POST body 硬上限：Content-Length 取客户端声明，不设限可被大 body 撑爆内存。
+# JSON-RPC 请求正常只有几 KB，4MB 已是很宽的余量。
+MAX_BODY_BYTES = 4 * 1024 * 1024
 
 TOOLS = (
     {
@@ -124,6 +128,27 @@ class McpServer:
 
     def __init__(self, backend: Currency) -> None:
         self.backend = backend
+        # announcement 的共享只读存储：避免每请求跑一次建表/迁移 DDL。
+        # CPython sqlite3 模块 threadsafety=1，共享连接必须外部串行化 ——
+        # self._store_lock 包住"创建 + 每次 _announcement 调用"（含 detail 抓取，
+        # announcement 本身低频，串行可接受）。
+        self._store = None
+        self._store_lock = threading.Lock()
+
+    def _ann_store(self):
+        """惰性创建共享 Store（cross_thread 允许连接跨线程使用）。"""
+        if self._store is None:
+            from .store.sqlite import Store
+
+            self._store = Store(cross_thread=True)
+        return self._store
+
+    def close(self) -> None:
+        """释放共享连接（幂等）。serve_* 退出时调用；测试用完也建议调。"""
+        with self._store_lock:
+            if self._store is not None:
+                self._store.close()
+                self._store = None
 
     def _query(self, arguments: dict) -> dict:
         code = str(arguments.get("code") or "").strip()
@@ -196,59 +221,64 @@ class McpServer:
         from .domain import attachment as att_domain
         from .domain import availability
         from .sources import registry
-        from .store.sqlite import Store
 
-        store = Store()
         try:
-            # 契约是"只回元数据、不落盘"：allow_network=False 堵死 resolve 里唯一的写分支
-            # （拉详情页 + persist_codes），只读门面把缓存/持久化调用拦成 no-op 兜底。
-            ro = _ReadOnlyStore(store)
-            target = lookup.resolve(
-                ro, ref, currency=self.backend, allow_network=False)
-            ann = target["ann"]
-            window = availability.state(ann["published_on"])
-            source_id = lookup.source_of(ann["url"])["id"]
-            source = registry().get(source_id) or registry()["mohurd"]
-            choice = None
-            candidates: list = []
-            if getattr(source, "api_mode", False):
-                # API 源没有公告页可抓（shzjw）：正文链接在检索结果里，不在页面上
-                verdict = "api_mode"
-            else:
-                html, _ = source.detail(ann["url"])
-                atts = source.attachments(html)
-                picked = att_domain.pick(
-                    atts, ann["doc_name"] or "", announcement_title=ann["title"])
-                choice = picked.choice if picked.ok else None
-                candidates = (picked.as_payload() or {}).get("candidates") or []
-                verdict = "ok" if picked.ok else getattr(
-                    picked.verdict, "value", str(picked.verdict))
-            payload = {
-                "ok": True,
-                "announcement_id": ann["id"],
-                "code": target.get("code_display") or target.get("code_key"),
-                "name": ann["doc_name"],
-                "published_on": ann["published_on"],
-                "title": ann["title"],
-                "category": ann["category"],
-                "page_url": ann["url"],
-                "source": source_id,
-                "availability": window.value,
-                "status": target.get("status") or "",
-                "confidence": target.get("confidence") or "",
-                "attachment_verdict": verdict,
-                "attachment_url": choice.url if choice else None,
-                "attachment_label": choice.label if choice else None,
-                "attachment_candidates": candidates,
-            }
-            return _text_result(json.dumps(payload, ensure_ascii=False))
+            with self._store_lock:
+                # 契约是"只回元数据、不落盘"：allow_network=False 堵死 resolve 里唯一的写分支
+                # （拉详情页 + persist_codes），只读门面把缓存/持久化调用拦成 no-op 兜底。
+                ro = _ReadOnlyStore(self._ann_store())
+                target = lookup.resolve(
+                    ro, ref, currency=self.backend, allow_network=False)
+                ann = target["ann"]
+                window = availability.state(ann["published_on"])
+                source_id = lookup.source_of(ann["url"])["id"]
+                source = registry().get(source_id)
+                if source is None:
+                    # 公告 URL 的 host 不在源表（_SOURCE_HOSTS）里：宁可显式报错
+                    # 也不能静默拿 mohurd 去解析一个根本不是它的页面结构。
+                    raise NeedsHuman(
+                        f"公告页归属站点无法识别（source_id={source_id}，url={ann['url']}）",
+                        hint="若站点改了域名请在 guiju/cli/lookup.py 的 _SOURCE_HOSTS 补映射，"
+                             "或为新站点补适配器",
+                    )
+                choice = None
+                candidates: list = []
+                if getattr(source, "api_mode", False):
+                    # API 源没有公告页可抓（shzjw）：正文链接在检索结果里，不在页面上
+                    verdict = "api_mode"
+                else:
+                    html, _ = source.detail(ann["url"])
+                    atts = source.attachments(html)
+                    picked = att_domain.pick(
+                        atts, ann["doc_name"] or "", announcement_title=ann["title"])
+                    choice = picked.choice if picked.ok else None
+                    candidates = (picked.as_payload() or {}).get("candidates") or []
+                    verdict = "ok" if picked.ok else getattr(
+                        picked.verdict, "value", str(picked.verdict))
+                payload = {
+                    "ok": True,
+                    "announcement_id": ann["id"],
+                    "code": target.get("code_display") or target.get("code_key"),
+                    "name": ann["doc_name"],
+                    "published_on": ann["published_on"],
+                    "title": ann["title"],
+                    "category": ann["category"],
+                    "page_url": ann["url"],
+                    "source": source_id,
+                    "availability": window.value,
+                    "status": target.get("status") or "",
+                    "confidence": target.get("confidence") or "",
+                    "attachment_verdict": verdict,
+                    "attachment_url": choice.url if choice else None,
+                    "attachment_label": choice.label if choice else None,
+                    "attachment_candidates": candidates,
+                }
+                return _text_result(json.dumps(payload, ensure_ascii=False))
         except GuijuError as exc:
             # 保留完整 payload（reason/hint/candidates）：32 歧义时
             # candidates 正是调用方要拿给人看的那部分
             return _text_result(
                 json.dumps(exc.payload(), ensure_ascii=False), error=True)
-        finally:
-            store.close()
 
     def _call(self, name: str, arguments: dict) -> dict:
         try:
@@ -310,19 +340,22 @@ class McpServer:
 
 
 def serve_stdio(server: McpServer) -> int:
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            print(json.dumps({"jsonrpc": "2.0", "id": None,
-                              "error": {"code": -32700, "message": "JSON 解析失败"}}, ensure_ascii=False), flush=True)
-            continue
-        response = server.handle(payload)
-        if response is not None:
-            print(json.dumps(response, ensure_ascii=False), flush=True)
+    try:
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                print(json.dumps({"jsonrpc": "2.0", "id": None,
+                                  "error": {"code": -32700, "message": "JSON 解析失败"}}, ensure_ascii=False), flush=True)
+                continue
+            response = server.handle(payload)
+            if response is not None:
+                print(json.dumps(response, ensure_ascii=False), flush=True)
+    finally:
+        server.close()
     return 0
 
 
@@ -336,15 +369,20 @@ def make_http_server(server: McpServer, host: str, port: int, path: str = DEFAUL
     class Handler(BaseHTTPRequestHandler):
         server_version = "guiju-mcp"
 
-        def _send(self, code: int, body: bytes, content_type: str = "application/json") -> None:
+        def _send(self, code: int, body: bytes, content_type: str = "application/json", *, close: bool = False) -> None:
             try:
                 self.send_response(code)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(body)))
+                if close:
+                    self.send_header("Connection", "close")
                 self.end_headers()
                 self.wfile.write(body)
             except BrokenPipeError:
                 pass
+            finally:
+                if close:
+                    self.close_connection = True
 
         def do_GET(self):
             if urlsplit(self.path).path == "/health":
@@ -356,8 +394,24 @@ def make_http_server(server: McpServer, host: str, port: int, path: str = DEFAUL
             if urlsplit(self.path).path != path:
                 self._send(404, b'{"error":"not found"}')
                 return
+            raw_len = self.headers.get("Content-Length")
+            if raw_len is None:
+                # 缺失/负值都读不了确定长度：按无效请求拒绝
+                self._send(400, b'{"error":"missing Content-Length"}')
+                return
             try:
-                length = int(self.headers.get("Content-Length", "0"))
+                length = int(raw_len)
+            except ValueError:
+                self._send(400, b'{"error":"bad Content-Length"}')
+                return
+            if length < 0:
+                self._send(400, b'{"error":"bad Content-Length"}')
+                return
+            if length > MAX_BODY_BYTES:
+                # 声明超限直接拒，不等 body：读完才报错等于先被耗一轮内存
+                self._send(413, b'{"error":"request body too large"}', close=True)
+                return
+            try:
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
             except (ValueError, UnicodeDecodeError):
                 self._send(400, b'{"error":"invalid json"}')
@@ -376,7 +430,25 @@ def make_http_server(server: McpServer, host: str, port: int, path: str = DEFAUL
         def log_message(self, format, *args):
             return
 
+    if not _is_loopback(host):
+        # 不阻断（可能是内网/容器部署），但 MCP 无任何鉴权，必须提示
+        print("! MCP HTTP 暴露在非回环地址，确认有网关/鉴权保护", file=sys.stderr, flush=True)
     return ThreadingHTTPServer((host, port), Handler)
+
+
+_LOOPBACK_HOSTS = {"localhost"}
+
+
+def _is_loopback(host: str) -> bool:
+    """127.x / ::1 全段都算回环（不只 127.0.0.1）；非 IP 字面量按名字表判。"""
+    if host in _LOOPBACK_HOSTS:
+        return True
+    try:
+        import ipaddress
+
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def serve_http(server: McpServer, host: str, port: int, path: str = DEFAULT_PATH) -> int:
@@ -386,4 +458,5 @@ def serve_http(server: McpServer, host: str, port: int, path: str = DEFAULT_PATH
         httpd.serve_forever()
     finally:
         httpd.server_close()
+        server.close()
     return 0

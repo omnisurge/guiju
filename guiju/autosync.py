@@ -152,7 +152,10 @@ def evaluate(
         from .syncengine import crawl
 
         if notify is not None:
-            if empty:
+            # 提示文案要用锁内的最新状态：等锁期间别的进程可能已经补了目录，
+            # 这里再引用锁外的 empty 快照会把"增量同步"误报成"首次同步"。
+            now_empty = store.count_announcements() == 0
+            if now_empty:
                 notify("目录为空，正在首次同步（33 页，约 60 秒）")
             elif age is not None:
                 notify(f"目录已 {age:.1f} 天未更新，正在增量同步（约 3 秒）")

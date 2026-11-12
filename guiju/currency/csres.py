@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import urllib.parse
+import warnings
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
@@ -110,7 +111,17 @@ def parse_csres(raw: bytes) -> list[Record]:
     parser = _TableParser()
     parser.feed(text.replace("\r\n", "\n").replace("\r", "\n"))
     parser.close()
-    return [record for row in parser.rows if (record := row.record()) is not None]
+    records = [record for row in parser.rows if (record := row.record()) is not None]
+    if not records and (
+        any(row.title.startswith("编号：") for row in parser.rows)
+        or any(len(row.cells) >= 4 for row in parser.rows)
+    ):
+        # 数据行痕迹在（编号：前缀或 >=4 单元格）却零记录：改版/解析失败，不许静默成无命中。
+        warnings.warn(
+            f"csres 页面含 {len(parser.rows)} 个 tr 但 0 条可解析记录：可能是站点改版",
+            RuntimeWarning, stacklevel=2,
+        )
+    return records
 
 
 class CsresCurrency:
@@ -119,8 +130,23 @@ class CsresCurrency:
 
     def __init__(self, client: HttpClient | None = None) -> None:
         self.client = client if client is not None else HttpClient()
+        # HTML 列表页无总数字段：has_more=None 表示"无法判定"，不猜 False。
+        self.pagination: dict = {"fetched_pages": 0, "total": None, "has_more": None}
+
+    def close(self) -> None:
+        close = getattr(self.client, "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> "CsresCurrency":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def lookup(self, code: str) -> list[Record]:
         query = urllib.parse.urlencode({"keyword": code, "pageNum": "1"})
         raw = self.client.get(f"{SEARCH_URL}?{query}")
-        return filter_by_code(parse_csres(raw), code)
+        records = filter_by_code(parse_csres(raw), code)
+        self.pagination = {"fetched_pages": 1, "total": None, "has_more": None}
+        return records

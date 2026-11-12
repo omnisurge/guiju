@@ -11,8 +11,10 @@ from __future__ import annotations
 from .currency import Record
 from .sources import shzjw
 
-#: 地方标准编号前缀（上海口径：DG/TJ 标准、DBJT 设计标准图集、DB31/T 地方标准）
-PREFIXES = ("DG/TJ", "DBJT", "DGJ", "DB31/T", "DBJ")
+#: 地方标准编号前缀（上海口径）。
+#: 注意裸 DGJ/DBJ 不是上海专属：DBJ50 是重庆、DGJ11 是江苏，不能宽匹配。
+#: 上海 DGJ/DBJ 段编号以 08 打头（DGJ08 / DBJ08）；DB 系只认上海 DB31。
+PREFIXES = ("DG/TJ", "DBJT", "DGJ08", "DB31", "DBJ08")
 
 
 def is_local_code(ref: str) -> bool:

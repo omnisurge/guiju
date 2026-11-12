@@ -15,16 +15,23 @@ from .. import render
 
 def run(store: Store, args: argparse.Namespace) -> int:
     # --if-stale：给"我就想确认它是新的"场景；新则 0 请求秒退
-    if args.if_stale is not None and store.count_announcements():
+    # 总数只查一次（原来条件里一次、payload 里又一次，白白扫两遍表）
+    total_in_db = store.count_announcements()
+    if args.if_stale is not None and total_in_db:
         age = store.catalog_age_days()
-        if age is not None and age <= args.if_stale:
+        if age is None:
+            # None 分"没同步过"与"meta 坏了"：后者必须露出来，不能静默当旧库
+            corrupt = store.catalog_meta_corrupt()
+            if corrupt:
+                render.note(f"! {corrupt}，按未同步处理继续抓取")
+        elif age <= args.if_stale:
             render.emit(
                 {
                     "ok": True,
                     "skipped": True,
                     "reason": "fresh",
                     "age_days": round(age, 2),
-                    "total_in_db": store.count_announcements(),
+                    "total_in_db": total_in_db,
                     "synced_at": store.get_meta("synced_at"),
                     "db": str(store.path),
                 }

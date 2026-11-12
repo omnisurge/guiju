@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import re
 import urllib.parse
+import warnings
 
 from .codes import query_with_base_fallback
 from .httpx import HttpClient, decode_json, json_int, json_rows, json_string
@@ -49,6 +50,18 @@ class StdSamrCurrency:
 
     def __init__(self, client: HttpClient | None = None) -> None:
         self.client = client if client is not None else HttpClient()
+        self.pagination: dict = {"fetched_pages": 0, "total": 0, "has_more": False}
+
+    def close(self) -> None:
+        close = getattr(self.client, "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> "StdSamrCurrency":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def lookup(self, code: str) -> list[Record]:
         if not code.strip():
@@ -62,6 +75,20 @@ class StdSamrCurrency:
                 "ISSUE_DATE": "",
             })
             raw = self.client.get(f"{SEARCH_URL}?{query}", accept="application/json")
-            return parse_stdsamr(raw)
+            # total 在响应里但没分页契约：如实报告只取了第 1 页，超出部分告警。
+            total = json_int(decode_json(self.name, raw), "total", self.name) or 0
+            records = parse_stdsamr(raw)
+            self.pagination = {"fetched_pages": 1, "total": total, "has_more": total > len(records)}
+            if total > len(records):
+                warnings.warn(
+                    f"std_samr 返回 total={total} 条、仅取回第 1 页 {len(records)} 条：结果可能不完整",
+                    RuntimeWarning, stacklevel=2,
+                )
+            elif total > 0 and not records:
+                warnings.warn(
+                    f"std_samr 报 total={total} 但 0 条记录：可能是响应结构改版",
+                    RuntimeWarning, stacklevel=2,
+                )
+            return records
 
         return query_with_base_fallback(code, fetch)

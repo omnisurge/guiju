@@ -11,11 +11,14 @@ from .model import Currency, QueryCancelled, Record
 
 class FallbackCurrency:
     def __init__(self, name: str, primary: Currency | None, *backups: Currency | None,
-                 cancelled: Callable[[], bool] | None = None) -> None:
+                 cancelled: Callable[[], bool] | None = None,
+                 admit: Callable[[str], None] | None = None) -> None:
         self.name = name
         self.primary = primary
         self.backups = tuple(backup for backup in backups if backup is not None)
         self.cancelled = cancelled
+        # admit 与 native._guard 分工一致：一次 lookup 计一次"上游查询"，只在入口处计。
+        self.admit = admit
         self.source_names = tuple(source.name for source in (primary, *self.backups) if source is not None)
         self.cache_namespace = "fallback:" + ">".join(self.source_names)
 
@@ -25,6 +28,8 @@ class FallbackCurrency:
 
     def lookup(self, code: str) -> list[Record]:
         self._check()
+        if self.admit is not None:
+            self.admit(code)
         if self.primary is None:
             raise SourceUnreachable("主源未配置")
         try:

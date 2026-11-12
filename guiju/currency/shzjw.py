@@ -24,6 +24,11 @@ def is_shanghai_code(code: str) -> bool:
         if prefix == "DB31/T":
             return not rest or "0" <= rest[0] <= "9"
         return not rest or rest.startswith("-")
+    # 裸 DB31（不带 /T，如 DB3108-2020、DB31-08-2020）也是上海编号家族；
+    # 但 DB31/373 这类带斜杠的非 /T 形式不归本路由，保持拒绝。
+    if key.startswith("DB31"):
+        rest = key[4:].removeprefix("-")
+        return bool(rest) and "0" <= rest[0] <= "9"
     return False
 
 
@@ -41,6 +46,10 @@ def _valid_query(key: str) -> bool:
             if prefix != "DB31/T":
                 rest = rest.removeprefix("-")
             return bool(rest) and "0" <= rest[0] <= "9"
+    if key.startswith("DB31"):
+        # 与 is_shanghai_code 同一口径：裸 DB31 后必须直接跟数字段。
+        rest = key[4:].removeprefix("-")
+        return bool(rest) and "0" <= rest[0] <= "9"
     return False
 
 

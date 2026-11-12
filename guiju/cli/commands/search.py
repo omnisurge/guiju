@@ -6,11 +6,16 @@ import argparse
 
 from ...domain.availability import coverage_statement
 from ...domain.search import rank, tokens_of
+from ...errors import BadUsage
 from ...store.sqlite import Store
 from .. import render
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
+    # 负数 limit 在切片语义里是"从尾部往回数"（hits[:-1] 丢最后一条），纯属误用：
+    # 按 bad_usage(2) 拒绝，别闷声给出一份看起来正常的结果。
+    if not args.all and args.limit is not None and args.limit < 0:
+        raise BadUsage("--limit 不能为负数（要全部结果用 --all）")
     tokens = tokens_of(" ".join(args.keywords))
     entries = store.catalog_entries()
     hits, mode = rank(entries, tokens)

@@ -30,7 +30,9 @@ def default_home() -> Path:
 
 
 class Store:
-    def __init__(self, path: str | Path | None = None) -> None:
+    def __init__(self, path: str | Path | None = None, *, cross_thread: bool = False) -> None:
+        # cross_thread=True：MCP 这类共享连接的场景放开 check_same_thread；
+        # CPython sqlite3 threadsafety=1，共享后调用方必须自己串行化访问。
         home = None
         if path is None:
             home = default_home()
@@ -39,7 +41,9 @@ class Store:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.legacy_backup: Path | None = None
-        self.db = sqlite3.connect(self.path)
+        self._cross_thread = cross_thread
+        self.db = sqlite3.connect(
+            self.path, check_same_thread=not cross_thread)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
         self._migrate()
@@ -56,7 +60,8 @@ class Store:
             shutil.copy2(self.path, backup)
             self.path.unlink()
             self.legacy_backup = backup
-            self.db = sqlite3.connect(self.path)
+            self.db = sqlite3.connect(
+                self.path, check_same_thread=not self._cross_thread)
             self.db.row_factory = sqlite3.Row
             self.db.execute("PRAGMA foreign_keys = ON")
         elif version not in (0, SCHEMA_VERSION):
@@ -242,8 +247,25 @@ class Store:
         try:
             then = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
         except ValueError:
+            # 有 meta 但解析不了 ≠ 没同步：返回 None 保安全（调用方按"旧"处理），
+            # 但别让它静默 —— catalog_meta_corrupt() 负责把脏信号显式化。
             return None
         return (datetime.now() - then).total_seconds() / 86400
+
+    def catalog_meta_corrupt(self) -> str | None:
+        """corpus_meta.synced_at 存在但解析不出 → 返回描述串；否则 None。
+
+        catalog_age_days 返回 None 分两种：没同步过（正常）和 meta 值坏了（脏库信号）。
+        调用方用这个区分，别把"解析失败"当成"尚未同步"抹掉。
+        """
+        raw = self.get_meta("synced_at")
+        if not raw:
+            return None
+        try:
+            datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return f"catalog meta 损坏：synced_at={raw!r}"
+        return None
 
     def get_meta(self, key: str, default: str = "") -> str:
         row = self.db.execute("SELECT v FROM corpus_meta WHERE k=?", (key,)).fetchone()

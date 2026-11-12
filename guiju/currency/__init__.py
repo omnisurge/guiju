@@ -45,10 +45,18 @@ TIMEOUT = 25
 
 
 def native_currency(cache_dir: str | None = None):
-    """显式构造原生时效适配器；缓存目录可用参数或 GUIJU_CURRENCY_CACHE 覆盖。"""
+    """显式构造原生时效适配器；缓存目录可用参数或 GUIJU_CURRENCY_CACHE 覆盖。
+
+    本层生效的缓存开关：
+    - ``GUIJU_CURRENCY_CACHE=off``：选 no-cache 适配器（等价于 cache_dir="off"）。
+    - ``GUIJU_CURRENCY_CACHE_OFF=1``：全局禁原生磁盘缓存，优先级最高；
+      同一变量对 cmd/mcp 端点的作用见 CommandCurrency/McpCurrency。
+    """
     from ..store.currency import DiskCurrencyCache
     from .native import NativeCurrency
 
+    if os.environ.get("GUIJU_CURRENCY_CACHE_OFF") == "1":
+        return NativeCurrency()
     selected = cache_dir if cache_dir is not None else os.environ.get("GUIJU_CURRENCY_CACHE")
     if selected == "off":
         return NativeCurrency()
@@ -189,8 +197,13 @@ class McpCurrency:
 
     def lookup(self, code: str, *, cache: str | None = None) -> list[Record]:
         arguments = {"code": code}
-        if cache is not None:
-            arguments["cache"] = cache
+        # 显式 cache 参数优先；未显式时 GUIJU_CURRENCY_CACHE_OFF=1 透传成 cache=off，
+        # 与 CommandCurrency 的 --cache off 同层同义（都在端点适配器层生效）。
+        effective = cache if cache is not None else (
+            "off" if os.environ.get("GUIJU_CURRENCY_CACHE_OFF") == "1" else None
+        )
+        if effective is not None:
+            arguments["cache"] = effective
         init, sid = self._rpc(
             {
                 "jsonrpc": "2.0",
@@ -283,7 +296,7 @@ class MisconfiguredCurrency:
     def lookup(self, code: str) -> list[Record]:
         raise SourceUnreachable(
             self.reason,
-            hint="可用值：cmd[:二进制路径] / mcp[:URL] / off；或先装好对应组件",
+            hint="可用值：cmd[:二进制路径] / mcp[:URL] / native[:off|缓存目录] / off；或先装好对应组件",
         )
 
 
@@ -307,12 +320,16 @@ def endpoint_of(cur: object) -> str | None:
 
 
 def default_currency() -> Currency:
-    """默认使用原生时效；显式 cmd / mcp / off 仍可覆盖，环境变量绝不静默替换。
+    """默认使用原生时效；显式 cmd / mcp / native / off 仍可覆盖，环境变量绝不静默替换。
 
     这是 ADR 0002 期1 M4 的默认切换点：原生内部按 TTL 管理缓存，
     不再外包旧 CachedCurrency 的进程内 memo。
+
+    ``native[:arg]`` 的 arg 是原生磁盘缓存目录（``native:off`` 等价关缓存），
+    与 cmd/mcp 的「机器地址」语义不同 —— 原生没有远端可指，只有缓存位置可调。
+    ``GUIJU_CURRENCY_CACHE`` / ``GUIJU_CURRENCY_CACHE_OFF=1`` 在 native_currency 层生效。
     """
-    override = os.environ.get("GUIJU_CURRENCY")  # cmd[:path] / mcp[:url] / off
+    override = os.environ.get("GUIJU_CURRENCY")  # cmd[:path] / mcp[:url] / native[:off|dir] / off
     if override:
         kind, _, arg = override.partition(":")
         if kind == "off":
@@ -438,7 +455,14 @@ class CachedCurrency:
         try:
             from datetime import datetime
 
-            age = round((datetime.now() - datetime.strptime(fetched_at, "%Y-%m-%d %H:%M:%S")).total_seconds() / 86400, 2)
-        except ValueError:
+            raw_seconds = (datetime.now() - datetime.strptime(
+                fetched_at, "%Y-%m-%d %H:%M:%S")).total_seconds()
+            if raw_seconds < -3600:
+                # 时钟回拨/未来时间戳超过 1h：年龄不可信，保持 None（调用方按"无年龄信息"处理），
+                # 不钳成 0 伪装成"刚写入"。小幅负值（时钟漂移）则钳 0，不误报。
+                age = None
+            else:
+                age = max(0.0, round(raw_seconds / 86400, 2))
+        except (ValueError, TypeError):
             pass
         return records, age

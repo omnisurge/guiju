@@ -153,7 +153,7 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
 
     # 幂等快路径：下载目录已有同名文件且指纹一致时，连详情页都不必抓（批量复跑的关键）
     if not args.force:
-        cached = find_cached(out_dir, code_key, ann["doc_name"] or "", readable=args.readable)
+        cached = find_cached(out_dir, code_key, ann["doc_name"] or "", readable=args.readable, ann_id=ann_id)
         if cached:
             path, digest = cached
             return {
@@ -178,7 +178,7 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
         render.warn(f"该版本状态为 {status}；现行版用 guiju which {code_key} 查")
 
     if not args.force:
-        cached = find_cached(out_dir, code_key, ann["doc_name"] or "", readable=args.readable)
+        cached = find_cached(out_dir, code_key, ann["doc_name"] or "", readable=args.readable, ann_id=ann_id)
         if cached:
             path, digest = cached
             return {
@@ -225,9 +225,9 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
 
     digest = sha256_file(part)
     dest = out_dir / (
-        naming.readable_name(code_key, ann["doc_name"] or "")
+        naming.readable_name(code_key, ann["doc_name"] or "", ann_id)
         if args.readable
-        else naming.library_name(code_key, ann["doc_name"] or "", digest)
+        else naming.library_name(code_key, ann["doc_name"] or "", digest, ann_id)
     )
     dest.parent.mkdir(parents=True, exist_ok=True)
     os.replace(part, dest)

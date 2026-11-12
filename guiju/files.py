@@ -32,7 +32,7 @@ def default_out_dir() -> Path:
 
 
 def find_cached(
-    out_dir: Path, code_key: str | None, doc_name: str, *, readable: bool = False
+    out_dir: Path, code_key: str | None, doc_name: str, *, readable: bool = False, ann_id=None
 ) -> tuple[Path, str] | None:
     """下载目录里的幂等判断：按可复现的文件名找，不查库。
 
@@ -47,14 +47,14 @@ def find_cached(
     from .domain import naming
 
     if readable:
-        path = out_dir / naming.readable_name(code_key, doc_name)
+        path = out_dir / naming.readable_name(code_key, doc_name, ann_id)
         if path.is_file():
             return path, sha256_file(path)
         return None
-    pattern = glob.escape(naming.library_stem(code_key, doc_name)) + "__*.pdf"
+    pattern = glob.escape(naming.library_stem(code_key, doc_name, ann_id)) + "__*.pdf"
     for path in sorted(out_dir.glob(pattern)):
         digest = sha256_file(path)
-        if path.name == naming.library_name(code_key, doc_name, digest):
+        if path.name == naming.library_name(code_key, doc_name, digest, ann_id):
             return path, digest
     return None
 

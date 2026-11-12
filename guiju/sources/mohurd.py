@@ -22,6 +22,7 @@ import urllib.parse
 from pathlib import Path
 
 from .. import compliance
+from ..domain.announcement import classify_title
 from ..domain.attachment import Attachment
 from ..domain.codes import html_to_text
 from ..errors import BadAttachment, NeedsHuman
@@ -46,35 +47,14 @@ _ATTACH_RE = re.compile(
     r'<a[^>]+href="([^"]*(?:api-gateway|\.pdf|\.docx?|\.zip)[^"]*)"[^>]*>(.*?)</a>', re.S | re.I
 )
 _COUNT_RE = re.compile(r'count="(\d+)"')
-_NAME_RE = re.compile(r"《([^》]+)》")
-
-#: 公告分类关键词（顺序即优先级）
-_CATEGORY_RULES = (
-    ("局部修订", "partial_revision"),
-    ("英文版", "draft_en"),
-    ("征求意见", "draft"),
-    ("国家标准", "national"),
-    ("行业标准", "industry"),
-    ("地方标准", "local"),
-)
+# 公告标题的规范名/分类判定统一在 domain.announcement：此前这里复制了一份
+# _CATEGORY_RULES + classify_title，两份独立演进曾把分类结论改岔。
 
 MAGIC_PDF = "pdf"
 MAGIC_DOC = "doc"
 MAGIC_ZIP = "zip"
 MAGIC_HTML = "html"
 MAGIC_UNKNOWN = "unknown"
-
-
-def classify_title(title: str) -> tuple[str, str]:
-    """公告标题 → (规范名, 分类)。名取《》内文本，没有书名号时回退整串。"""
-    m = _NAME_RE.search(title)
-    name = m.group(1).strip() if m else title.strip()
-    category = "other"
-    for needle, label in _CATEGORY_RULES:
-        if needle in title:
-            category = label
-            break
-    return name, category
 
 
 def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int]:
