@@ -107,7 +107,10 @@ agent 按"歧义交人"处理白耗一轮。
 > 钉住不改（验证后为正确行为/有意取舍）：native admit 2次/上游查询（入口+put前复验）、
 >       memo/cache 键用原样 code（normalize_key 只在 sqlite 层）、prune_expired（幻影项，不存在）、
 >       MisconfiguredCurrency→SourceUnreachable（非 NeedsHuman）。
-> 未动（设计取舍待 owner）：fallback 主源空不查备源（与 Go 版一致性）、_FORM_HOSTS 硬编码、M17 exit-code。
+> 第四轮收尾（2026-11-12）：M17 已裁决——新增 exit 34 no_currency_record（NoCurrencyRecord/NoCurrencySource 归并）；
+>       _FORM_HOSTS 已注册表驱动（Route.form_post + 端点级 Route，httpx 侧 lazy 查询）。pytest 627 passed/1128 subtests。
+> 未动（设计取舍待 owner）：fallback 主源空不查备源（需对 Go spec-currency 语义，见 owner 项）。
+> 已澄清：spec-currency 是 guiju 的时效上游（which/cite 数据源），未被淘汰、不可删。
 > 已知取舍：旧库裸 untitled__sha.pdf 不可幂等命中会重下一次；shzjw rec 无 id → 裸 untitled 保留。
 
 
