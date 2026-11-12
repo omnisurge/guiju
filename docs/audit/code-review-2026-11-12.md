@@ -109,7 +109,9 @@ agent 按"歧义交人"处理白耗一轮。
 >       MisconfiguredCurrency→SourceUnreachable（非 NeedsHuman）。
 > 第四轮收尾（2026-11-12）：M17 已裁决——新增 exit 34 no_currency_record（NoCurrencyRecord/NoCurrencySource 归并）；
 >       _FORM_HOSTS 已注册表驱动（Route.form_post + 端点级 Route，httpx 侧 lazy 查询）。pytest 627 passed/1128 subtests。
-> 未动（设计取舍待 owner）：fallback 主源空不查备源（需对 Go spec-currency 语义，见 owner 项）。
+> 已裁决（2026-11-12）：fallback 主源空不查备源——读 Go spec-currency internal/adapter/fallback.go 确认
+>       「主源成功（哪怕 0 命中）即返回，不拿备用源覆盖；仅主源报错才降级」与本实现完全一致，
+>       属有意设计，钉住不改。至此 owner 项清零。
 > 已澄清：spec-currency 是 guiju 的时效上游（which/cite 数据源），未被淘汰、不可删。
 > 已知取舍：旧库裸 untitled__sha.pdf 不可幂等命中会重下一次；shzjw rec 无 id → 裸 untitled 保留。
 
