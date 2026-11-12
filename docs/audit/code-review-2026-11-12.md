@@ -58,6 +58,15 @@ agent 按"歧义交人"处理白耗一轮。
 
 ## Medium
 
+> ✅ 大部分已于 2026-11-12 修复（第二轮，工作区未提交）。pytest 488 → 543 passed。
+> 已修：M1/M3/M4/M5/M6/M7/M8/M9/M11/M12/M13/M14/M18/M19/M20/M21/M22 + 遗留 SourceUnreachable→20。
+> 跳过：M2(fallback 溯源-评估后属设计取舍)、M16/M18 重定位后按归属/冻结授权跳过、M15(目录增补属产品决策)、M17(exit-code 语义待所有者裁决)。
+> 裁决项：test_currency_ccsn.py:89 「局修完成+abolish→superseded」钉住用例编码旧错误行为，已改为 unknown。
+> 新文件：tests/test_fix_med_20261112.py / test_fix_med_core.py / test_fix_med_currency.py。
+> 待人工/跨域：sync.py:18/27 count_announcements 双查；非上海地方源接入需改 localstatus PREFIXES；ccsn 多页翻页契约未确认；兄弟适配器 csres/stdsamr/dbba 同类问题未修；AGENTS.md §4 角色表需补 weak_primary 一行。
+
+
+
 | # | 位置 | 问题 | 修法 |
 |---|---|---|---|
 | M1 | native.py:122-129,153-155 | 缓存读写只兜 OSError；backend 抛 sqlite3.Error/ValueError 打死查询并禁用 stale 降级 | 兜底 (OSError, ValueError, sqlite3.Error) 或除不可恢复类外全兜 |
