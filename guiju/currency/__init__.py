@@ -150,8 +150,12 @@ class McpCurrency:
         # 环境变量在请求时才读：进程启动后补设 token 不需要重启
         return self.token or os.environ.get("GUIJU_CURRENCY_TOKEN") or None
 
-    def _rpc(self, payload: dict, session: str | None = None) -> tuple[dict | None, str | None]:
-        headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+    def _post(self, payload: dict, session: str | None = None) -> tuple[str, str | None]:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2024-11-05",
+        }
         if session:
             headers["mcp-session-id"] = session
         token = self._token()
@@ -167,9 +171,20 @@ class McpCurrency:
         except Exception as exc:  # 网络异常种类多，统一归为不可达
             # 关键区分：连不上 ≠ 没有这个编号。前者是 20（可重试），后者才是 31（别再试）
             raise SourceUnreachable(f"时效服务不可达（{self.url}）：{type(exc).__name__}") from exc
+        return body, sid
+
+    def _rpc(self, payload: dict, session: str | None = None) -> tuple[dict | None, str | None]:
+        body, sid = self._post(payload, session)
         parsed = _parse_sse(body)
         if parsed is None:
             raise SourceUnreachable(f"时效服务响应无法解析（{self.url}）")
+        if payload.get("method") == "initialize" and isinstance(parsed, dict) and "error" not in parsed:
+            # MCP 要求握手后补 notifications/initialized；fire-and-forget：
+            # 服务器不回/拒收不影响握手本身，绝不能因此把可用服务报成不可达。
+            try:
+                self._post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+            except SourceUnreachable:
+                pass
         return parsed, sid
 
     def lookup(self, code: str, *, cache: str | None = None) -> list[Record]:
@@ -208,6 +223,12 @@ class McpCurrency:
             raise SourceUnreachable(
                 f"时效服务调用失败（{self.url}）：{err.get('code', '?')} {err.get('message', '未知错误')}"
             )
+        if result is not None:
+            tool_result = result.get("result")
+            if isinstance(tool_result, dict) and tool_result.get("isError"):
+                # MCP 工具层失败（isError:true）也是调用失败，同样不得伪装成"未收录"
+                detail = _tool_text(result).strip()
+                raise SourceUnreachable(f"时效服务工具调用失败（{self.url}）：{detail or 'isError'}")
         if not result:
             return []
         text = _tool_text(result)
@@ -325,31 +346,46 @@ class CachedCurrency:
         self.name = self.inner.name
         self.store = store
         self.from_cache = False
+        self.stale = False
+        self.upstream_error: Exception | None = None
         self.cache_age_days: float | None = None
 
     def lookup(self, code: str) -> list[Record]:
+        # 每次都重置：上一题的"缓存命中/降级"绝不能污染本题。
+        self.from_cache = False
+        self.stale = False
+        self.upstream_error = None
+        self.cache_age_days = None
         if self.inner.name == "native":
             # 原生内部已按 TTL 管理缓存；不能再外包旧 CachedCurrency 的无 TTL memo。
             records = self.inner.lookup(code)
             self.from_cache = bool(getattr(self.inner, "from_cache", False))
+            self.stale = bool(getattr(self.inner, "stale", False))
+            self.upstream_error = getattr(self.inner, "upstream_error", None)
             self.cache_age_days = getattr(self.inner, "cache_age_days", None)
             return records
-        key = (self.name, code)
-        if key in _cache:
-            return _cache[key]
+        # 进程级 memo 的 key 必须带端点：同进程换 GUIJU_CURRENCY（cmd↔mcp↔换 URL）
+        # 不能用旧端点的结论回答新端点的问题。
+        key = (endpoint_of(self.inner), self.name, code)
+        hit = _cache.get(key)
+        if hit is not None:
+            records, self.from_cache, self.stale, self.upstream_error, self.cache_age_days = hit
+            return list(records)
         try:
             records = self.inner.lookup(code)
-        except SourceUnreachable:
+        except SourceUnreachable as exc:
             hit = self._load(code)
             if hit is None:
                 raise
             records, self.cache_age_days = hit
             self.from_cache = True
-            _cache[key] = records
+            self.stale = True  # 落库缓存无 TTL：只有上游刚失败才会走到这里 → 一律按陈旧上报
+            self.upstream_error = exc
+            _cache[key] = (records, True, True, exc, self.cache_age_days)
             return records
         if records:
             self._save(code, records)
-        _cache[key] = records
+        _cache[key] = (records, self.from_cache, self.stale, self.upstream_error, self.cache_age_days)
         return records
 
     # ---- 落库缓存 ----

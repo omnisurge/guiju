@@ -85,6 +85,40 @@ def _as_error(exc: GuijuError) -> dict:
     return _error_result(exc.message)
 
 
+class _ReadOnlyStore:
+    """announcement 工具专用的只读存储门面。
+
+    契约是"只回元数据、不落盘"：resolve 在读路径上若走到缓存/持久化分支，
+    会写 edition / mention / scan / currency_cache / corpus_meta。
+    这里把所有写方法拦成 no-op（或返回"什么都没写"的占位），读方法原样转发，
+    用白名单比黑名单抗未来改动 —— 新出现的写方法默认也被拦。
+    注意：Store() 构造时的建表 DDL 在门面生效前已发生，属共享 schema 初始化，不在拦截范围。
+    """
+
+    _WRITES = frozenset({
+        "upsert_announcement", "upsert_edition", "add_mention", "mark_scanned",
+        "log_probe", "set_meta", "cache_currency", "commit",
+    })
+
+    def __init__(self, inner) -> None:
+        self._inner = inner
+
+    def __getattr__(self, name):
+        if name in self._WRITES:
+            # upsert_announcement 期望返回 (row_id, inserted)；其余返回值没人消费，一律 no-op。
+            return (lambda *a, **k: (0, False)) if name == "upsert_announcement" else (lambda *a, **k: None)
+        return getattr(self._inner, name)
+
+    def close(self) -> None:
+        self._inner.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
+
+
 class McpServer:
     """与传输无关的 JSON-RPC 处理核心。"""
 
@@ -166,7 +200,11 @@ class McpServer:
 
         store = Store()
         try:
-            target = lookup.resolve(store, ref, currency=self.backend)
+            # 契约是"只回元数据、不落盘"：allow_network=False 堵死 resolve 里唯一的写分支
+            # （拉详情页 + persist_codes），只读门面把缓存/持久化调用拦成 no-op 兜底。
+            ro = _ReadOnlyStore(store)
+            target = lookup.resolve(
+                ro, ref, currency=self.backend, allow_network=False)
             ann = target["ann"]
             window = availability.state(ann["published_on"])
             source_id = lookup.source_of(ann["url"])["id"]

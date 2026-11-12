@@ -11,6 +11,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from ... import currency as currency_mod
 from ...domain import attachment as att_domain
 from ...domain import availability, naming
 from ...domain.codes import classify
@@ -123,7 +124,9 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     if getattr(source, "api_mode", False):
         return _pull_api(store, args, ref, source, out_dir)
 
-    target = resolve(store, ref)
+    # 显式给带落库缓存的时效端口：否则 resolve 内部会建一个无 store 的
+    # CachedCurrency，TTL 缓存够不到，pull 每次都直打时效服务（M9）。
+    target = resolve(store, ref, currency=currency_mod.CachedCurrency(store=store))
     if target.get("versions"):
         picked = next(
             (v for v in target["versions"] if v["ann_id"] == int(target["ann"]["id"])), None

@@ -74,7 +74,9 @@ def resolve(
     ref = (ref or "").strip()
     if not ref:
         raise BadUsage("引用为空")
-    currency = currency or currency_mod.CachedCurrency()
+    # 默认缓存要带 store：无 store 的 CachedCurrency 只剩进程内一层，
+    # 落库 TTL 缓存（服务挂掉时的兜底）够不到——which/pull/cite 走同一条约定。
+    currency = currency or currency_mod.CachedCurrency(store=store)
 
     if ref.lower().startswith("http"):
         return _by_url(store, ref)
@@ -186,6 +188,9 @@ def _pick_current_version(
         currency = currency_mod.CachedCurrency()
 
     versions: list[dict] = []
+    attempts = 0
+    unreachable = 0
+    last_unreachable: SourceUnreachable | None = None
     for hit in exact:
         ann = store.get_ann(int(hit.entry["id"]))
         if ann is None:
@@ -196,14 +201,23 @@ def _pick_current_version(
         if cached:
             code_key = cached[0]["code_key"]
         elif allow_network:
+            attempts += 1
             try:
-                source = registry()["mohurd"]
+                # 详情页按 URL 归属源路由（M4）：不假设候选都来自 mohurd，
+                # 与 mcp.py 的同一写法对齐。
+                sid = source_of(ann["url"])["id"]
+                source = registry().get(sid) or registry()["mohurd"]
                 html, text = source.detail(ann["url"])
                 has_attachment = bool(source.attachments(html))
             except (NeedsHuman, ComplianceDenied, QueryCancelled):
                 # 契约错误不是"这条公告抓取失败"：50/40/取消必须冒到 CLI 决策表，
                 # 绝不能用 continue 降级成 32 歧义或漏候选。
                 raise
+            except SourceUnreachable as exc:
+                # 源不可达单独记账：全军覆没时要以 20 上抛而不是 32/None。
+                unreachable += 1
+                last_unreachable = exc
+                continue
             except Exception:
                 continue
             codes = classify(text, ann["doc_name"] or "")
@@ -222,12 +236,16 @@ def _pick_current_version(
             }
         )
     if len(versions) < 2:
+        # 每一次详情页抓取都死于"源不可达"时，真相是环境故障（20），
+        # 不是"同名多版定不下来"（32）——后者会让人对着候选白选。
+        if attempts and attempts == unreachable and last_unreachable is not None:
+            raise last_unreachable
         return None
 
     try:
         for v in versions:
             records = currency.lookup(v["code_key"])
-            mine = next((r for r in records if normalize_key(r.code) == v["code_key"]), None)
+            mine, _cur = match_currency(records, v["code_key"])
             v["status"] = mine.status if mine else "unknown"
             v["code_display"] = mine.code if mine else v["code_key"]
     except SourceUnreachable:
@@ -242,9 +260,12 @@ def _pick_current_version(
     current = [v for v in versions if v["status"] == "current"]
     if not current:
         return None
-    # 同一现行编号可能有多条公告（原发布 + 局部修订）：取最新一条有附件的
-    with_file = [v for v in current if v["has_attachment"]]
-    win = max(with_file or current, key=lambda v: v["published_on"])
+    # 同一现行编号可能有多条公告（原发布 + 局部修订）：优先取有附件的。
+    # has_attachment 是三态：True=已核实有 / None=没核实（编号来自缓存，未抓详情页）
+    # / False=已核实没有。None 不是 False —— 把它滤掉会把唯一候选漏掉。
+    verified = [v for v in current if v["has_attachment"] is True]
+    unknown = [v for v in current if v["has_attachment"] is None]
+    win = max(verified or unknown or current, key=lambda v: v["published_on"])
     result = _wrap(store.get_ann(win["ann_id"]), via="name_current_version")
     result.update(
         code_key=win["code_key"],
@@ -414,40 +435,108 @@ def _verify_by_primary_code(store: Store, hits: list, key: str, fetch_detail=Non
     if fetch_detail is None:
         from ..sources import registry
 
-        source = registry()["mohurd"]
-        fetch_detail = lambda url: source.detail(url)[1]  # noqa: E731
+        def fetch_detail(url):
+            # 按 URL 归属源挑 detail（M4）：shzjw 类 api_mode 源没有公告页，
+            # 其 detail 缺失会走普通异常被跳过，不会拿 mohurd 解析器错抓。
+            sid = source_of(url)["id"]
+            source = registry().get(sid) or registry()["mohurd"]
+            return source.detail(url)[1]
 
     matched = []
+    attempts = 0
+    unreachable = 0
+    last_unreachable: SourceUnreachable | None = None
     for hit in hits:
         ann = store.get_ann(int(hit.entry["id"]))
         if ann is None:
             continue
+        attempts += 1
         try:
             text = fetch_detail(ann["url"])
         except (NeedsHuman, ComplianceDenied, QueryCancelled):
             # 详情页的契约错误（站点改版/验证码/取消）必须按 50/40 上抛；
             # 静默 continue 会把"查证失败"伪装成"正文编号对不上"。
             raise
+        except SourceUnreachable as exc:
+            unreachable += 1
+            last_unreachable = exc
+            continue
         except Exception:
             continue
         codes = classify(text, ann["doc_name"] or "")
         primary = normalize_key(codes.primary_key or "")
         if primary and primary == key:
             matched.append(hit)
+    # 一条都没核实到、且每次抓取都是"源不可达"：这是 20（环境故障），
+    # 继续静默会把挂站伪装成"正文编号都对不上"（31/32）。
+    if not matched and attempts and attempts == unreachable and last_unreachable is not None:
+        raise last_unreachable
     return matched
 
 
 def _pick_record(records: list, key: str):
-    exact = [r for r in records if r.code.replace(" ", "").upper() == key]
-    if exact:
-        return exact[0]
     # 英文版（编号以 E 结尾 / 名称含"英文版"）不是官方中文正文，不参与定位
     chinese = [r for r in records if not _is_english(r)]
     pool = chinese or list(records)
-    for r in pool:
+    # mine（编号精确一致）优先；否则现行版（同族优先，见 match_currency）；再退第一条
+    exact, current = match_currency(pool, key)
+    return exact or current or (pool[0] if pool else None)
+
+
+def match_currency(records: list, key: str):
+    """在时效记录里同时定位"我自己那条"与"现行那条"——lookup 与 cite 共用（M13）。
+
+    两处曾经各写一份"mine + current"的挑选逻辑，容易漂移出不同结论。
+    mine    = 规范化后与 key 完全一致的那条
+    current = status=='current' 的记录，先挑与我同族（前缀+基号相同、只差年份，
+              复用 domain.codes._code_stem），没有则取服务返回的第一个现行
+    """
+    from ..domain.codes import _code_stem, normalize_key
+
+    mine = None
+    currents = []
+    for r in records:
+        if normalize_key(r.code or "") == key:
+            mine = r
         if r.status == "current":
-            return r
-    return pool[0] if pool else None
+            currents.append(r)
+    current = None
+    if currents:
+        stem = _code_stem(key) if key else ""
+        current = next(
+            (r for r in currents if _code_stem(normalize_key(r.code)) == stem),
+            currents[0],
+        )
+    return mine, current
+
+
+def local_records(ref: str) -> list:
+    """地方标准的时效记录：去问注册表里声明了 api_mode + find() 的源（M4）。
+
+    localstatus.is_local_code 仍是"要不要走这条路"的前缀闸门（上海口径集中在
+    那一个常量里）；本函数只负责"去问谁"——源名不写死，新增 api_mode 源自动入列。
+    网络/解析失败按 GuijuError 上抛，由调用方决定是否降级。
+    """
+    from ..sources import registry
+
+    out = []
+    for source in registry().values():
+        if not getattr(source, "api_mode", False):
+            continue
+        find = getattr(source, "find", None)
+        if find is None:
+            continue
+        for hit in find(ref):
+            out.append(
+                currency_mod.Record(
+                    code=hit["code"],
+                    status=hit["status"],
+                    name=hit.get("name") or "",
+                    implement_date=hit.get("implement_on") or "",
+                    source=getattr(source, "id", ""),
+                )
+            )
+    return out
 
 
 def _norm_name(name: str | None) -> str:

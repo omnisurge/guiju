@@ -66,8 +66,10 @@ class ByRefTest(unittest.TestCase):
         self.assertEqual(got["via"], "name")
 
     def test_by_name_ambiguous(self):
+        # allow_network=False：同名候选不定版必须走"歧义"而不是真去抓详情页；
+        # 此前默认 True 依赖 live 站点 404 被吞才成立，SourceUnreachable 改正确上抛后就破。
         with self.assertRaises(AmbiguousTarget):
-            resolve(self.store, "建筑设计防火规范", FakeCurrency([]))
+            resolve(self.store, "建筑设计防火规范", FakeCurrency([]), allow_network=False)
 
     def test_by_name_not_found(self):
         with self.assertRaises(NotIndexed):

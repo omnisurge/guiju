@@ -82,7 +82,8 @@ class CcsnParseTest(OfflineTestCase):
             ("即将实施", "", "upcoming"), ("在编", "", "upcoming"),
             ("局修完成", "", "unknown"), ("未知词", "", "unknown"),
             ("", "", "unknown"), ("未知词", "2016-08-01", "superseded"),
-            ("局修完成", "2016-08-01", "superseded"),
+            # M20 修正：「局修完成」是明确词，即使有 abolish 日期也判 unknown，不再被兜底成 superseded
+            ("局修完成", "2016-08-01", "unknown"),
             ("未知词", " \t ", "unknown"), (" 现行 ", "2000-01-01", "current"),
         ):
             with self.subTest(state=state, abolish=abolish):

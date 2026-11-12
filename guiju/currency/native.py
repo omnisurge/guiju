@@ -9,10 +9,9 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import dataclass, fields
 
-from ..errors import NeedsHuman, NotIndexed, SourceUnreachable
+from ..errors import GuijuError, NeedsHuman, NotIndexed, SourceUnreachable
 from .cache import DEFAULT_STALE_LIMIT, CacheEntry, CurrencyCache
 from .codes import same_family
 from .model import Currency, QueryCancelled, Record
@@ -83,12 +82,14 @@ class NativeCurrency:
         self.clock = clock
         self.admit = admit
         self.last_outcome: Outcome | None = None
+        # 进程级备忘只在"没有缓存后端"时启用：有缓存时 TTL 命中本身就是 M11 要的
+        # 去重（零 HTTP、还带回 from_cache/age），memo 放在它前面会绕过 TTL 边界、
+        # 陈旧上限与负缓存替换。无缓存时第二次调用才会重新打上游，此时 memo 窗口取 60s；
+        # 从不记忆失败，取消/撤销的策略也不会拿到 memo 答案。
+        self._memo: dict[str, tuple[float, Outcome]] = {}
 
     def _guard(self, code: str) -> None:
-        if self.cancelled is not None and self.cancelled():
-            raise QueryCancelled("查询已取消，不返回缓存结果")
-        if self.admit is not None:
-            self.admit(code)
+        """仅取消检查；admit 不再随每次守卫重复调用（计数型 admit 会被重复计费）。"""
         if self.cancelled is not None and self.cancelled():
             raise QueryCancelled("查询已取消，不返回缓存结果")
 
@@ -125,12 +126,33 @@ class NativeCurrency:
         try:
             method = self.cache.get_any if any_age else self.cache.get
             return method(code, namespace=namespace)
-        except OSError:
-            return None  # 缓存是加速手段，不是查询的新单点。
+        except (GuijuError, QueryCancelled):
+            raise  # 取消/合规等控制流异常必须原样冒泡，绝不能被缓存层吞掉
+        except Exception:
+            return None  # 缓存是加速手段，不是查询的新单点（OSError/ValueError/sqlite3.Error 等后端故障同理）
+
+    def _memo_ttl(self) -> float:
+        ttl = getattr(self.cache, "ttl", None)
+        if isinstance(ttl, (int, float)) and math.isfinite(ttl) and ttl > 0:
+            return float(ttl)
+        return 60.0  # 无缓存后端时收敛到一个短窗口，memo 不得让结果"永不过期"
 
     def query(self, code: str) -> Outcome:
         self.last_outcome = None
         self._guard(code)
+        if self.admit is not None:
+            self.admit(code)  # 准入计数只在这里与 put 前各记一次，不随每个 guard 重复计费
+        self._guard(code)
+        if self.cache is None:
+            # 无缓存后端时同一编号的第二次调用会重新打上游，memo 顶掉它；
+            # 策略已在上方 admit，被取消则 _guard 拦住，不会返回旧答案。
+            memoed = self._memo.get(code)
+            if memoed is not None:
+                stamped, outcome = memoed
+                if self.clock() - stamped <= self._memo_ttl():
+                    self._guard(code)
+                    return self._finish(outcome)
+                self._memo.pop(code, None)
         adapter = self.registry.match(code)
         if adapter is None:
             raise NoCurrencySource(f"无可用原生时效数据源：{code}")
@@ -138,7 +160,7 @@ class NativeCurrency:
         entry = self._read(code, namespace)
         if self._usable(entry, adapter, code):
             self._guard(code)
-            return self._finish(Outcome(entry.results, adapter.name, True, entry.age(self.clock())))
+            return self._succeed(code, Outcome(entry.results, adapter.name, True, entry.age(self.clock())))
         try:
             rows = adapter.lookup(code)
         except (SourceUnreachable, NeedsHuman) as exc:
@@ -147,14 +169,26 @@ class NativeCurrency:
             entry = self._read(code, namespace, any_age=True)
             if self._usable(entry, adapter, code) and entry.age(self.clock()) <= DEFAULT_STALE_LIMIT:
                 self._guard(code)
-                return self._finish(Outcome(entry.results, adapter.name, True, entry.age(self.clock()), True, exc))
+                return self._succeed(code, Outcome(entry.results, adapter.name, True, entry.age(self.clock()), True, exc))
             raise
         self._guard(code)
+        if self.admit is not None:
+            self.admit(code)  # put 前复验：查到的数据还没落盘，此刻拒绝就不能写缓存
         if self.cache is not None:
-            with suppress(OSError):
+            try:
                 self.cache.put(code, rows, namespace=namespace)
+            except (GuijuError, QueryCancelled):
+                raise
+            except Exception:
+                pass  # 写不进缓存不影响把刚查到的结果给调用方
         self._guard(code)
-        return self._finish(Outcome(tuple(rows), adapter.name))
+        return self._succeed(code, Outcome(tuple(rows), adapter.name))
+
+    def _succeed(self, code: str, outcome: Outcome) -> Outcome:
+        # 只有完整走到底的成果才进 memo（且仅无缓存路径会用）；失败/取消/拒绝都不会被记忆。
+        if self.cache is None:
+            self._memo[code] = (self.clock(), outcome)
+        return self._finish(outcome)
 
     def _finish(self, outcome: Outcome) -> Outcome:
         self.last_outcome = outcome
@@ -166,6 +200,15 @@ class NativeCurrency:
     @property
     def from_cache(self) -> bool:
         return self.last_outcome is not None and self.last_outcome.from_cache
+
+    @property
+    def stale(self) -> bool:
+        """上游刚失败、靠有界陈旧缓存回答 → True；which --json 的告警依据，不是 from_cache。"""
+        return self.last_outcome is not None and self.last_outcome.stale
+
+    @property
+    def upstream_error(self) -> Exception | None:
+        return self.last_outcome is not None and self.last_outcome.upstream_error or None
 
     @property
     def cache_age_days(self) -> float | None:

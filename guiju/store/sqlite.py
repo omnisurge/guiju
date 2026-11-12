@@ -252,16 +252,19 @@ class Store:
     # ---------------------------------------------------------------- stats
     def stats(self) -> dict:
         q = self.db.execute
-        by_year = q(
-            "SELECT substr(published_on,1,4) y, COUNT(*) c FROM announcement"
-            " WHERE published_on IS NOT NULL GROUP BY y ORDER BY y"
+        # published_on 可能为 NULL：不 WHERE 掉、用 COALESCE 归入 ""，
+        # 这样 by_year 的总和就是公告总数，announcements 不必再单独查一遍。
+        by_year_rows = q(
+            "SELECT COALESCE(substr(published_on,1,4),'') y, COUNT(*) c"
+            " FROM announcement GROUP BY y ORDER BY y"
         ).fetchall()
+        by_year = {r["y"]: r["c"] for r in by_year_rows}
         return {
-            "announcements": self.count_announcements(),
+            "announcements": sum(by_year.values()),
             "editions": q("SELECT COUNT(*) c FROM edition").fetchone()["c"],
             "mentions": q("SELECT COUNT(*) c FROM mention").fetchone()["c"],
             "scanned": q("SELECT COUNT(*) c FROM scan").fetchone()["c"],
-            "by_year": {r["y"]: r["c"] for r in by_year},
+            "by_year": {k: v for k, v in by_year.items() if k},
             "synced_at": self.get_meta("synced_at"),
         }
 

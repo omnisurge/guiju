@@ -43,6 +43,7 @@ class Role(StrEnum):
     PRIMARY = "primary"                    # 本次公告发布/生效的那个版本
     TARGET_OF_REVISION = "target_of_revision"  # 局部修订后改写的新编号
     SUPERSEDED_REF = "superseded_ref"      # 被代替/废止的旧编号
+    WEAK_PRIMARY = "weak_primary"          # 弱证据指向的新版（泛动词/纯名称命中）：可兜底，不作数
     MENTIONED = "mentioned"                # 提到了但判不出身份
 
 
@@ -114,6 +115,7 @@ def classify(text: str, doc_name: str | None = None) -> Codes:
       2. 「发布《…》… X」 → primary
       3. 只有一个编号 → primary（parsed）
       4. 多个编号无决定性证据 → 取年份最新者，但 confidence=ambiguous，禁止据此写引用
+      5. 泛动词跨子句 / 纯 doc_name 命中 → weak_primary：只当兜底，不当作决定性证据
     """
     if "<" in text:  # 容错：允许直接传详情页 HTML
         text = html_to_text(text)
@@ -123,9 +125,10 @@ def classify(text: str, doc_name: str | None = None) -> Codes:
 
     seen: dict[str, Mention] = {}
     _ROLE_RANK = {
-        Role.TARGET_OF_REVISION: 4,
-        Role.PRIMARY: 3,
-        Role.SUPERSEDED_REF: 2,
+        Role.TARGET_OF_REVISION: 5,
+        Role.PRIMARY: 4,
+        Role.SUPERSEDED_REF: 3,
+        Role.WEAK_PRIMARY: 2,
         Role.MENTIONED: 1,
     }
 
@@ -200,10 +203,19 @@ def _role_for(sentence: str, pos: int, doc_name: str | None) -> Role:
     nxt = nxt[: next((m.start() for m in _CLAUSE.finditer(nxt)), len(nxt))]
     if re.match(r"\s*(?:代替|替代)", nxt):
         return Role.PRIMARY
-    if any(w in sentence for w in _PUBLISH_WORDS):
-        return Role.PRIMARY
+    # 「发布/批准/实施」这类泛动词只有落在编号所在子句、或整句只有一个编号时才作数：
+    # 否则动词到底管哪个编号说不清（实测误伤：同页两个编号都被升成 primary）。
+    # 句内没有发布动词就谈不上"动词提升"，直接走 doc_name 弱证据 / mentioned。
+    publish_word = any(w in sentence for w in _PUBLISH_WORDS)
+    if publish_word:
+        n_codes = len({normalize_key(m.group(0)) for m in _CODE_RE.finditer(sentence)})
+        if any(w in clause for w in _PUBLISH_WORDS) or n_codes == 1:
+            return Role.PRIMARY
+        # 动词存在但管不到本编号 → weak_primary（可当兜底，不作决定性证据）
+        return Role.WEAK_PRIMARY
+    # 仅凭 doc_name 命中同样只是弱证据：标题出现在正文不等于该编号是新版。
     if doc_name and _norm_name(doc_name) and _norm_name(doc_name) in _norm_name(sentence):
-        return Role.PRIMARY
+        return Role.WEAK_PRIMARY
     return Role.MENTIONED
 
 
@@ -250,6 +262,8 @@ def _choose_primary(mentions: tuple[Mention, ...]) -> Mention | None:
     if len(primaries) == 1:
         return primaries[0]
     if not primaries:
+        # 没有决定性证据时的兜底：alive 里若混着 weak_primary 也一并候选，
+        # 但兜底 primary 的 confidence 仍是 ambiguous（classify 的 decisive 判定把关）。
         alive = [m for m in mentions if m.role is not Role.SUPERSEDED_REF]
         if len(alive) == 1:
             return alive[0]
@@ -257,6 +271,10 @@ def _choose_primary(mentions: tuple[Mention, ...]) -> Mention | None:
             # 全是旧版时没有资格猜 primary：返回 None，交 ambiguous 给人
             return None
         return max(alive, key=lambda m: _year(m.code_key))
+    if len({_code_stem(m.code_key) for m in primaries}) > 1:
+        # 多个 primary 却分属不同规范族：泛动词同时喂饱了不止一个编号，
+        # 谁才是本次发布判不出来 —— 返回 None，交 ambiguous 给人（不许按年份蒙）。
+        return None
     return max(primaries, key=lambda m: _year(m.code_key))
 
 

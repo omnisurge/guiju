@@ -18,6 +18,31 @@ from .. import render
 from ..lookup import ref_is_code, resolve
 
 
+def _currency_inner(cur):
+    """CachedCurrency 把真正的服务藏在 .inner；对其它实现返回自身。"""
+    return getattr(cur, "inner", cur)
+
+
+def _currency_stale(cur):
+    """上游刚失败、靠旧缓存回答 → True；未命中缓存 → False；老适配器没有这个字段 → None。"""
+    inner = _currency_inner(cur)
+    stale = getattr(cur, "stale", None)
+    if stale is None:
+        stale = getattr(inner, "stale", None)
+    return stale
+
+
+def _currency_upstream_error(cur) -> str | None:
+    """最近一次上游失败的描述；没失败 / 字段不存在 → None。可能是异常对象，转 str。"""
+    inner = _currency_inner(cur)
+    err = getattr(cur, "upstream_error", None)
+    if err is None:
+        err = getattr(inner, "upstream_error", None)
+    if err is None:
+        return None
+    return err if isinstance(err, str) else str(err)
+
+
 def run(store: Store, args: argparse.Namespace) -> int:
     cur = currency_mod.CachedCurrency(store=store)
     # 名称（CJK）输入时效服务必然"没收录"：只有编号形态才问时效
@@ -54,6 +79,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "currency_endpoint": endpoint,
         "currency_from_cache": bool(getattr(cur, "from_cache", False)),
         "currency_cache_age_days": getattr(cur, "cache_age_days", None),
+        "currency_stale": _currency_stale(cur),
+        "currency_upstream_error": _currency_upstream_error(cur),
         "currency": [r.as_payload() for r in records],
         "resolved": bool(target),
         "announcement": None
@@ -73,7 +100,23 @@ def run(store: Store, args: argparse.Namespace) -> int:
     if isinstance(error, AmbiguousTarget):
         payload["candidates"] = error.extra.get("candidates", [])
     render.emit(payload)
-    if payload["currency_from_cache"] and payload["currency_source"] != "native":
+    if payload["currency_stale"]:
+        # 上游刚失败过、结论靠旧缓存撑着 —— 与"命中 TTL 缓存"严格区分：
+        # TTL 命中不算服务不可达，不发这条告警。
+        age = payload["currency_cache_age_days"]
+        suffix = f"；原因：{payload['currency_upstream_error']}" if payload["currency_upstream_error"] else ""
+        render.note(
+            "时效服务不可达、结论基于旧缓存"
+            + (f"（{age} 天前）" if age is not None else "")
+            + "：现行性可能已变化"
+            + suffix
+        )
+    elif (
+        payload["currency_stale"] is None
+        and payload["currency_from_cache"]
+        and payload["currency_source"] != "native"
+    ):
+        # 老适配器没有 stale 标记：沿用原有口径 —— 缓存命中且非 native 时提醒一次。
         render.note(
             f"时效服务不可达，使用本地缓存（{payload['currency_cache_age_days']} 天前）："
             "现行性可能已变化"
