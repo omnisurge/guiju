@@ -30,6 +30,9 @@ class Route:
     cache_namespace: str = ""
     normalizer: Callable[[str], str] | None = None
     code_filter: Callable[[str], bool] | None = None
+    # hosts 声明本路由覆盖的查询端点；form_post=True 时这些 host 接受 POST 表单，其余走 GET。
+    hosts: tuple[str, ...] = ()
+    form_post: bool = False
 
 
 class Registry:
@@ -64,6 +67,12 @@ class Registry:
 
     def sources(self) -> list[str]:
         return [route.source for route in self._routes]
+
+    def form_post_for_host(self, host: str) -> bool:
+        # 端点级 Route（hosts 非空、prefixes=()、factory=None）声明 host 接受表单 POST；
+        # 未注册 host 返回 False，调用方维持原 GET/拒发分支。
+        return any(not route.disabled and route.form_post and host in route.hosts
+                   for route in self._routes)
 
     def namespace_for(self, code: str, adapter: Currency) -> str:
         route = self._route(code)
@@ -104,4 +113,8 @@ def default_registry(client: HttpClient | None = None, *, cancelled: Callable[[]
     registry.register(Route("shzjw", (*SHANGHAI_PREFIXES, "DB31"),
                             lambda: ShzjwCurrency(client, cancelled=cancelled),
                             normalizer=normalize_code, code_filter=is_shanghai_code))
+    # 端点级路由：prefixes=()/factory=None，不参与编号匹配，只声明这些 host 接受表单 POST；
+    # httpx.post_form 据此把关（替代已删除的 _FORM_HOSTS）。
+    registry.register(Route("ccsn", (), None, hosts=("www.ccsn.org.cn",), form_post=True))
+    registry.register(Route("dbba", (), None, hosts=("dbba.sacinfo.org.cn",), form_post=True))
     return registry

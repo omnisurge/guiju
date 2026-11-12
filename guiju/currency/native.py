@@ -11,15 +11,15 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, fields
 
-from ..errors import GuijuError, NeedsHuman, NotIndexed, SourceUnreachable
+from ..errors import GuijuError, NeedsHuman, NoCurrencyRecord, SourceUnreachable
 from .cache import DEFAULT_STALE_LIMIT, CacheEntry, CurrencyCache
 from .codes import same_family
 from .model import Currency, QueryCancelled, Record
 from .registry import Registry, default_registry
 
 
-class NoCurrencySource(NotIndexed):
-    hint = "当前原生时效路由未覆盖此前缀；默认外置适配器尚未切换"
+class NoCurrencySource(NoCurrencyRecord):
+    """旧名保留向后兼容；语义归并为 34 no_currency_record。"""
 
 
 def human_age(seconds: float) -> str:
@@ -155,7 +155,7 @@ class NativeCurrency:
                 self._memo.pop(code, None)
         adapter = self.registry.match(code)
         if adapter is None:
-            raise NoCurrencySource(f"无可用原生时效数据源：{code}")
+            raise NoCurrencySource(f"时效侧没有该编号的记录：原生时效路由未覆盖此前缀，而非本地目录未收录（31）：{code}")
         namespace = self.registry.namespace_for(code, adapter)
         entry = self._read(code, namespace)
         if self._usable(entry, adapter, code):

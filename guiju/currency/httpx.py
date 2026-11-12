@@ -39,7 +39,6 @@ _ENDPOINTS = {
     "dbba.sacinfo.org.cn": {"/stdQueryList": _JSON},
     "bzjg.zjw.sh.gov.cn": {"/JGBStandardWebApi/external/localStandard/list": _JSON},
 }
-_FORM_HOSTS = frozenset({"www.ccsn.org.cn", "dbba.sacinfo.org.cn"})
 _SHANGHAI_HOST = "bzjg.zjw.sh.gov.cn"
 _SHANGHAI_ORIGIN = "https://bzjg.zjw.sh.gov.cn:9175"
 _SHANGHAI_REFERER = _SHANGHAI_ORIGIN + "/JGBStandardWeb/pc/"
@@ -221,7 +220,10 @@ class HttpClient:
 
     def post_form(self, url: str, fields: dict[str, str], *, accept: str | None = "application/json") -> bytes:
         host = _check_url(url)
-        if host not in _FORM_HOSTS:
+        # 表单端点白名单由注册表 Route(hosts=…, form_post=True) 驱动；未注册 host 拒发、维持 GET。
+        # 延迟导入避免 registry→httpx 顶层环。
+        from .registry import default_registry
+        if not default_registry().form_post_for_host(host):
             raise ComplianceDenied(f"此元数据端点不接受查询表单：{url}")
         data = urllib.parse.urlencode(fields).encode("ascii")
         return self._request(url, method="POST", data=data, accept=accept)

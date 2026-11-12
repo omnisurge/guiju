@@ -15,6 +15,7 @@ EXIT_NO_ATTACHMENT = 30
 EXIT_NOT_INDEXED = 31
 EXIT_AMBIGUOUS_CODE = 32
 EXIT_AMBIGUOUS_ATTACHMENT = 33
+EXIT_NO_CURRENCY_RECORD = 34
 EXIT_COMPLIANCE = 40
 EXIT_NEEDS_HUMAN = 50
 
@@ -28,6 +29,7 @@ EXIT_TABLE = {
     EXIT_NOT_INDEXED: ("编号无法定位到公告", "先 guiju sync 补齐目录；仍无则说明没有公开正文公告"),
     EXIT_AMBIGUOUS_CODE: ("编号存在歧义（新旧版本/多候选）", "让人从 candidates 里选，禁止自行猜测"),
     EXIT_AMBIGUOUS_ATTACHMENT: ("附件多个且无法判定", "让人从 candidates 里选，禁止自行猜测"),
+    EXIT_NO_CURRENCY_RECORD: ("时效侧没有该编号（原生路由未覆盖该前缀/体系）", "不用 sync——这不是本地目录缺口；编号体系不在时效路由覆盖内，换名称路径 search/pull"),
     EXIT_COMPLIANCE: ("命中合规护栏", "停止，不要重试、不要换路径绕过"),
     EXIT_NEEDS_HUMAN: ("站点结构变更或需人工介入", "上报维护者修适配器"),
 }
@@ -100,6 +102,12 @@ class AmbiguousTarget(GuijuError):
     exit = EXIT_AMBIGUOUS_CODE
     reason = "ambiguous_target"
     hint = "从 candidates 里选定一条公告；工具不会替你猜是哪本规范"
+
+
+class NoCurrencyRecord(GuijuError):
+    exit = EXIT_NO_CURRENCY_RECORD
+    reason = "no_currency_record"
+    hint = "时效侧没有这条编号（原生源未覆盖该前缀/编号体系）；区别于本地目录未收录（31）；服务不可达仍走 20"
 
 
 class ComplianceDenied(GuijuError):

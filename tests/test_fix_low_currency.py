@@ -14,6 +14,8 @@
   L6  csres/stdsamr/dbba 同型：警告规则、pagination、close、上下文管理器
   L7  存疑确认：guiju/store/currency.py 无 prune_expired，.tmp 不落库（原设计）
   L8  fallback 可选 admit 每 lookup 恰一次；缓存键不做规范化（分裂行为保留）
+  R4A 34 no_currency_record 与 31 not_indexed 分家；NoCurrencySource 旧名兼容
+  R4B post_form 放行由 Route(hosts=…, form_post=True) 驱动，_FORM_HOSTS 已删
 """
 
 import json
@@ -28,14 +30,15 @@ from guiju.currency import (
 from guiju.currency.cache import CACHE_NAMESPACE, DEFAULT_TTL, CacheEntry
 from guiju.currency.csres import CsresCurrency, parse_csres
 from guiju.currency.dbba import DbbaCurrency, parse_dbba
+from guiju.currency.httpx import HttpClient
 from guiju.currency.fallback import FallbackCurrency
 from guiju.currency.jtst import JtstCurrency, parse_jtst
 from guiju.currency.model import QueryCancelled, Record
-from guiju.currency.native import NativeCurrency
+from guiju.currency.native import NativeCurrency, NoCurrencyRecord, NoCurrencySource
 from guiju.currency.registry import Registry, Route, default_registry
 from guiju.currency.shzjw import _valid_query, is_shanghai_code, normalize_code
 from guiju.currency.stdsamr import StdSamrCurrency, parse_stdsamr
-from guiju.errors import NeedsHuman, SourceUnreachable
+from guiju.errors import ComplianceDenied, GuijuError, NeedsHuman, NotIndexed, SourceUnreachable
 
 CODE = "GB 1-2000"
 NOW = 10_000_000.0
@@ -588,6 +591,81 @@ class L8CacheKeyNoNormalizationTest(unittest.TestCase):
         native.lookup("GB 1-2000")
         keys = [code for (_ns, code) in cache.entries.keys()]
         self.assertEqual(keys, ["GB 1-2000"])  # 原样落键，未大写/去空格
+
+
+class R4NoCurrencyRecordChainTest(unittest.TestCase):
+    """34 no_currency_record 是 GuijuError 直属分支，不再挂在 31 not_indexed 下；
+    NoCurrencySource 旧类名保留，assertRaises 继续生效。"""
+
+    def test_chain(self):
+        self.assertTrue(issubclass(NoCurrencyRecord, GuijuError))
+        self.assertTrue(issubclass(NoCurrencySource, NoCurrencyRecord))
+        self.assertFalse(issubclass(NoCurrencyRecord, NotIndexed))  # 34 与 31 分家
+
+    def test_exit_and_reason(self):
+        self.assertEqual(NoCurrencyRecord.exit, 34)
+        self.assertEqual(NoCurrencySource.exit, 34)
+        self.assertEqual(NoCurrencyRecord.reason, "no_currency_record")
+        self.assertNotEqual(NoCurrencyRecord.exit, NotIndexed.exit)
+
+    def test_raised_from_unrouted_code_and_still_catchable_by_old_name(self):
+        cache = mock.Mock()
+        with self.assertRaises(NoCurrencySource) as ctx:   # 旧名兼容路径
+            NativeCurrency(Registry(), cache).query("XX 999")
+        self.assertEqual(ctx.exception.exit, 34)
+        cache.get.assert_not_called()
+        cache.get_any.assert_not_called()
+        with self.assertRaises(NoCurrencyRecord):          # 新基类同样可捕
+            NativeCurrency(Registry()).query("XX 999")
+
+
+class R4FormPostRegistryDrivenTest(unittest.TestCase):
+    """_FORM_HOSTS 常量已删：放行与否只看 Route(hosts=…, form_post=True)。"""
+
+    def test_default_registry_flags_ccsn_and_dbba_only(self):
+        reg = default_registry()
+        self.assertTrue(reg.form_post_for_host("www.ccsn.org.cn"))
+        self.assertTrue(reg.form_post_for_host("dbba.sacinfo.org.cn"))
+        for host in ("www.csres.com", "std.samr.gov.cn", "jtst.mot.gov.cn",
+                     "bzjg.zjw.sh.gov.cn", "unlisted.example.org"):
+            with self.subTest(host=host):
+                self.assertFalse(reg.form_post_for_host(host))
+
+    def test_injected_route_with_form_post_is_honored(self):
+        # 判定由 Route 数据驱动而非写死：手造一条 form_post=True 的 Route 即被采信。
+        reg = Registry()
+        reg.register(Route("x", (), None, hosts=("www.csres.com",), form_post=True))
+        self.assertTrue(reg.form_post_for_host("www.csres.com"))
+        self.assertFalse(reg.form_post_for_host("other.example.org"))
+        reg2 = Registry()
+        reg2.register(Route("y", (), None, hosts=("www.csres.com",)))  # form_post 缺省 False
+        self.assertFalse(reg2.form_post_for_host("www.csres.com"))
+
+    def test_registered_form_host_passes_gate_and_posts(self):
+        client = HttpClient()
+        with mock.patch.object(client, "_request", return_value=b"{}") as req:
+            client.post_form("https://www.ccsn.org.cn/newweb/api/StandardQuery.assx/queryStandard",
+                             {"key": "GB 50011"})
+        self.assertEqual(req.call_args.kwargs["method"], "POST")
+
+    def test_non_form_host_keeps_original_deny_and_get_unaffected(self):
+        client = HttpClient()
+        # 非 form_post 端点：仍走拒发分支（GET 行为不变，不打上游即可验证）
+        with self.assertRaises(ComplianceDenied):
+            client.post_form("https://www.csres.com/s.jsp", {"key": "GB 50011"})
+        with self.assertRaises(ComplianceDenied):
+            client.post_form("https://bzjg.zjw.sh.gov.cn/JGBStandardWebApi/external/localStandard/list",
+                             {"key": "DG/TJ08-2007"})
+
+    def test_endpoint_routes_do_not_steal_code_matches(self):
+        # 端点 Route 的 prefixes=()，不得让任何编号匹配到它（factory=None 否则 match 会崩）。
+        reg = default_registry()
+        for code in ("GB50011", "DB44/T792", "CJJ1-2008"):
+            with self.subTest(code=code):
+                adapter = reg.match(code)
+                self.assertIsNotNone(adapter)
+                self.assertNotIn(adapter.name if hasattr(adapter, "name") else "", ("ccsn", "dbba"))
+        self.assertIsNone(reg.match("XX 999"))
 
 
 if __name__ == "__main__":
