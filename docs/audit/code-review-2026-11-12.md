@@ -96,6 +96,22 @@ agent 按"歧义交人"处理白耗一轮。
 
 ## Low / 优化
 
+> ✅ 大部分已于 2026-11-12 修复（第三轮，工作区未提交时验证）。pytest 543 → 619 passed / 1118 subtests。
+> 已修：_is_pdf 子串误判、_CODE_RE \d{1,6}、search --limit<0→exit2、NeedsHuman.hint 泛化、
+>       localstatus 收紧上海前缀、_CATEGORY_RULES 收口 domain.announcement、untitled-ann<id> 命名、
+>       autosync notify 锁内重读、post_json 非JSON→20、416 HEAD 比对、lookup 三小修（dedupe/日期/name层级）、
+>       mcp Content-Length 上限+非回环告警+source_id→NeedsHuman+共享Store(cross_thread+锁)、
+>       sqlite catalog_meta_corrupt、sync 单查、AGENTS.md 补 weak_primary、
+>       registry DB31 裸编号→shzjw 路由、CACHE_OFF 全后端生效+显式参数优先、memo 五元组重放、
+>       _load 时钟回拨钳零/不可信、jtst+csres+stdsamr+dbba 分页/告警/close、fallback admit 拆分。
+> 钉住不改（验证后为正确行为/有意取舍）：native admit 2次/上游查询（入口+put前复验）、
+>       memo/cache 键用原样 code（normalize_key 只在 sqlite 层）、prune_expired（幻影项，不存在）、
+>       MisconfiguredCurrency→SourceUnreachable（非 NeedsHuman）。
+> 未动（设计取舍待 owner）：fallback 主源空不查备源（与 Go 版一致性）、_FORM_HOSTS 硬编码、M17 exit-code。
+> 已知取舍：旧库裸 untitled__sha.pdf 不可幂等命中会重下一次；shzjw rec 无 id → 裸 untitled 保留。
+
+
+
 - localstatus.py:15-20 — 裸 'DGJ'/'DBJ' 前缀把其他省市地标（DBJ50 等）误判为上海 → 多发一次错误外呼
 - attachment.py:60-70 — _is_pdf 子串判断，"PDF版.zip" 混入候选
 - compliance.py:267-269 — 断点续传 416 直接视为完成；远端变小/.part 损坏时会以坏文件命名成功（建议 416 时 HEAD 比对 Content-Length）
