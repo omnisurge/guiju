@@ -43,6 +43,15 @@ def response(*rows):
     return json.dumps({"Total": len(rows), "List": list(rows)}, ensure_ascii=False).encode("utf-8")
 
 
+def page_response(rows, total=None, has_next=False):
+    """照 PageInfo 实测形状造一页；HasNextPage 驱动翻页。"""
+    return json.dumps({
+        "Total": len(rows) if total is None else total,
+        "List": list(rows),
+        "HasNextPage": has_next,
+    }, ensure_ascii=False).encode("utf-8")
+
+
 class OfflineTestCase(unittest.TestCase):
     def setUp(self):
         # 测试失败也不得尝试连接上游；lookup 只注入内存客户端。
@@ -229,6 +238,45 @@ class CcsnLookupTest(OfflineTestCase):
             "code": "JGJ147-2016", "name": "建筑拆除工程安全技术规范", "status": "current",
             "implement_date": "2017-05-01", "source": "ccsn",
         })
+
+
+class CcsnPaginationTest(OfflineTestCase):
+    """分页契约（2026-11-13 实测）：HasNextPage 驱动 pageIndex+1 续页，超 MAX_PAGES 截断告警。"""
+
+    def _code(self, year):
+        # 同族不同年版（filter_by_code 只按编号族筛，年版归下游裁决）
+        return {"StandardCode": f"GB50000-{year}", "StandardState": "现行", "StandardCNName": "n"}
+
+    def test_follows_pages_until_no_next(self):
+        client = mock.Mock(spec=HttpClient)
+        # 45 条同族记录跨 3 页；页内数据混若干异族行（真实站会回），过滤后仍应取全 45 条。
+        flat = [self._code(1900 + i) for i in range(45)]
+        client.post_form.side_effect = [
+            page_response([*flat[0:20], {"StandardCode": "ZZ999-2000"}], total=45, has_next=True),
+            page_response(flat[20:40], total=45, has_next=True),
+            page_response(flat[40:45], total=45, has_next=False),
+        ]
+        cur = CcsnCurrency(client)
+        records = cur.lookup("GB 50000")
+        self.assertEqual(len(records), 45)
+        self.assertEqual([c.args[1]["pageIndex"] for c in client.post_form.call_args_list], ["1", "2", "3"])
+        self.assertEqual(cur.pagination["fetched_pages"], 3)
+        self.assertFalse(cur.pagination["has_more"])
+        self.assertFalse(cur.pagination["truncated"])
+
+    def test_truncated_at_max_pages_warns(self):
+        client = mock.Mock(spec=HttpClient)
+        client.post_form.return_value = page_response(
+            [self._code(1900 + i) for i in range(20)], total=500, has_next=True,
+        )
+        cur = CcsnCurrency(client)
+        import warnings as _w
+        with _w.catch_warnings(record=True) as caught:
+            _w.simplefilter("always")
+            cur.lookup("GB 50000")
+        self.assertEqual(client.post_form.call_count, cur.MAX_PAGES)
+        self.assertTrue(cur.pagination["truncated"])
+        self.assertTrue(any("截断" in str(w.message) for w in caught))
 
 
 if __name__ == "__main__":

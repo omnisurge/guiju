@@ -57,11 +57,19 @@ class CcsnCurrency:
     name = "ccsn"
     url = SEARCH_URL
 
+    #: 一次 lookup 允许的翻页上限。ccsn 的 gjz 只按数字段检索，宽泛词（如 "500"）
+    #: 可把 Total 拉到上千，翻 80+ 页既慢又浪费——超过上限直接记 truncated 交人复核。
+    MAX_PAGES = 5
+
     def __init__(self, client: HttpClient | None = None) -> None:
         self.client = client if client is not None else HttpClient()
-        # 查询标注：只取第 1 页（pageSize 20）；Total 超过已取条数时 has_more=True，
-        # 翻页契约（排序/续页字段）未经确认，由调用方决定是否人工复核。
-        self.pagination: dict = {"fetched_pages": 0, "total": 0, "has_more": False}
+        # 分页契约（2026-11-13 实测 .assx 站）：pageIndex 1-based，返回 PageInfo
+        # {Total, List, PageNum, Pages, HasNextPage}；Total>len(已取) 时按
+        # pageIndex+1 续页，直到无下页或 MAX_PAGES 封顶。truncated=True 表示被
+        # 封顶截断（结果不完整），调用方应把人召回来，不要当下游真理。
+        self.pagination: dict = {
+            "fetched_pages": 0, "total": 0, "has_more": False, "truncated": False,
+        }
 
     def close(self) -> None:
         close = getattr(self.client, "close", None)
@@ -83,26 +91,36 @@ class CcsnCurrency:
             key = code_num_key(term)
             if not key:
                 return []
-            raw = self.client.post_form(
-                SEARCH_URL,
-                {"pageIndex": "1", "pageSize": "20", "gjz": key},
-                accept="application/json",
-            )
-            payload = decode_json("ccsn", raw)
-            total = json_int(payload, "Total", "ccsn")
-            records = parse_ccsn(raw)
-            self.pagination = {
-                "fetched_pages": 1,
-                "total": total,
-                "has_more": total > len(records),
-            }
-            if self.pagination["has_more"]:
-                warnings.warn(
-                    f"ccsn 返回 {total} 条、仅取回第 1 页 {len(records)} 条："
-                    "分页契约未经确认，结果可能不完整",
-                    stacklevel=2,
+            records: list[Record] = []
+            total = 0
+            page = 1
+            while True:
+                raw = self.client.post_form(
+                    SEARCH_URL,
+                    {"pageIndex": str(page), "pageSize": "20", "gjz": key},
+                    accept="application/json",
                 )
-            return records
+                payload = decode_json("ccsn", raw)
+                if page == 1:
+                    total = json_int(payload, "Total", "ccsn")
+                records.extend(parse_ccsn(raw))
+                has_next = bool(payload.get("HasNextPage"))
+                if not has_next or page >= self.MAX_PAGES:
+                    truncated = has_next and page >= self.MAX_PAGES
+                    self.pagination = {
+                        "fetched_pages": page,
+                        "total": total,
+                        "has_more": total > len(records),
+                        "truncated": truncated,
+                    }
+                    if truncated:
+                        warnings.warn(
+                            f"ccsn 返回 {total} 条、翻到第 {page}/{page} 页截断"
+                            f"（上限 {self.MAX_PAGES} 页）：结果不完整，建议按名称复核",
+                            stacklevel=2,
+                        )
+                    return records
+                page += 1
 
         # 先过滤同号族，确实无命中后才按基础号再查一次；不补造旧版本结论。
         return query_with_base_fallback(code, fetch)

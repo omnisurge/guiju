@@ -337,7 +337,10 @@ class M18CcsnPaginationTest(unittest.TestCase):
         self.assertEqual(cur.pagination["total"], 0)
         self.assertFalse(cur.pagination["has_more"])
 
-    def test_more_than_page_warns_and_marks_has_more(self):
+    def test_more_than_page_marks_has_more_without_truncation(self):
+        # 老响应不带 HasNextPage：Total>已取 → has_more（服务端声称未完），
+        # 但不翻页也不告警（可能服务端本就只回这么多）；truncated 只在被
+        # MAX_PAGES 硬截断时为 True。
         client = _FakeClient(_ccsn_payload(total=40, rows=20))
         cur = CcsnCurrency(client)
         with warnings.catch_warnings(record=True) as caught:
@@ -345,7 +348,8 @@ class M18CcsnPaginationTest(unittest.TestCase):
             cur.lookup("CECS 1-2020")
         self.assertTrue(cur.pagination["has_more"])
         self.assertEqual(cur.pagination["fetched_pages"], 1)
-        self.assertTrue(any("不完整" in str(w.message) for w in caught))
+        self.assertFalse(cur.pagination["truncated"])
+        self.assertFalse(any("截断" in str(w.message) for w in caught))
 
     def test_assx_url_kept_as_is(self):
         self.assertIn(".assx", SEARCH_URL)
