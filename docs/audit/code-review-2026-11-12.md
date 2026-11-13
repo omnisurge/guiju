@@ -60,7 +60,8 @@ agent 按"歧义交人"处理白耗一轮。
 
 > ✅ 大部分已于 2026-11-12 修复（第二轮，工作区未提交）。pytest 488 → 543 passed。
 > 已修：M1/M3/M4/M5/M6/M7/M8/M9/M11/M12/M13/M14/M18/M19/M20/M21/M22 + 遗留 SourceUnreachable→20。
-> 跳过：M2(fallback 溯源-评估后属设计取舍)、M16/M18 重定位后按归属/冻结授权跳过、M17(已裁决：独立错误类 → errors.NoCurrencyRecord exit 34 no_currency_record，native.NoCurrencySource 为兼容别名；hint/31 映射不再走 NotIndexed)。
+> 跳过：M2(fallback 溯源-评估后属设计取舍，见下)、M17(已裁决：独立错误类 → errors.NoCurrencyRecord exit 34 no_currency_record，native.NoCurrencySource 为兼容别名；hint/31 映射不再走 NotIndexed)。
+> 已闭合（2026-11-13 复核，前提失准）：M16 —— "DB31-xxx" 实测不是 31：shzjw code_filter(is_shanghai_code) 拒收 + csres DB 路由 owns_shanghai_namespace 也拒收 → adapter=None → NoCurrencyRecord exit 34（hint=换名称路径）。对畸形编号 34 语义比 50/31 更准（既不谎称未收录、也不谎称站点改版），无需补判。
 > 已修（2026-11-13 所有者裁决后）：M15 —— confidence 统一报解析结果（正文 PARSED 覆盖 target 先验 unknown）；--list 行尾注释须空白分隔、URL #frag 不再截断；_batch 非 GuijuError 兜底成 internal/exit1 不中断整批。tests/test_pull_m15.py 4 用例。confidence 口径裁决：报解析结果（所有者拍板）。
 > 裁决项：test_currency_ccsn.py:89 「局修完成+abolish→superseded」钉住用例编码旧错误行为，已改为 unknown。
 > 新文件：tests/test_fix_med_20261112.py / test_fix_med_core.py / test_fix_med_currency.py。
@@ -88,7 +89,7 @@ agent 按"歧义交人"处理白耗一轮。
 | M13 | lookup.py:191,236 | 命中缓存行时 has_attachment=None，with_file 过滤把缓存命中有效结果静默剔除 | 缓存行补 True 或过滤区分 None/False |
 | M14 | cite.py:135 + lookup.py:427 | 编号比较用展示串/半成品归一化（JGJ/T450-2018 vs JGJ/T 450-2018 误报不一致） | 统一 normalize_key 后比 |
 | M15 | pull.py | _wrap confidence 与落库口径不一致（payload 报 unknown、库存 parsed）；--list 的 split("#") 截断含 fragment 的 URL；_batch 非 GuijuError 中断整批且无汇总 | 解析成功时用 codes.confidence 覆盖；只跳行首 # 注释；批内兜底 |
-| M16 | registry.py:42-58 | "DB31-xxx"（缺 /T）归一化后既不在上海前缀也不在 DB 黑名单 → NotIndexed(31) 而非 needs_human | 边界补判 |
+| M16 | registry.py:42-58 | ~~"DB31-xxx"（缺 /T）归一化后既不在上海前缀也不在 DB 黑名单 → NotIndexed(31)~~ | ✅ 已闭合（前提失准）：双 code_filter 拒收 → adapter=None → exit 34，语义正确，不改 |
 | M17 | native.py:136 | NoCurrencySource(NotIndexed→exit31) 语义不当（路由未覆盖≠没收录），hint 仍指向旧设计 | 独立错误类或改 hint/映射 |
 | M18 | ccsn.py 等 | 各 HTTP 时效源只取第 1 页（size≈20-100），多版本规范可能丢版本 | 翻页至空页或 total>pageSize 记 warning |
 | M19 | ccsn.py SEARCH_URL | ".../StandardQuery.assx" 疑似 .ashx 笔误（未联网验证） | 人工/CI 冒烟核一次 |
