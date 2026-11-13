@@ -60,7 +60,10 @@ agent 按"歧义交人"处理白耗一轮。
 
 > ✅ 大部分已于 2026-11-12 修复（第二轮，工作区未提交）。pytest 488 → 543 passed。
 > 已修：M1/M3/M4/M5/M6/M7/M8/M9/M11/M12/M13/M14/M18/M19/M20/M21/M22 + 遗留 SourceUnreachable→20。
-> 跳过：M2(fallback 溯源-评估后属设计取舍，见下)、M17(已裁决：独立错误类 → errors.NoCurrencyRecord exit 34 no_currency_record，native.NoCurrencySource 为兼容别名；hint/31 映射不再走 NotIndexed)。
+> 已修（2026-11-13）：M2 —— 但落地方式比原案更保守：as_payload 是 CLI/TSV 五字段投影契约（which/cite/lookup 的 currency[]），不能加字段；
+>      故拆出 Record.cache_payload（5 字段 + replaces/fallback）专供缓存落库，_load 回填 fallback。
+>      CLI 投影不变、备源溯源不再伪装成主源。tests/test_currency_cache.py::test_fallback_provenance_survives_cache_replay。
+> 跳过：M17(已裁决：独立错误类 → errors.NoCurrencyRecord exit 34 no_currency_record，native.NoCurrencySource 为兼容别名；hint/31 映射不再走 NotIndexed)。
 > 已闭合（2026-11-13 复核，前提失准）：M16 —— "DB31-xxx" 实测不是 31：shzjw code_filter(is_shanghai_code) 拒收 + csres DB 路由 owns_shanghai_namespace 也拒收 → adapter=None → NoCurrencyRecord exit 34（hint=换名称路径）。对畸形编号 34 语义比 50/31 更准（既不谎称未收录、也不谎称站点改版），无需补判。
 > 已修（2026-11-13 所有者裁决后）：M15 —— confidence 统一报解析结果（正文 PARSED 覆盖 target 先验 unknown）；--list 行尾注释须空白分隔、URL #frag 不再截断；_batch 非 GuijuError 兜底成 internal/exit1 不中断整批。tests/test_pull_m15.py 4 用例。confidence 口径裁决：报解析结果（所有者拍板）。
 > 裁决项：test_currency_ccsn.py:89 「局修完成+abolish→superseded」钉住用例编码旧错误行为，已改为 unknown。
@@ -75,7 +78,7 @@ agent 按"歧义交人"处理白耗一轮。
 | # | 位置 | 问题 | 修法 |
 |---|---|---|---|
 | M1 | native.py:122-129,153-155 | 缓存读写只兜 OSError；backend 抛 sqlite3.Error/ValueError 打死查询并禁用 stale 降级 | 兜底 (OSError, ValueError, sqlite3.Error) 或除不可恢复类外全兜 |
-| M2 | model.py:as_payload + __init__.py:344,363 | 落库只存 5 字段，fallback/replaces 丢失 → 备源结果落库后伪装成主源 | as_payload 补 fallback/replaces，_load 回填 |
+| M2 | model.py:as_payload + __init__.py:344,363 | 落库只存 5 字段，fallback/replaces 丢失 → 备源结果落库后伪装成主源 | ✅ 已修：拆 Record.cache_payload（+replaces/fallback）供缓存写，as_payload 维持 CLI 五字段契约；_load 回填 fallback |
 | M3 | mcp.py:_announcement 156-213 | docstring 承诺"不下载、不落盘"，实际 resolve(allow_network=True) 抓详情页并 persist_codes 写库；并发写 sqlite 无 busy 重试 | resolve 传 allow_network=False 或加 read_only；或更新文档；写加重试 |
 | M4 | lookup.py:197,407 + cite.py:53 | 三处硬编码 registry()["mohurd"] 抓详情页；shzjw 公告被用错解析器 | 按 lookup.source_of(url) 选源；api_mode 源跳过 detail |
 | M5 | codes.py:203-206, 259-261 | "发布/施行"句内编号即升 PRIMARY 过强；多 PRIMARY 静默取最大年仍标 PARSED | 按 code_stem 分族，异族交人；提升要求旧版佐证 |

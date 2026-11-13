@@ -189,7 +189,7 @@ class CachedCurrency:
 
         try:
             self.store.cache_currency(  # type: ignore[attr-defined]
-                self._key(code), json.dumps([r.as_payload() for r in records], ensure_ascii=False)
+                self._key(code), json.dumps([r.cache_payload() for r in records], ensure_ascii=False)
             )
         except Exception:  # 缓存失败是可容忍的：不要让它毁掉一次正常查询
             return
@@ -216,6 +216,7 @@ class CachedCurrency:
                     implement_date=row.get("implement_date", ""),
                     source=row.get("source", ""),
                     replaces=row.get("replaces", ""),
+                    fallback=row.get("fallback", ""),
                 )
                 for row in rows
             ]

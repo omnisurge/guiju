@@ -69,6 +69,30 @@ class CurrencyCacheTest(unittest.TestCase):
         self.assertEqual(json.loads(payload)[0]["code"], "GB 55037-2022")
         self.assertTrue(fetched)
 
+    def test_fallback_provenance_survives_cache_replay(self):
+        # M2 回归：备源应答的 fallback/replaces 必须落库，重放时不得伪装成主源。
+        rec = Record(code="GB 55037-2022", status="current", name="建筑防火通用规范",
+                     implement_date="2023-06-01", source="ccsn",
+                     replaces="GB 50016-2014", fallback="ccsn")
+
+        class _FallbackHit:
+            name = "fallback"
+
+            def lookup(self, code):
+                return [rec]
+
+        CachedCurrency(inner=_FallbackHit(), store=self.store).lookup("GB55037-2022")
+        # 落库的 payload 必须带溯源字段
+        payload, _ = self.store.cached_currency("GB55037-2022")
+        row = json.loads(payload)[0]
+        self.assertEqual(row["fallback"], "ccsn")
+        self.assertEqual(row["replaces"], "GB 50016-2014")
+        # 断网重放：重建的 Record 保留 fallback/replaces
+        currency_mod._cache.clear()
+        records = CachedCurrency(inner=_Failing(), store=self.store).lookup("GB55037-2022")
+        self.assertEqual(records[0].fallback, "ccsn")
+        self.assertEqual(records[0].replaces, "GB 50016-2014")
+
 
 if __name__ == "__main__":
     unittest.main()

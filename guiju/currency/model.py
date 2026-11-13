@@ -24,12 +24,26 @@ class Record:
         return self.status == "current"
 
     def as_payload(self) -> dict:
+        # CLI/TSV 五字段投影（which/cite/lookup 的 currency[]），契约不变。
         return {
             "code": self.code,
             "status": self.status,
             "name": self.name,
             "implement_date": self.implement_date,
             "source": self.source,
+        }
+
+    def cache_payload(self) -> dict:
+        # 缓存落库投影（M2）：在 CLI 投影之上补 replaces/fallback。
+        # 备源应答重放时不许伪装成主源——fallback 告警必须随记录存活。
+        return {
+            "code": self.code,
+            "status": self.status,
+            "name": self.name,
+            "implement_date": self.implement_date,
+            "source": self.source,
+            "replaces": self.replaces,
+            "fallback": self.fallback,
         }
 
 
