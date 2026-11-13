@@ -14,7 +14,7 @@ from pathlib import Path
 from ... import currency as currency_mod
 from ...domain import attachment as att_domain
 from ...domain import availability, naming
-from ...domain.codes import classify
+from ...domain.codes import Confidence, classify
 from ...errors import (
     EXIT_EXISTS,
     EXIT_OK,
@@ -169,7 +169,10 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
 
     code_key = code_key or (normalize_key(codes.primary_key) if codes.primary_key else None)
     code_display = code_display or codes.primary_display
-    confidence = confidence if target.get("confidence") else codes.confidence.value
+    # confidence 以正文解析结果为准：target 先验值（编号直查/API 源）只在
+    # 解析没定版时保留——库存按 parsed 记而 payload 报 unknown 的口径分叉即出此。
+    if codes.confidence is Confidence.PARSED:
+        confidence = codes.confidence.value
 
     if not code_key:
         render.warn("公告正文未解析出编号：按公告名称命名文件，cite 将不可用")
@@ -260,9 +263,13 @@ def _read_refs(spec: str) -> list[str]:
     )
     refs = []
     for line in raw.splitlines():
-        line = line.split("#", 1)[0].strip()   # 允许行尾注释，清单可直接带标准名
-        if not line:
+        line = line.strip()
+        if not line or line.startswith("#"):
             continue
+        # 行尾注释须以空白与引用分隔（"GB 50037 # 国标"），URL 里的 #frag 不截断
+        hash_at = line.find(" #")
+        if hash_at > 0:
+            line = line[:hash_at].rstrip()
         refs.append(line)
     return refs
 
@@ -296,6 +303,12 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
                  "error": exc.message, "hint": exc.hint}
             )
             render.note(f"  → 未达成 exit={exc.exit} {exc.reason}：{exc.message[:60]}")
+        except Exception as exc:  # 非 GuijuError 不得中断整批；批内兜底成 internal
+            results.append(
+                {"ref": ref, "exit": 1, "outcome": "internal",
+                 "error": f"{type(exc).__name__}: {exc}", "hint": "程序缺陷：请带上该条 ref 上报维护者"}
+            )
+            render.note(f"  → 内部错误 {type(exc).__name__}：{str(exc)[:60]}")
 
     counts = Counter(r["exit"] for r in results)
     severe = [r for r in results if r["exit"] in _SEVERE]

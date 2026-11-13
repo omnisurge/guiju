@@ -60,7 +60,8 @@ agent 按"歧义交人"处理白耗一轮。
 
 > ✅ 大部分已于 2026-11-12 修复（第二轮，工作区未提交）。pytest 488 → 543 passed。
 > 已修：M1/M3/M4/M5/M6/M7/M8/M9/M11/M12/M13/M14/M18/M19/M20/M21/M22 + 遗留 SourceUnreachable→20。
-> 跳过：M2(fallback 溯源-评估后属设计取舍)、M16/M18 重定位后按归属/冻结授权跳过、M15(目录增补属产品决策)、M17(exit-code 语义待所有者裁决)。
+> 跳过：M2(fallback 溯源-评估后属设计取舍)、M16/M18 重定位后按归属/冻结授权跳过、M17(exit-code 语义待所有者裁决)。
+> 已修（2026-11-13 所有者裁决后）：M15 —— confidence 统一报解析结果（正文 PARSED 覆盖 target 先验 unknown）；--list 行尾注释须空白分隔、URL #frag 不再截断；_batch 非 GuijuError 兜底成 internal/exit1 不中断整批。tests/test_pull_m15.py 4 用例。confidence 口径裁决：报解析结果（所有者拍板）。
 > 裁决项：test_currency_ccsn.py:89 「局修完成+abolish→superseded」钉住用例编码旧错误行为，已改为 unknown。
 > 新文件：tests/test_fix_med_20261112.py / test_fix_med_core.py / test_fix_med_currency.py。
 > 待人工/跨域：非上海地方源接入需改 localstatus PREFIXES。
