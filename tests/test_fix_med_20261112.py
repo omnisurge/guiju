@@ -8,16 +8,17 @@
   附加 SourceUnreachable 被 except Exception 吞成 32（应为 20）
 """
 import argparse
+import contextlib
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from guiju.cli import lookup
-from guiju.cli.lookup import local_records, match_currency, resolve
 from guiju.cli.commands import cite, pull
+from guiju.cli.lookup import local_records, match_currency, resolve
 from guiju.currency import Record
-from guiju.errors import AmbiguousTarget, SourceUnreachable
+from guiju.errors import SourceUnreachable
 from guiju.store.sqlite import Store
 
 _STORES = []
@@ -111,11 +112,9 @@ class PullCurrencyStoreTest(unittest.TestCase):
 
         with mock.patch.object(pull, "resolve", side_effect=fake_resolve), \
              mock.patch.object(pull, "find_cached", return_value=None), \
-             mock.patch.object(pull, "availability"):
-            try:
-                pull._pull_one(store, args, "GB 50016-2014", source, Path(tempfile.mkdtemp()))
-            except Exception:
-                pass  # 我们只关心 resolve 入参，后续下载路径允许失败
+             mock.patch.object(pull, "availability"), contextlib.suppress(Exception):
+            # 我们只关心 resolve 入参，后续下载路径允许失败
+            pull._pull_one(store, args, "GB 50016-2014", source, Path(tempfile.mkdtemp()))
         from guiju.currency import CachedCurrency
         self.assertIsInstance(captured.get("currency"), CachedCurrency)
         self.assertIs(captured["currency"].store, store)
@@ -131,17 +130,14 @@ class ResolveDefaultCurrencyStoreTest(unittest.TestCase):
             "关于发布国家标准《建筑设计防火规范》的公告", "建筑设计防火规范", "national",
         )
         seen = {}
-        real_cc = lookup.currency_mod.CachedCurrency
 
         def spy(inner=None, store=None):
             seen["store"] = store
             return mock.Mock(lookup=lambda code: [], name="spy")
 
-        with mock.patch.object(lookup.currency_mod, "CachedCurrency", side_effect=spy):
-            try:
-                resolve(store, "建筑设计防火规范")
-            except Exception:
-                pass
+        with mock.patch.object(lookup.currency_mod, "CachedCurrency", side_effect=spy), \
+             contextlib.suppress(Exception):
+            resolve(store, "建筑设计防火规范")
         self.assertIs(seen.get("store"), store)
 
 

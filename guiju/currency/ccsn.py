@@ -68,7 +68,7 @@ class CcsnCurrency:
         if callable(close):
             close()
 
-    def __enter__(self) -> "CcsnCurrency":
+    def __enter__(self) -> CcsnCurrency:
         return self
 
     def __exit__(self, *exc) -> None:
@@ -99,7 +99,8 @@ class CcsnCurrency:
             if self.pagination["has_more"]:
                 warnings.warn(
                     f"ccsn 返回 {total} 条、仅取回第 1 页 {len(records)} 条："
-                    "分页契约未经确认，结果可能不完整"
+                    "分页契约未经确认，结果可能不完整",
+                    stacklevel=2,
                 )
             return records
 

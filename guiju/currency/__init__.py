@@ -227,12 +227,9 @@ class CachedCurrency:
 
             raw_seconds = (datetime.now() - datetime.strptime(
                 fetched_at, "%Y-%m-%d %H:%M:%S")).total_seconds()
-            if raw_seconds < -3600:
-                # 时钟回拨/未来时间戳超过 1h：年龄不可信，保持 None（调用方按"无年龄信息"处理），
-                # 不钳成 0 伪装成"刚写入"。小幅负值（时钟漂移）则钳 0，不误报。
-                age = None
-            else:
-                age = max(0.0, round(raw_seconds / 86400, 2))
+            # 时钟回拨/未来时间戳超过 1h：年龄不可信，保持 None（调用方按"无年龄信息"处理），
+            # 不钳成 0 伪装成"刚写入"。小幅负值（时钟漂移）则钳 0，不误报。
+            age = None if raw_seconds < -3600 else max(0.0, round(raw_seconds / 86400, 2))
         except (ValueError, TypeError):
             pass
         return records, age

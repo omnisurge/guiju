@@ -148,7 +148,7 @@ class JtstCurrency:
         if callable(close):
             close()
 
-    def __enter__(self) -> "JtstCurrency":
+    def __enter__(self) -> JtstCurrency:
         return self
 
     def __exit__(self, *exc: object) -> None:

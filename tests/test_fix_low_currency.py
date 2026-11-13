@@ -25,20 +25,23 @@ from unittest import mock
 
 import guiju.currency as currency_pkg
 from guiju.currency import (
-    CachedCurrency, MisconfiguredCurrency, _cache, native_currency,
+    CachedCurrency,
+    MisconfiguredCurrency,
+    _cache,
+    native_currency,
 )
 from guiju.currency.cache import CACHE_NAMESPACE, DEFAULT_TTL, CacheEntry
 from guiju.currency.csres import CsresCurrency, parse_csres
-from guiju.currency.dbba import DbbaCurrency, parse_dbba
-from guiju.currency.httpx import HttpClient
+from guiju.currency.dbba import DbbaCurrency
 from guiju.currency.fallback import FallbackCurrency
+from guiju.currency.httpx import HttpClient
 from guiju.currency.jtst import JtstCurrency, parse_jtst
 from guiju.currency.model import QueryCancelled, Record
 from guiju.currency.native import NativeCurrency, NoCurrencyRecord, NoCurrencySource
 from guiju.currency.registry import Registry, Route, default_registry
 from guiju.currency.shzjw import _valid_query, is_shanghai_code, normalize_code
-from guiju.currency.stdsamr import StdSamrCurrency, parse_stdsamr
-from guiju.errors import ComplianceDenied, GuijuError, NeedsHuman, NotIndexed, SourceUnreachable
+from guiju.currency.stdsamr import StdSamrCurrency
+from guiju.errors import ComplianceDenied, GuijuError, NotIndexed, SourceUnreachable
 
 CODE = "GB 1-2000"
 NOW = 10_000_000.0
@@ -280,7 +283,7 @@ class L4AdmitAccountingTest(unittest.TestCase):
         # 钉住真实契约（native.py L143-144/175-176 注释）：
         # 上游未命中的一次 lookup 恰计 2 次 admit（入口 + put 前复验），不随 _guard 重复计费。
         admits = []
-        native, source, cache, _ = _make_native(self.now, admit=lambda code: admits.append(code))
+        native, _source, _cache, _ = _make_native(self.now, admit=lambda code: admits.append(code))
         native.lookup(CODE)
         self.assertEqual(admits, [CODE, CODE])
         native.lookup(CODE)  # 缓存命中：只入口 admit，没有 put 前那次
@@ -290,8 +293,9 @@ class L4AdmitAccountingTest(unittest.TestCase):
         # _guard 被调用多次但只查 cancelled；已计费的 admit 不应再被守卫重放。
         guards = []
         admits = []
-        cancelled = lambda: (guards.append(1), False)[1]
-        native, source, _, _ = _make_native(self.now, cancelled=cancelled,
+        def cancelled():
+            return (guards.append(1), False)[1]
+        native, _source, _, _ = _make_native(self.now, cancelled=cancelled,
                                             admit=lambda code: admits.append(code))
         native.lookup(CODE)
         self.assertGreater(len(guards), 2)   # 守卫确实跑了多次
@@ -313,7 +317,7 @@ class L5JtstTest(unittest.TestCase):
     def test_empty_result_page_no_warning(self):
         with warnings.catch_warnings(record=True) as seen:
             warnings.simplefilter("always")
-            records = parse_jtst("<html><body><table></table></body></html>".encode())
+            records = parse_jtst(b"<html><body><table></table></body></html>")
         self.assertEqual(records, [])
         self.assertFalse(any("jtst" in str(w.message) for w in seen))
 
@@ -367,7 +371,7 @@ class L6CsresTest(unittest.TestCase):
     def test_truly_empty_page_no_warning(self):
         with warnings.catch_warnings(record=True) as seen:
             warnings.simplefilter("always")
-            records = parse_csres("<html><body></body></html>".encode())
+            records = parse_csres(b"<html><body></body></html>")
         self.assertEqual(records, [])
         self.assertFalse(any("csres" in str(w.message) for w in seen))
 
@@ -522,9 +526,9 @@ class L8CacheKeyNoNormalizationTest(unittest.TestCase):
 
     def test_memory_cache_layer_sees_raw_code(self):
         cache = MemoryCache(lambda: NOW)
-        native, source, _, _ = _make_native([NOW], cache=cache)
+        native, _source, _, _ = _make_native([NOW], cache=cache)
         native.lookup("GB 1-2000")
-        keys = [code for (_ns, code) in cache.entries.keys()]
+        keys = [code for (_ns, code) in cache.entries]
         self.assertEqual(keys, ["GB 1-2000"])  # 原样落键，未大写/去空格
 
 

@@ -4,6 +4,7 @@
 任何"换 host"的出站都必须重新计节拍。
 """
 
+import itertools
 import tempfile
 import threading
 import time
@@ -127,7 +128,7 @@ class ThrottleTest(unittest.TestCase):
                 t.join()
 
         stamps.sort()
-        gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+        gaps = [b - a for a, b in itertools.pairwise(stamps)]
         self.assertTrue(
             all(g >= interval * 0.8 for g in gaps),
             "并发同 host 的节流间隔应互斥展开，实测 gaps=" + repr(gaps),

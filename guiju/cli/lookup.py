@@ -568,7 +568,7 @@ def _best_name_hits(hits: list, search_name: str) -> list:
     best = max(levels, default=0)
     if best == 0:
         return hits
-    return [h for h, lv in zip(hits, levels) if lv == best]
+    return [h for h, lv in zip(hits, levels, strict=True) if lv == best]
 
 
 def _is_english(record) -> bool:

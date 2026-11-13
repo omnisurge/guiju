@@ -208,7 +208,7 @@ class NativeCurrency:
 
     @property
     def upstream_error(self) -> Exception | None:
-        return self.last_outcome is not None and self.last_outcome.upstream_error or None
+        return (self.last_outcome is not None and self.last_outcome.upstream_error) or None
 
     @property
     def cache_age_days(self) -> float | None:

@@ -4,10 +4,12 @@
 整体死掉、HTTP handler 线程断连（无 JSON-RPC 错误体返回给客户端）。
 """
 
+import json
+import threading
 import unittest
+import urllib.request
 
 from guiju.mcp import McpServer, make_http_server
-import threading, json, urllib.request
 
 
 class CrashingBackend:
@@ -38,7 +40,7 @@ class McpCrashIsolationTest(unittest.TestCase):
     def test_server_survives_after_crash(self):
         # 第一次崩溃后 handle 仍然可用（stdio 循环不会因异常终止）
         self._call("query", {"code": "X"})
-        resp = self._call("ping", {})
+        self._call("ping", {})
         # ping 是 method 级，直接调用 handle
         ping = self.server.handle({"jsonrpc": "2.0", "method": "ping", "id": 9})
         self.assertEqual(ping.get("result"), {})

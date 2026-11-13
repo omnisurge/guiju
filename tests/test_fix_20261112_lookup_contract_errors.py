@@ -78,9 +78,9 @@ class PickVersionDetailFetchTest(unittest.TestCase):
 
     def test_contract_errors_propagate(self):
         for err_cls in _CONTRACT_ERRORS:
-            with self.subTest(error=err_cls.__name__), _patch_source(err_cls("x")):
-                with self.assertRaises(err_cls):
-                    resolve(self.store, "建筑设计防火规范", FakeCurrency())
+            with self.subTest(error=err_cls.__name__), _patch_source(err_cls("x")), \
+                 self.assertRaises(err_cls):
+                resolve(self.store, "建筑设计防火规范", FakeCurrency())
 
     def test_generic_error_still_drops_candidates(self):
         """普通抓取失败仍按原样 continue，最终交还 32 歧义——韧性语义不变。"""
@@ -125,8 +125,8 @@ class VerifyByPrimaryCodeTest(unittest.TestCase):
     def test_contract_errors_propagate(self):
         for err_cls in _CONTRACT_ERRORS:
             with self.subTest(error=err_cls.__name__):
-                def fake_detail(url, _e=err_cls("x")):
-                    raise _e
+                def fake_detail(url, _cls=err_cls):
+                    raise _cls("x")
 
                 with self.assertRaises(err_cls):
                     resolve(self.store, "GB 50016-2014", self.cur, fetch_detail=fake_detail)

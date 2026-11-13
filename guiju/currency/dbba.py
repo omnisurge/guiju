@@ -65,7 +65,7 @@ class DbbaCurrency:
         if callable(close):
             close()
 
-    def __enter__(self) -> "DbbaCurrency":
+    def __enter__(self) -> DbbaCurrency:
         return self
 
     def __exit__(self, *exc: object) -> None:

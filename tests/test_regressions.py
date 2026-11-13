@@ -6,7 +6,7 @@ from pathlib import Path
 
 from guiju.domain.codes import classify
 from guiju.domain.search import _year_of
-from guiju.errors import BadUsage, NotIndexed, SourceUnreachable
+from guiju.errors import BadUsage, NotIndexed
 from guiju.store.sqlite import Store, persist_codes
 
 

@@ -57,7 +57,7 @@ class StdSamrCurrency:
         if callable(close):
             close()
 
-    def __enter__(self) -> "StdSamrCurrency":
+    def __enter__(self) -> StdSamrCurrency:
         return self
 
     def __exit__(self, *exc: object) -> None:

@@ -10,7 +10,7 @@ from unittest import mock
 
 from guiju.currency import CachedCurrency, _cache, endpoint_of
 from guiju.currency.cache import CACHE_NAMESPACE, DEFAULT_STALE_LIMIT, DEFAULT_TTL, CacheEntry
-from guiju.currency.ccsn import CcsnCurrency, SEARCH_URL, status_ccsn
+from guiju.currency.ccsn import SEARCH_URL, CcsnCurrency, status_ccsn
 from guiju.currency.model import QueryCancelled, Record
 from guiju.currency.native import NativeCurrency
 from guiju.currency.registry import Registry, Route
@@ -90,14 +90,13 @@ class M1CacheBackendResilienceTest(unittest.TestCase):
 
     def test_put_raises_does_not_eat_success(self):
         cache = MemoryCache(lambda: self.now[0])
-        calls = {"n": 0}
         def flaky_get(code, *, namespace=CACHE_NAMESPACE):
             return None
         def flaky_put(code, records, *, namespace=CACHE_NAMESPACE):
             raise OSError("disk full")
         cache.get = flaky_get
         cache.put = flaky_put
-        native, source, _, _ = _make_native(self.now, cache=cache)
+        native, _source, _, _ = _make_native(self.now, cache=cache)
         outcome = native.query(CODE)
         self.assertEqual(outcome.results, (_record(),))
         self.assertFalse(outcome.from_cache)
@@ -122,7 +121,7 @@ class M22AdmitAccountingTest(unittest.TestCase):
         return _make_native(self.now, admit=self.admits.append, **kw)
 
     def test_fresh_miss_admits_at_most_twice(self):
-        native, source, cache, _ = self._native()
+        native, _source, _cache, _ = self._native()
         native.query(CODE)
         self.assertLessEqual(len(self.admits), 2)
         self.assertGreaterEqual(len(self.admits), 1)
@@ -150,7 +149,7 @@ class M22AdmitAccountingTest(unittest.TestCase):
             self.admits.append(code)
             if calls["n"] > 1:
                 raise SourceUnreachable("route revoked mid-query")
-        native, source, cache, _ = _make_native(
+        native, _source, cache, _ = _make_native(
             self.now, admit=admit)
         with self.assertRaises(SourceUnreachable):
             native.query(CODE)
@@ -182,7 +181,7 @@ class M11ProcessMemoTest(unittest.TestCase):
 
     def test_memo_repopulates_last_outcome(self):
         native, source, _, _ = self._no_cache_native()
-        first = native.query(CODE)
+        native.query(CODE)
         self.assertFalse(native.from_cache)
         native.last_outcome = None  # 模拟中间被别次查询覆盖
         second = native.query(CODE)
@@ -235,7 +234,7 @@ class M12bFlagExposureTest(unittest.TestCase):
         source.error = None
         self.now[0] += DEFAULT_STALE_LIMIT + DEFAULT_TTL  # 让缓存彻底不可用作兜底
         cache.entries.clear()
-        outcome = native.query(CODE)
+        native.query(CODE)
         self.assertFalse(native.stale)
         self.assertIsNone(native.upstream_error)
         self.assertFalse(native.from_cache)
@@ -288,7 +287,7 @@ class M11CachedMemoTest(unittest.TestCase):
         inner = _FakeInner("https://a.example/mcp", error=SourceUnreachable("down"))
         cur = CachedCurrency(inner, store=object())
         with mock.patch.object(CachedCurrency, "_load", return_value=([_record(source="mcp")], 3.5)):
-            rows = cur.lookup(CODE)
+            cur.lookup(CODE)
         self.assertTrue(cur.from_cache)
         self.assertTrue(cur.stale)
         self.assertIsNotNone(cur.upstream_error)

@@ -138,7 +138,7 @@ class CsresCurrency:
         if callable(close):
             close()
 
-    def __enter__(self) -> "CsresCurrency":
+    def __enter__(self) -> CsresCurrency:
         return self
 
     def __exit__(self, *exc: object) -> None:

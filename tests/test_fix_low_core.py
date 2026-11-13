@@ -132,8 +132,8 @@ class TestAnnouncementUnknownSource(unittest.TestCase):
         fake_target = {"ann": ann, "code_display": "GB 1", "status": "", "confidence": ""}
         fake_source = unittest.mock.Mock()
         with patch("guiju.cli.lookup.resolve", return_value=fake_target), \
-             patch("guiju.sources.registry", return_value={"mohurd": fake_source}):
-            with tempfile.TemporaryDirectory() as tmp:
+             patch("guiju.sources.registry", return_value={"mohurd": fake_source}), \
+             tempfile.TemporaryDirectory() as tmp:
                 os.environ["GUIJU_HOME"] = tmp
                 try:
                     result = server._announcement({"ref": "https://some.unknown.gov.cn/notice/1"})
@@ -196,7 +196,7 @@ class TestSharedAnnouncementStore(unittest.TestCase):
                 try:
                     store.count_announcements()
                     store.catalog_age_days()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     errors.append(exc)
 
             t = threading.Thread(target=q)

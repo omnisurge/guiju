@@ -11,16 +11,15 @@
 import argparse
 import contextlib
 import io
-import json
 import tempfile
 import unittest
 from unittest import mock
 
+from guiju.cli import render
+from guiju.cli.commands import which as which_mod
 from guiju.domain.codes import Confidence, Role, classify
 from guiju.mcp import McpServer, _ReadOnlyStore
 from guiju.store.sqlite import Store
-from guiju.cli import render
-from guiju.cli.commands import which as which_mod
 
 
 class CodesWeakPrimaryTest(unittest.TestCase):
@@ -175,7 +174,7 @@ class AnnouncementReadOnlyTest(unittest.TestCase):
             # 只读读通：读方法原样转发
             self.assertEqual(ro.count_announcements(), 1)
             # 写路径全部吃掉：upsert_announcement 还要回 (id, inserted) 形状
-            rid, inserted = ro.upsert_announcement(
+            _rid, inserted = ro.upsert_announcement(
                 "https://x/new.html", "2024-01-02", "t", "d", "national")
             self.assertFalse(inserted)
             ro.upsert_edition("GB1-2020", "GB 1-2020", "t", "parsed")
@@ -215,8 +214,8 @@ class WhichStaleTest(unittest.TestCase):
         try:
             with mock.patch.object(
                 which_mod.currency_mod, "CachedCurrency", return_value=cur
-            ), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                with tempfile.TemporaryDirectory() as home, mock.patch.dict(
+            ), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
+                tempfile.TemporaryDirectory() as home, mock.patch.dict(
                     "os.environ", {"GUIJU_HOME": home}
                 ):
                     store = Store()

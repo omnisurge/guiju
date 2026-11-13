@@ -22,7 +22,7 @@ import urllib.parse
 from pathlib import Path
 
 from .. import compliance
-from ..domain.announcement import classify_title
+from ..domain.announcement import classify_title  # noqa: F401  # 对外 re-export：调用方经 mohurd.classify_title 取域分类
 from ..domain.attachment import Attachment
 from ..domain.codes import html_to_text
 from ..errors import BadAttachment, NeedsHuman

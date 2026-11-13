@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import tempfile
 import urllib.error
 from pathlib import Path
@@ -25,12 +24,10 @@ from unittest import mock
 
 import pytest
 
-from guiju import compliance
-from guiju.domain.attachment import Attachment, _is_pdf
+from guiju import compliance, files, localstatus
 from guiju.domain import codes, naming
-from guiju import files, localstatus
+from guiju.domain.attachment import Attachment, _is_pdf
 from guiju.errors import BadUsage, NeedsHuman, SourceUnreachable
-
 
 # ---------- 1. _is_pdf ----------
 
@@ -122,7 +119,7 @@ def test_find_cached_untitled_uses_ann_id(tmp_path: Path) -> None:
 
 # ---------- 8. autosync notify 用锁内最新 empty ----------
 
-def _store() -> "object":
+def _store() -> object:
     from guiju.store.sqlite import Store
 
     store = Store(Path(tempfile.mkdtemp()) / "c.db")
