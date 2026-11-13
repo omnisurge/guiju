@@ -64,7 +64,7 @@ agent 按"歧义交人"处理白耗一轮。
 > 已修（2026-11-13 所有者裁决后）：M15 —— confidence 统一报解析结果（正文 PARSED 覆盖 target 先验 unknown）；--list 行尾注释须空白分隔、URL #frag 不再截断；_batch 非 GuijuError 兜底成 internal/exit1 不中断整批。tests/test_pull_m15.py 4 用例。confidence 口径裁决：报解析结果（所有者拍板）。
 > 裁决项：test_currency_ccsn.py:89 「局修完成+abolish→superseded」钉住用例编码旧错误行为，已改为 unknown。
 > 新文件：tests/test_fix_med_20261112.py / test_fix_med_core.py / test_fix_med_currency.py。
-> 待人工/跨域：非上海地方源接入需改 localstatus PREFIXES。
+> 已闭合（2026-11-13 所有者裁决）：非上海地标不接入，localstatus PREFIXES 维持上海口径（DG/TJ·DBJT·DGJ08·DB31·DBJ08）。
 > 已确认（2026-11-13）：ccsn 多页翻页契约实测为 pageIndex 1-based + PageInfo{Total,List,HasNextPage,Pages}，
 >      已改为按 HasNextPage 续页至无下页，超 MAX_PAGES(5) 记 truncated 告警；兄弟适配器
 >      csres/stdsamr/dbba/jtst 同类分页/告警/close 已在 Low 轮随 ccsn 一起修。
