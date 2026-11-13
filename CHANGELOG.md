@@ -1,5 +1,13 @@
 # 变更记录
 
+## Unreleased
+
+- **spec-currency 退役（ADR 0002 期 4 收口，2026-11-13）**：`GUIJU_CURRENCY` 只认
+  `native[:off|dir]` 与 `off`；旧 `cmd:`/`mcp:` 覆盖连同 `CommandCurrency`/`McpCurrency`、
+  `DEFAULT_MCP_URL`/`DEFAULT_CMD`、`GUIJU_CURRENCY_URL`/`GUIJU_CURRENCY_TOKEN` 一并删除。
+  设置其他值不再静默降级，而是 `kind(未知)` + exit 20。native 仍是默认且唯一的时效上游。
+  一并删除 `scripts/m4_currency_diff.py`、`guiju/currency/m4diff.py` 及 mcp 专用回归测试。
+
 ## 1.1.0 — 2026-11-09（去本地注册表 + MCP announcement）
 
 - **撤销本地归档注册表**：删除 `artifact` 表、`verify`/`provenance` 命令与

@@ -382,8 +382,9 @@ guiju sources [--probe]                          # 新增：适配器健康与�
 **M1 的"全量 index"已被 ADR 0001 取代并撤销**（v0.13.0 起命令本体也已删除）：编号 → 名称改由权威时效源提供（`guiju/currency/`；ADR 0002 M1 已迁为包），
 名称 → 公告由本地三层召回检索完成，因此不再需要维护本地"公告 ⇄ 编号"映射。
 
-**M3 / `guiju mcp` 的归属已改**：`docs/adr/0002` 决定把 `spec-currency` 并入本产品（二期），
-届时以"一个仓、Python、`guiju` + `guiju mcp` 两个入口"落地；ADR 0002 期 1 M3 已完成上海单源，`guiju mcp` 仍属后续。
+**M3 / `guiju mcp` 的归属已改**（已全部落地）：`docs/adr/0002` 决定把 `spec-currency` 并入本产品，
+以"一个仓、Python、`guiju` + `guiju mcp` 两个入口"落地；`guiju mcp` 已上线（hk，`guiju-mcp.service`），
+期 4 于 2026-11-13 归档 spec-currency：cmd/mcp 适配器与 `cmd:`/`mcp:` 覆盖删除，native 为唯一时效上游。
 
 ---
 

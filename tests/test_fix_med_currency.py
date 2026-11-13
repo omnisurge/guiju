@@ -1,4 +1,4 @@
-"""Medium 修复项回归测试：currency + ccsn 域（M1/M7/M11/M12b/M18/M19/M20/M22）。
+"""Medium 修复项回归测试：currency + ccsn 域（M1/M11/M12b/M18/M19/M20/M22；原 M7 mcp 测试随 spec-currency 退役移除）。
 
 全部离线：不联网、不读真实凭据；用假 HttpClient / 打桩 urlopen。
 """
@@ -8,8 +8,7 @@ import unittest
 import warnings
 from unittest import mock
 
-import guiju.currency as currency_pkg
-from guiju.currency import CachedCurrency, McpCurrency, _cache, endpoint_of
+from guiju.currency import CachedCurrency, _cache, endpoint_of
 from guiju.currency.cache import CACHE_NAMESPACE, DEFAULT_STALE_LIMIT, DEFAULT_TTL, CacheEntry
 from guiju.currency.ccsn import CcsnCurrency, SEARCH_URL, status_ccsn
 from guiju.currency.model import QueryCancelled, Record
@@ -242,104 +241,6 @@ class M12bFlagExposureTest(unittest.TestCase):
         self.assertFalse(native.from_cache)
 
 
-# ---------- M7：MCP 握手后补 initialized 通知、协议版本头、isError → 20 ----------
-
-class _Resp:
-    def __init__(self, body, headers=None):
-        self._body = body
-        self.headers = headers or {}
-
-    def read(self):
-        return self._body
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-
-def _sse(payload):
-    return ("data: " + json.dumps(payload)).encode()
-
-
-def _init_ok():
-    return {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05",
-            "capabilities": {}, "serverInfo": {"name": "fake", "version": "0"}}}
-
-
-def _call_result(text=None, is_error=False):
-    return {"jsonrpc": "2.0", "id": 2, "result": {
-        "isError": is_error,
-        "content": [] if text is None else [{"type": "text", "text": text}],
-    }}
-
-
-class M7McpHandshakeTest(unittest.TestCase):
-    def setUp(self):
-        self.requests = []
-
-    def _run(self, handler):
-        def urlopen(req, timeout=None):
-            self.requests.append(req)
-            return handler(req, len(self.requests))
-        with mock.patch.object(currency_pkg.urllib.request, "urlopen", urlopen):
-            return McpCurrency("https://mcp.example/mcp").lookup(CODE)
-
-    def _headers(self, req):
-        return {k.lower(): v for k, v in req.headers.items()}
-
-    def test_initialize_then_notification_then_call(self):
-        def handler(req, n):
-            body = json.loads(req.data.decode())
-            method = body.get("method")
-            if method == "initialize":
-                return _Resp(json.dumps(_init_ok()).encode(), {"mcp-session-id": "s1"})
-            if method == "notifications/initialized":
-                return _Resp(b"")
-            if method == "tools/call":
-                return _Resp(json.dumps(
-                    _call_result("GB 1-2000\tcurrent\t标准\t2000-01-01\tmcp")).encode())
-            raise AssertionError(f"unexpected method {method}")
-        rows = self._run(handler)
-        methods = [json.loads(r.data.decode()).get("method") for r in self.requests]
-        self.assertEqual(methods, ["initialize", "notifications/initialized", "tools/call"])
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0].code, CODE)
-
-    def test_protocol_version_header_on_every_post(self):
-        def handler(req, n):
-            self.assertEqual(self._headers(req).get("mcp-protocol-version"), "2024-11-05")
-            body = json.loads(req.data.decode())
-            if body.get("method") == "initialize":
-                return _Resp(json.dumps(_init_ok()).encode())
-            if body.get("method") == "tools/call":
-                return _Resp(json.dumps(_call_result()).encode())
-            return _Resp(b"")
-        self._run(handler)
-        self.assertGreaterEqual(len(self.requests), 2)
-
-    def test_notification_failure_is_not_fatal(self):
-        def handler(req, n):
-            body = json.loads(req.data.decode())
-            if body.get("method") == "notifications/initialized":
-                raise OSError("server dropped notification")
-            if body.get("method") == "initialize":
-                return _Resp(json.dumps(_init_ok()).encode())
-            return _Resp(json.dumps(_call_result("GB 1-2000\tcurrent\t标准\t\tmcp")).encode())
-        rows = self._run(handler)
-        self.assertEqual(len(rows), 1)
-
-    def test_tool_iserror_maps_to_source_unreachable(self):
-        def handler(req, n):
-            body = json.loads(req.data.decode())
-            if body.get("method") == "initialize":
-                return _Resp(json.dumps(_init_ok()).encode())
-            if body.get("method") == "tools/call":
-                return _Resp(json.dumps(_call_result("boom", is_error=True)).encode())
-            return _Resp(b"")
-        with self.assertRaises(SourceUnreachable):
-            self._run(handler)
 
 
 # ---------- M11（CachedCurrency 侧）：memo key 带端点、flag 元组重放 ----------

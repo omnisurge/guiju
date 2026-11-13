@@ -5,7 +5,7 @@
 覆盖：
   L1  裸 DB31（非 /T）进上海路由；DB31/… 仍被拒，不走 DB 外源
   L2a GUIJU_CURRENCY_CACHE_OFF=1 让 native_currency 不装缓存
-  L2b CACHE_OFF=1 落到 McpCurrency 的 cache 参数（显式参数优先）
+  L2b（已删）原 mcp 端点的 cache 参数测试随 spec-currency 退役移除
   L2c 非 native 内层的 memo 命中原样重放五元组（不重查）
   L2d MisconfiguredCurrency hint 给出 native 配置形态
   L3  CachedCurrency._load 时钟回拨：>1h 未来 → age=None；1h 内漂移 → 钳 0
@@ -25,7 +25,7 @@ from unittest import mock
 
 import guiju.currency as currency_pkg
 from guiju.currency import (
-    CachedCurrency, McpCurrency, MisconfiguredCurrency, _cache, native_currency,
+    CachedCurrency, MisconfiguredCurrency, _cache, native_currency,
 )
 from guiju.currency.cache import CACHE_NAMESPACE, DEFAULT_TTL, CacheEntry
 from guiju.currency.csres import CsresCurrency, parse_csres
@@ -120,31 +120,6 @@ class FakeStore:
         self.saved.append((key, payload))
 
 
-class _Resp:
-    def __init__(self, body, headers=None):
-        self._body = body
-        self.headers = headers or {}
-
-    def read(self):
-        return self._body
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-
-def _init_ok():
-    return {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05",
-            "capabilities": {}, "serverInfo": {"name": "fake", "version": "0"}}}
-
-
-def _call_result(text=None, is_error=False):
-    return {"jsonrpc": "2.0", "id": 2, "result": {
-        "isError": is_error,
-        "content": [] if text is None else [{"type": "text", "text": text}],
-    }}
 
 
 class FakeClient:
@@ -210,46 +185,6 @@ class L2CacheOffTest(unittest.TestCase):
             adapter = native_currency()
         self.assertIsNotNone(adapter.cache)
 
-    def _mcp_lookup(self, environ):
-        requests = []
-
-        def urlopen(req, timeout=None):
-            requests.append(req)
-            body = json.loads(req.data.decode())
-            if body.get("method") == "initialize":
-                return _Resp(json.dumps(_init_ok()).encode(), {"mcp-session-id": "s1"})
-            if body.get("method") == "tools/call":
-                return _Resp(json.dumps(_call_result("GB 1-2000\tcurrent\t标准\t\tmcp")).encode())
-            return _Resp(b"")
-
-        with mock.patch.dict(currency_pkg.os.environ, environ, clear=False), \
-                mock.patch.object(currency_pkg.urllib.request, "urlopen", urlopen):
-            rows = McpCurrency("https://mcp.example/mcp").lookup(CODE)
-        args = json.loads(requests[-1].data.decode())["params"]["arguments"]
-        return rows, args
-
-    def test_mcp_cache_off_env_reaches_tool_arguments(self):
-        rows, args = self._mcp_lookup({"GUIJU_CURRENCY_CACHE_OFF": "1"})
-        self.assertEqual(args.get("cache"), "off")
-        self.assertEqual(len(rows), 1)
-
-    def test_mcp_explicit_cache_arg_outranks_env(self):
-        requests = []
-
-        def urlopen(req, timeout=None):
-            requests.append(req)
-            body = json.loads(req.data.decode())
-            if body.get("method") == "initialize":
-                return _Resp(json.dumps(_init_ok()).encode())
-            if body.get("method") == "tools/call":
-                return _Resp(json.dumps(_call_result()).encode())
-            return _Resp(b"")
-
-        with mock.patch.dict(currency_pkg.os.environ, {"GUIJU_CURRENCY_CACHE_OFF": "1"}), \
-                mock.patch.object(currency_pkg.urllib.request, "urlopen", urlopen):
-            McpCurrency("https://mcp.example/mcp").lookup(CODE, cache="read")
-        args = json.loads(requests[-1].data.decode())["params"]["arguments"]
-        self.assertEqual(args.get("cache"), "read")
 
 
 # ---------- L2c：memo 命中原样重放五元组，不重查 ----------

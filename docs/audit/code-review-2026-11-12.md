@@ -112,7 +112,9 @@ agent 按"歧义交人"处理白耗一轮。
 > 已裁决（2026-11-12）：fallback 主源空不查备源——读 Go spec-currency internal/adapter/fallback.go 确认
 >       「主源成功（哪怕 0 命中）即返回，不拿备用源覆盖；仅主源报错才降级」与本实现完全一致，
 >       属有意设计，钉住不改。至此 owner 项清零。
-> 已澄清：spec-currency 是 guiju 的时效上游（which/cite 数据源），未被淘汰、不可删。
+**spec-currency 已于 2026-11-13 全面退役**（owner 授权）：hk guiju-mcp.service 实跑 GUIJU_CURRENCY=native
+（v1.1.0），NAS 侧进程/端口/引用已清零，Go 仓已推 GitHub omnisurge/spec-currency（archive-2026-11-13 tag，
+仓已归档 isArchived）并删本地源码。cmd:/mcp: 覆盖路径与 CmdCurrency/McpCurrency 类同步移除中。
 > 已知取舍：旧库裸 untitled__sha.pdf 不可幂等命中会重下一次；shzjw rec 无 id → 裸 untitled 保留。
 
 

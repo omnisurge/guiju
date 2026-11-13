@@ -175,7 +175,7 @@ def _pick_current_version(
       2024-07-11（局部修订）、2019-05-30（发布）、2014、2006
     正文编号分别解析为 GB/T 50378-2019 / 2019 / 2014 / 无编号。
     正确做法：先由时效服务确定**现行编号**，再在同一编号的多条公告里取**最新那条**
-    （局部修订公告比原发布公告新，正文也更全）。这就是 spec-currency 存在的理由。
+    （局部修订公告比原发布公告新，正文也更全）。这就是时效服务（native 路由，旧 spec-currency 已并入）存在的理由。
     """
     from ..domain.codes import classify, normalize_key
     from ..sources import registry
@@ -334,7 +334,7 @@ def _by_code(
     except SourceUnreachable as exc:
         raise SourceUnreachable(
             f"编号 {ref} 的权威名称取不到：{exc}",
-            hint="检查 GUIJU_CURRENCY_URL / NAS 是否可达；或加 --offline 后改用 guiju search 按名称查",
+            hint="检查时效服务是否可达（GUIJU_CURRENCY 应为 native）；或加 --offline 后改用 guiju search 按名称查",
         ) from None
     best_record = _pick_record(records, key)
     if best_record is None or not best_record.name:

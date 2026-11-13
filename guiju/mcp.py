@@ -1,7 +1,7 @@
 """guiju MCP 服务面：query / verify / batch / announcement 的纯标准库 JSON-RPC。
 
 默认 stdio；--http 时提供 POST /mcp。业务后端只依赖 Currency.lookup，
-不在这里复制适配器、正文下载或旧 spec-currency 逻辑。
+不在这里复制适配器、正文下载或时效路由逻辑（旧 spec-currency 已退役）。
 announcement 只回公告元数据（编号/名称/可得性/附件链接）；会抓公告页解析附件，但不下载正文、不写盘。
 """
 

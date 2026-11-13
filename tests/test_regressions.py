@@ -1,10 +1,8 @@
-"""高危 bug 的定向回归 —— 覆盖退出码、分类器之外的崩溃点与 MCP 处理。"""
+"""高危 bug 的定向回归 —— 覆盖退出码、分类器之外的崩溃点。"""
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from guiju.domain.codes import classify
 from guiju.domain.search import _year_of
@@ -85,61 +83,6 @@ class PersistCodesTest(unittest.TestCase):
         roles = {r["code_key"]: r["role"] for r in self.store.mentions_for(1)}
         self.assertEqual(roles["GB/T50362-2005"], "superseded_ref")
         self.assertEqual(roles["GB/T50362-2022"], "primary")
-
-
-class McpCurrencyTest(unittest.TestCase):
-    """JSON-RPC {"error":...} 曾静默变 []（→31 没收录），掩盖 20 不可达。"""
-
-    def _fake_urlopen(self, responses):
-        class _Resp:
-            def __init__(self, body, headers=None):
-                self._body = body
-                self.headers = headers or {}
-            def read(self):
-                return self._body
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                return False
-        it = iter(responses)
-        return lambda req, timeout=None: _Resp(next(it))
-
-    def test_rpc_error_is_unreachable_not_empty(self):
-        from guiju.currency import McpCurrency
-
-        err_body = json.dumps(
-            {"jsonrpc": "2.0", "id": 1, "error": {"code": -32603, "message": "backend down"}}
-        ).encode()
-        cur = McpCurrency("http://example/mcp")
-        with patch("urllib.request.urlopen", self._fake_urlopen([err_body])), self.assertRaises(SourceUnreachable):
-            cur.lookup("GB 50016-2022")
-
-    def test_bearer_token_sent(self):
-        from guiju.currency import McpCurrency
-
-        seen = []
-
-        class _Resp:
-            @property
-            def headers(self):
-                return {}
-
-            def read(self):
-                return b'{"jsonrpc":"2.0","id":1,"result":{}}'
-            def __enter__(self):
-                return self
-            def __exit__(self, *a):
-                return False
-
-        def capture(req, timeout=None):
-            seen.append(req.headers.get("Authorization"))
-            return _Resp()
-
-        cur = McpCurrency("http://example/mcp", token="t123")
-        with patch("urllib.request.urlopen", capture):
-            cur.lookup("GB 50016-2022")
-        self.assertTrue(all(h == "Bearer t123" for h in seen))
-        self.assertTrue(seen)
 
 
 if __name__ == "__main__":

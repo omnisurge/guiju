@@ -25,7 +25,7 @@
    · 返回 currency[{code,status,name}] + announcement{id,...}
    · status: current/superseded/upcoming/withdrawn/unknown，unknown ≠ 现行
    · currency_from_cache=true 表示时效服务不可达、用的是本地缓存：结论可用但可能已过时
-   · currency_endpoint 告诉你实际用的是哪个端点（URL / 二进制路径 / 不可用原因）：配置没生效会在这里露出来
+   · currency_endpoint 告诉你实际用的是哪个端点（native / 不可用原因）：配置没生效会在这里露出来
 要正文文件吗？             → guiju pull <编号|规范名|公告ID|URL> --json
    · 按名称命中多条时：同名多版本会按时效自动定版（如《绿色建筑评价标准》4 条公告 → 取现行的最新那条），
      结果里 versions 列出全部版本与选中项；只有定不出唯一现行版才返回 32 让你叫人
@@ -75,7 +75,7 @@
 
 | 码 | 含义 | 你做什么 |
 |---|---|---|
-| `20` + 错误里带"时效服务" | **时效服务**不可达（目录本身没问题） | **不要** `sync`。改走名称路径：`guiju search <名称>` → `guiju pull <名称>`；或请用户检查 `GUIJU_CURRENCY_URL` |
+| `20` + 错误里带"时效服务" | **时效服务**不可达（目录本身没问题） | **不要** `sync`。改走名称路径：`guiju search <名称>` → `guiju pull <名称>`；若设过 `GUIJU_CURRENCY`，请检查它只取 native 或 off（旧 cmd:/mcp: 已随 spec-currency 退役） |
 | `20` + 错误里带 URL/HTTP | 政府站点不可达 | 退避后重试一次 |
 | `31` | 服务是通的，但确实没有这个编号 / 名称检索无命中 | 先 `sync`；仍无则说明没有公开正文公告，别反复重试 |
 | `34` | 编号前缀不在原生时效路由覆盖内 | 不 `sync`；换名称路径 `search`/`pull`（编号体系本身就没接进来） |
@@ -124,7 +124,7 @@
 - `code` 为 `null`（`pull` 仍可下载，按名称命名文件）
 - `cite` 会失败（31）—— 这是正确的，不要编一个编号出来
 
-**现行性以 `spec-currency` 的权威结论为准**（`which`/`cite` 自带），不要据年份或页面上"修改为"字样自行判断。
+**现行性以时效服务（native 路由）的权威结论为准**（`which`/`cite` 自带），不要据年份或页面上"修改为"字样自行判断。
 同一公告里出现新旧两个编号是常态（`JGJ 147-2016` 与 `JGJ 147-2004`）。
 JSON 的 `codes[].role` 会告诉你身份：
 

@@ -38,7 +38,7 @@
 
 ```bash
 python3 -m unittest tests.test_currency_golden tests.test_currency_csres tests.test_currency_ccsn tests.test_currency_stdsamr tests.test_currency_jtst tests.test_currency_dbba
-python3 -m unittest tests.test_shzjw_core tests.test_shzjw tests.test_currency_shzjw tests.test_m4_currency_diff
+python3 -m unittest tests.test_shzjw_core tests.test_shzjw tests.test_currency_shzjw
 python3 -m unittest tests.test_currency_registry tests.test_currency_fallback tests.test_currency_native tests.test_currency_disk_cache tests.test_currency_native_integration tests.test_currency_httpx tests.test_currency_boundary
 ```
 

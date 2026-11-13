@@ -1,7 +1,7 @@
 """原生时效编排：路由/准入 → TTL 缓存 → 上游 → 明示的有界陈旧缓存。
 
 不装配具体存储，不自行落盘；DiskCurrencyCache 由调用者从 store 层显式注入。
-本模块不是 CLI 默认实现；M4 逐字段 diff 通过前不得替换 cmd / mcp / off。
+本模块就是 CLI 默认实现（GUIJU_CURRENCY=native 或不设）；cmd/mcp 覆盖已随 spec-currency 退役删除。
 """
 
 from __future__ import annotations

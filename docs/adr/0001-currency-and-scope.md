@@ -5,7 +5,7 @@
 - 决策人：所有者（明确要求"index 必须要放弃，持续维护不可行"）
 - 影响：`guiju` 的检索路径、`cite`/`pull` 的前置条件、与 `spec-currency` 的产品边界
 - 被取代：第五节「若将来必须统一语言…」与第三节「合产品，不合代码仓」的结论
-  → 见 [ADR 0002](0002-merge-into-one-product.md)（二期，未实施）
+  → 见 [ADR 0002](0002-merge-into-one-product.md)（已完成：2026-11-13 spec-currency 归档，guiju 内 native 为唯一时效上游；本文中 cmd/mcp 三适配器描述为历史记录）
 
 ---
 

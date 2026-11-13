@@ -82,10 +82,10 @@ guiju cite GB55037-2022 5.2.1    # → 《建筑防火通用规范》GB 55037-20
 
 ### 时效与配置（0.12–0.14）
 
-18. **`GUIJU_CURRENCY` 显式取值要么照办要么报错**：`cmd` 无二进制 → `cmd(缺失)` + exit 20；未知值 → `xyz(未知)`；`mcp` 尊重 `GUIJU_CURRENCY_URL`（内联 URL 优先）。
+18. **`GUIJU_CURRENCY` 只认 `native[:off|dir]` 与 `off`**：任何其他值（含旧 `cmd:`/`mcp:`）→ `kind(未知)` + exit 20。`GUIJU_CURRENCY_URL` / `GUIJU_CURRENCY_TOKEN` 已成死配置（spec-currency 退役）。
 19. **`currency_endpoint`** 在 `status`/`which` 里告诉你实际用了哪个端点——配置没生效会在这里露出来。
 20. **缓存兜底是明示的**：`currency_from_cache=true` + `currency_cache_age_days`，stderr 也会提示。
-21. **`cmd` 适配器已实测**：`spec-currency` 源码在 `~/Development/spec-currency`（Go 1.26），`go build -o /tmp/spec-currency ./cmd/spec-currency` 即可；结果与 mcp 逐字段一致。**按所有者决定不装 PATH**。
+21. **cmd/mcp 适配器已退役**（2026-11-13）：`spec-currency` 仓库与部署归档，native 成为唯一上游；历史口径见 docs/audit/m4-currency-diff-2026-11-01.md。
 
 ## 四、下一步（ADR 0002）
 
@@ -128,7 +128,7 @@ JTG             → Fallback( csres → jtst )
 
 - `csres` 是主源：`GET http://www.csres.com/s.jsp?keyword=<号>`，**GBK 编码 HTML**，首次 TTFB 1–8s（靠重试+备源）。
 - 元数据适配器**禁止**调用 `compliance.get`、**禁止**落文件（ADR 0002 决策 5，要用测试钉住）——`csres.com` 不是 `*.gov.cn`。
-- 之后：期 3 `guiju mcp` 服务面 → 期 4 归档 spec-currency。
+- 之后：期 3 `guiju mcp` 服务面（已上线）→ 期 4 归档 spec-currency（已于 2026-11-13 完成：适配器与 cmd:/mcp: 覆盖删除，native 为唯一上游）。
 - **不要修改或构建 `spec-currency` 仓**：M1/M2 只读参考其源码与 golden，M3 未操作旧仓，离线回归现在不依赖旧仓；也不要往 guiju 里再塞一份地标解析器（会产生双份实现）。
 
 **已否决、不要再提**：特种作业/特种设备证书查询产品。三个官方站（应急部 `cx.mem.gov.cn` 瑞数反爬 412、住建部 `zlaq` 接口 400+验证码、市场监管总局 `cnse` 滑块+查询码）全部挡住自动化，且身份证号属敏感个人信息（PIPL 28–29）——已与所有者确认放弃。
@@ -148,7 +148,7 @@ JTG             → Fallback( csres → jtst )
 |---|---|
 | 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（v1.0.0） |
 | 数据 | `~/.guiju/catalog.db`（3254 条公告）+ `library/`（内容寻址 PDF） |
-| 时效服务 | NAS `http://100.66.1.x:18083/mcp`（spec-currency，**健康**；NAS 只是有 ADR0048 的**变更冻结**，不是故障） |
-| spec-currency 源码 | `~/Development/spec-currency`（Go 1.26），**不装 PATH**；按需 build 到 `/tmp` |
+| 时效服务 | native 路由直连各部委站（GUIJU_CURRENCY 默认即 native；旧 NAS `…:18083/mcp` 的 spec-currency 已退役，2026-11-13） |
+| spec-currency 源码 | `~/Development/spec-currency`（Go 1.26），**已退役归档**；guiju 内不再消费 |
 | 合并后部署 | 香港服务器 `hk`（38.76.165.16），供外网使用；本机不再常驻服务 |
 | GitHub | 私有仓 `omnisurge/guiju`，本地 CI 权威（托管 runner 解析不了 mohurd 域名） |

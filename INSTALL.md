@@ -56,7 +56,8 @@
 
     GUIJU_CURRENCY=native
     GUIJU_CURRENCY=off
-    GUIJU_CURRENCY=mcp:http://127.0.0.1:18083/mcp
+
+cmd:/mcp: 覆盖已随 spec-currency 退役删除（2026-11-13），设置非 native/off 值会报 exit 20。
 
 ## 5. MCP 服务自部署
 
