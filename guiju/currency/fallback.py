@@ -1,4 +1,11 @@
-"""主源报错才启用备源；主源成功空结果仍是最终结论。"""
+"""主源报错才启用备源；主源成功空结果仍是最终结论。
+
+裁决（2026-11-14，所有者拍板）：主源应答成功但 0 条 = 该源的权威结论，
+不转备源。原因：当前不存在权威备用时效源，备源只兜底"主源故障"
+（SourceUnreachable/NeedsHuman），不兜底"主源漏收"；让备源对空结果越权
+补判反而可能引入形似错配的假阳性。将来若接入权威备源，再重评是否对
+主源空结果也走备源链。
+"""
 
 from __future__ import annotations
 
@@ -39,6 +46,7 @@ class FallbackCurrency:
             reasons = [f"{self.primary.name}: {exc}"]
         else:
             self._check()
+            # 主源成功应答（含 0 条）= 权威终局，不转备源。见模块 docstring。
             return rows
         # ComplianceDenied / QueryCancelled / KeyboardInterrupt 不在可恢复异常白名单。
         for backup in self.backups:

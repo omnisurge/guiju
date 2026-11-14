@@ -146,7 +146,7 @@ agent 按"歧义交人"处理白耗一轮。
 - native.py:_guard 顺序 — 先 admit 后 cancelled，统计上多记一条未查
 - MCP 优化 — 每请求新建 Store() 跑 DDL + 锁竞争，建议共享只读连接；_announcement 加 read_only 路径
 - jtst.py — 交通部源单页无翻页；_TreeParser 对未闭合标签隐式推断，改版易静默解析空（建议空结果记 warning）
-- fallback.py — 主源空结果不查备源（设计如此，但与 Go 版语义需 owner 确认一致）
+- ~~fallback.py — 主源空结果不查备源~~ ✅ 已裁决（2026-11-14 所有者）：维持「主源空=终局」。原因：当前无权威备源，备源仅兜底主源故障不兜底漏收；空结果转备源会引入形似错配假阳性。将来接入权威备源再重评。
 - httpx.py — _FORM_HOSTS 白名单硬编码两家，加源需改代码（设计约束）
 - fallback.py 待办 — _guard 拆 admit/cancelled；CurrencyCache 契约 memo 键统一走 normalize
 
