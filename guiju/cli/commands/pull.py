@@ -12,8 +12,8 @@ from collections import Counter
 from pathlib import Path
 
 from ... import currency as currency_mod
+from ...domain import announcement, availability, naming
 from ...domain import attachment as att_domain
-from ...domain import availability, naming
 from ...domain.codes import Confidence, classify
 from ...errors import (
     EXIT_COMPLIANCE,
@@ -141,6 +141,23 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     ann = target["ann"]
     ann_id = int(ann["id"])
 
+    # 多名称公告（P1-3）：doc_name 只是标题里第一个名称，不能代表整条公告。
+    # 按名称 pull 时用用户要的那一本；按编号/ID/URL pull 时没有这个信息，
+    # 标题多本就只能 33 交人（见 pick），连幂等快路径都不能用 ——
+    # 否则会把"先落库那本"的旧文件当成"已有"返回 10。
+    names = announcement.names_of(ann["title"], ann["doc_name"])
+    display_name = ann["doc_name"] or ""
+    ref_name = ""
+    book_known = len(names) <= 1
+    if target.get("via") in ("name", "name_current_version"):
+        chosen, _matched = announcement.match_name(names, ref)
+        if chosen:
+            display_name = chosen
+            ref_name = chosen
+            book_known = True
+        else:
+            ref_name = ref
+
     # 可得性事实先算出来：本命令任何失败都要带上它，agent 才能区分"历史如此"与"出问题了"
     window = availability.state(ann["published_on"])
     avail_note = availability.note(window, ann["published_on"])
@@ -153,8 +170,8 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     status = target.get("status") or ""
 
     # 幂等快路径：下载目录已有同名文件且指纹一致时，连详情页都不必抓（批量复跑的关键）
-    if not args.force:
-        cached = find_cached(out_dir, code_key, ann["doc_name"] or "", readable=args.readable, ann_id=ann_id)
+    if not args.force and book_known:
+        cached = find_cached(out_dir, code_key, display_name, readable=args.readable, ann_id=ann_id)
         if cached:
             path, digest = cached
             return {
@@ -164,8 +181,9 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
             }
 
     html, text = source.detail(ann["url"])
-    codes = classify(text, ann["doc_name"] or "")
-    persist_codes(store, ann_id, codes, ann["doc_name"] or "")
+    # 名称证据用"用户要的那一本"：doc_name（第一本）会把弱证据指向另一本书的编号
+    codes = classify(text, display_name)
+    persist_codes(store, ann_id, codes, display_name)
     store.commit()
 
     code_key = code_key or (normalize_key(codes.primary_key) if codes.primary_key else None)
@@ -181,8 +199,8 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     if status in ("superseded", "withdrawn"):
         render.warn(f"该版本状态为 {status}；现行版用 guiju which {code_key} 查")
 
-    if not args.force:
-        cached = find_cached(out_dir, code_key, ann["doc_name"] or "", readable=args.readable, ann_id=ann_id)
+    if not args.force and book_known:
+        cached = find_cached(out_dir, code_key, display_name, readable=args.readable, ann_id=ann_id)
         if cached:
             path, digest = cached
             return {
@@ -191,12 +209,19 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
             }
 
     atts = source.attachments(html)
-    picked = att_domain.pick(atts, ann["doc_name"] or "", announcement_title=ann["title"])
+    picked = att_domain.pick(
+        atts, names, ref_name=ref_name, announcement_title=ann["title"]
+    )
     if not picked.ok:
         if picked.verdict is att_domain.Verdict.AMBIGUOUS:
-            raise AmbiguousAttachment(
-                "公告页有多个附件，且名称无法锁定唯一正文", hint=avail_note, **picked.as_payload()
-            )
+            message = "公告页有多个附件，且名称无法锁定唯一正文"
+            if len(names) > 1:
+                message = (
+                    f"公告标题含 {len(names)} 本规范，按编号/ID 无法唯一映射到一本，需要人指定"
+                    if not ref_name
+                    else f"公告标题含 {len(names)} 本规范，名称对不上其中任何一本，需要人指定"
+                )
+            raise AmbiguousAttachment(message, hint=avail_note, **picked.as_payload())
         if picked.verdict is att_domain.Verdict.NOT_APPLICABLE:
             raise NoAttachment(
                 "该公告不是官方中文正文（英文版/译本），不做下载",
@@ -229,9 +254,9 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
 
     digest = sha256_file(part)
     dest = out_dir / (
-        naming.readable_name(code_key, ann["doc_name"] or "", ann_id)
+        naming.readable_name(code_key, display_name, ann_id)
         if args.readable
-        else naming.library_name(code_key, ann["doc_name"] or "", digest, ann_id)
+        else naming.library_name(code_key, display_name, digest, ann_id)
     )
     dest.parent.mkdir(parents=True, exist_ok=True)
     os.replace(part, dest)
@@ -241,7 +266,7 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     return {
         "ok": True,
         "code": code_display,
-        "name": ann["doc_name"],
+        "name": display_name,
         "path": str(dest),
         "sha256": digest,
         "bytes": nbytes,

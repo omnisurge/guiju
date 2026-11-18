@@ -18,6 +18,7 @@ from guiju.cli import lookup
 from guiju.cli.commands import cite, pull
 from guiju.cli.lookup import local_records, match_currency, resolve
 from guiju.currency import Record
+from guiju.domain.currency_check import CurrencyCheck, CurrencyState
 from guiju.errors import SourceUnreachable
 from guiju.store.sqlite import Store
 
@@ -225,7 +226,7 @@ class CiteRefAsCodeFallbackTest(unittest.TestCase):
         src = mock.Mock()
         src.detail.return_value = ("", "无编号正文")
         with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=("unknown", "", [])), \
+             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
              mock.patch("guiju.sources.registry", return_value={"mohurd": src}):
             rc = cite.run(store, args)
         self.assertEqual(rc, 0)
@@ -236,7 +237,7 @@ class CiteRefAsCodeFallbackTest(unittest.TestCase):
                                   offline=True, format="json")
         from guiju.errors import NotIndexed
         with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=("unknown", "", [])), \
+             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
              self.assertRaises(NotIndexed):
             cite.run(store, args)
 
@@ -265,7 +266,7 @@ class CiteDbFallbackConfidenceTest(unittest.TestCase):
                                   offline=True, format="json")
         emitted = {}
         with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=("unknown", "", [])), \
+             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
              mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted.update(p)):
             cite.run(store, args)
         self.assertTrue(emitted["warnings"], "非 parsed 兜底必须产生 warning")
@@ -275,7 +276,7 @@ class CiteDbFallbackConfidenceTest(unittest.TestCase):
         args.offline = False  # strict+offline 本身是 BadUsage，先解除
         from guiju.errors import AmbiguousCode
         with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=("unknown", "", [])), \
+             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
              mock.patch.object(cite.render, "emit"), \
              self.assertRaises(AmbiguousCode):
             cite.run(store, args)
@@ -286,7 +287,7 @@ class CiteDbFallbackConfidenceTest(unittest.TestCase):
                                   offline=True, format="json")
         emitted = {}
         with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=("unknown", "", [])), \
+             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
              mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted.update(p)):
             cite.run(store, args)
         self.assertEqual(emitted["confidence"], "parsed")

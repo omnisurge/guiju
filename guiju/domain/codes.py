@@ -18,7 +18,9 @@ from .._compat import StrEnum
 #: 长前缀必须排在短前缀前面，否则 GB/T 会被 GB 抢先匹配
 _CODE_RE = re.compile(
     r"(GB/T|GB|JGJ/T|JGJ|CJJ/T|CJJ|CJ/T|DG/TJ|DGJ|DB\d{2}/T|T/CECS)"
-    r"\s*(\d{1,6})\s*[-—–－]\s*(\d{4})"   # 1位序号也存在（实测 CJJ 1-1990），别为"多半两位"漏判
+    # 序号段允许再带一段年份：DG/TJ08-2007-2026 这类「年版」编号，单位号是 08-2007。
+    # 1 位序号也存在（实测 CJJ 1-1990），别为"多半两位"漏判。
+    r"\s*(\d{1,6}(?:-\d{4})?)\s*[-—–－]\s*(\d{4})"
 )
 _SENTENCE = re.compile(r"[。；;\n]+")
 #: 逗号也是子句边界：「批准发布X，原Y同时废止」若不按子句切，"同时废止"会溅到 X 上
@@ -34,7 +36,7 @@ _REPLACE_WORDS = ("代替", "替代")
 #: 「这个编号已被替代」的措辞
 _SUPERSEDE_WORDS = _REPLACE_WORDS + _VOID_WORDS
 #: 「这个编号是本次发布的」的措辞
-_PUBLISH_WORDS = ("发布", "批准发布", "印发", "施行", "实施")
+_PUBLISH_WORDS = ("发布", "批准发布", "批准", "印发", "施行", "实施")
 
 _EVIDENCE_MAX = 100
 
@@ -147,13 +149,17 @@ def classify(text: str, doc_name: str | None = None) -> Codes:
     if not seen:
         return Codes()
 
-    primary = _choose_primary(tuple(seen.values()))
+    primary, decisive = _choose_primary(tuple(seen.values()))
     mentions = tuple(
-        sorted(_demote_older(primary, seen.values()), key=lambda m: (m.code_key, m.role.value))
+        sorted(
+            # 只有决定性证据才允许把同族旧版降成 superseded_ref；ambiguous 兜底
+            # （含"同一本被写了两遍改号"）不做降级，免得把猜伪装成判。
+            _demote_older(primary if decisive else None, seen.values()),
+            key=lambda m: (m.code_key, m.role.value),
+        )
     )
     if primary is None:
         return Codes(mentions=mentions, confidence=Confidence.AMBIGUOUS)
-    decisive = primary.role in (Role.TARGET_OF_REVISION, Role.PRIMARY)
     return Codes(
         mentions=mentions,
         primary_key=primary.code_key,
@@ -182,6 +188,10 @@ def _role_for(sentence: str, pos: int, doc_name: str | None) -> Role:
 
     if any(w in head for w in _REVISION_WORDS):
         return Role.TARGET_OF_REVISION
+    # 「废止GB 50016-2014」「废止《X》GB …」：动词在编号之前（编号是宾语）→ 旧版。
+    # 「X 废止」是相反语序，由下面的 tail 规则处理；这里补真实公告里的另一种写法。
+    if re.search(r"(?:废止|作废|取消)\s*(?:《[^》]*》)?\s*$", head):
+        return Role.SUPERSEDED_REF
     # 「…代替/替代 X」：X 是被替代的宾语 → 旧版（「本标准代替Y」的 Y 也在这里判旧）
     # 允许宾语串（「代替Y1、Y2」的 Y2），但不允许纯数字年份（「代替Y（1999年版）」的 X 不算）
     if re.search(r"(?:代替|替代)(?:[^0-9A-Z]|\s*[A-Z]+/?[A-Z]*\s*\d{2,6}\s*[-—–－]\s*\d{4})*$", head):
@@ -254,28 +264,57 @@ def _norm_name(s: str) -> str:
     return re.sub(r"[《》〈〉\s（）()【】]", "", s or "")
 
 
-def _choose_primary(mentions: tuple[Mention, ...]) -> Mention | None:
+def _choose_primary(mentions: tuple[Mention, ...]) -> tuple[Mention | None, bool]:
+    """挑 primary，并回答「这是不是决定性证据」。
+
+    target_of_revision 与 primary 同规则（P1-9 / ADR 0004 D4）：多个 target、
+    或 target 与另一本规范的 primary 并存时，判不出「本次公告改的是哪一本」，
+    返回 (None, False) 交 32；只有唯一 target（没有跨主体 primary 竞争）才算 parsed。
+    """
     targets = [m for m in mentions if m.role is Role.TARGET_OF_REVISION]
-    if targets:
-        return max(targets, key=lambda m: m.code_key)
     primaries = [m for m in mentions if m.role is Role.PRIMARY]
+    if targets:
+        if len(targets) > 1:
+            if len({_code_subject(m.code_key) for m in targets}) > 1:
+                # 句式 A：两本标准各改各的号 —— 不许按 code_key 大小挑一个
+                return None, False
+            # 同一本被写了两遍改号（异常排版）：给年份最新的一条兜底，
+            # 但「多个 target」本身不是决定性证据，confidence 只能是 ambiguous。
+            return max(targets, key=lambda m: _year(m.code_key)), False
+        target = targets[0]
+        if any(_code_subject(p.code_key) != _code_subject(target.code_key) for p in primaries):
+            # 句式 B：公告发布的是另一本，target 只是顺带提及的修订 —— 判不出主体
+            return None, False
+        return target, True
     if len(primaries) == 1:
-        return primaries[0]
+        return primaries[0], True
     if not primaries:
         # 没有决定性证据时的兜底：alive 里若混着 weak_primary 也一并候选，
         # 但兜底 primary 的 confidence 仍是 ambiguous（classify 的 decisive 判定把关）。
         alive = [m for m in mentions if m.role is not Role.SUPERSEDED_REF]
         if len(alive) == 1:
-            return alive[0]
+            return alive[0], False
         if not alive:
             # 全是旧版时没有资格猜 primary：返回 None，交 ambiguous 给人
-            return None
-        return max(alive, key=lambda m: _year(m.code_key))
+            return None, False
+        return max(alive, key=lambda m: _year(m.code_key)), False
     if len({_code_stem(m.code_key) for m in primaries}) > 1:
         # 多个 primary 却分属不同规范族：泛动词同时喂饱了不止一个编号，
         # 谁才是本次发布判不出来 —— 返回 None，交 ambiguous 给人（不许按年份蒙）。
-        return None
-    return max(primaries, key=lambda m: _year(m.code_key))
+        return None, False
+    return max(primaries, key=lambda m: _year(m.code_key)), True
+
+
+def _code_subject(code_key: str) -> str:
+    """同一本规范的主体号：去掉末尾年份与 /T 推荐标记。
+
+    分族检查要能同时区分两件事：
+      · JGJ450-2018 与 JGJ/T450-2018 是同一本规范的两个编号写法（局部修订改写编号）；
+      · GB55037 与 GB/T50378 是两本书。
+    DG/TJ08-2007-2026 这类「年版」编号的末尾年份是版次，主体是 DG/TJ08-2007。
+    """
+    base = re.sub(r"-\d{4}$", "", code_key or "")
+    return base.replace("/T", "")
 
 
 def _year(code_key: str) -> str:

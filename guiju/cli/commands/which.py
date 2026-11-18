@@ -12,10 +12,45 @@ from ... import currency as currency_mod
 from ... import localstatus
 from ...domain.availability import note as availability_note
 from ...domain.availability import state
+from ...domain.currency_check import completeness_of
 from ...errors import AmbiguousTarget, NotIndexed, SourceUnreachable
 from ...store.sqlite import Store
 from .. import render
 from ..lookup import ref_is_code, resolve
+
+
+class _ReplayCurrency:
+    """同一编号只问一次时效服务 —— 第二次查询会把 from_cache 谎报成"服务不可达"。
+
+    which 自己先查一次；resolve 的 _by_code 在没有本地编号时会再查一次，第二次落到
+    native 的 TTL 缓存上，from_cache 变 True、--json 就报 currency_from_cache=true。
+    这里按规范化编号记住第一次的结果（异常也记住），重复查询不再打网，也不覆盖
+    from_cache / stale / cache_age_days（它们留在内层对象上，只由真实查询改写）。
+    """
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self._memo: dict[str, object] = {}
+
+    def __getattr__(self, name):  # name / from_cache / stale / cache_age_days / upstream_error
+        return getattr(self.inner, name)
+
+    def lookup(self, code: str) -> list:
+        from ...domain.codes import normalize_key
+
+        key = normalize_key(code or "")
+        if key in self._memo:
+            got = self._memo[key]
+            if isinstance(got, Exception):
+                raise got
+            return list(got)  # type: ignore[arg-type]
+        try:
+            records = self.inner.lookup(code)
+        except Exception as exc:
+            self._memo[key] = exc
+            raise
+        self._memo[key] = records
+        return records
 
 
 def _currency_inner(cur):
@@ -44,11 +79,12 @@ def _currency_upstream_error(cur) -> str | None:
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
-    cur = currency_mod.CachedCurrency(store=store)
+    base_currency = currency_mod.CachedCurrency(store=store)
+    cur = _ReplayCurrency(base_currency)
     # 名称（CJK）输入时效服务必然"没收录"：只有编号形态才问时效
     records = cur.lookup(args.ref) if (not args.offline and ref_is_code(args.ref)) else []
     source_name = cur.name
-    endpoint = currency_mod.endpoint_of(getattr(cur, "inner", cur))
+    endpoint = currency_mod.endpoint_of(_currency_inner(base_currency))
     if not records and not args.offline and localstatus.is_local_code(args.ref):
         # 地方标准：源站自己就有现行/废止结论，不必依赖外部时效服务
         try:
@@ -72,6 +108,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         error = exc
 
     ann = target["ann"] if target else None
+    # W3/P1-4：complete=False 表示这次答案没取全（空结果可能是漏记录，不是"没有"）
+    currency_complete, incomplete_reason = completeness_of(cur)
     payload = {
         "ok": True,
         "query": args.ref,
@@ -81,6 +119,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "currency_cache_age_days": getattr(cur, "cache_age_days", None),
         "currency_stale": _currency_stale(cur),
         "currency_upstream_error": _currency_upstream_error(cur),
+        "currency_complete": currency_complete,
+        "currency_incomplete_reason": incomplete_reason or None,
         "currency": [r.as_payload() for r in records],
         "resolved": bool(target),
         "announcement": None
@@ -121,6 +161,16 @@ def run(store: Store, args: argparse.Namespace) -> int:
             f"时效服务不可达，使用本地缓存（{payload['currency_cache_age_days']} 天前）："
             "现行性可能已变化"
         )
+
+    if payload["currency_complete"] is False:
+        # 不完整 ≠ 不可达：服务是通的，但这次没取全（翻页截断/无总页数证据/明文回退）。
+        # 与 stale 分开说，agent 才知道该重查还是该复核。
+        reason = (
+            f"；原因：{payload['currency_incomplete_reason']}"
+            if payload["currency_incomplete_reason"]
+            else ""
+        )
+        render.note("时效结果不完整（未取全、未写缓存）：现行性可能漏判，重要结论建议复核" + reason)
 
     if not render.is_json():
         status_cn = {

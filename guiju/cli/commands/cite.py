@@ -6,7 +6,15 @@ import argparse
 
 from ... import localstatus
 from ...domain.cite import build_citation, normalize_clause
-from ...errors import AmbiguousCode, BadUsage, GuijuError, NotIndexed, SourceUnreachable
+from ...domain.currency_check import CurrencyCheck, CurrencyState, completeness_of
+from ...errors import (
+    AmbiguousCode,
+    BadUsage,
+    GuijuError,
+    NoCurrencyRecord,
+    NotIndexed,
+    SourceUnreachable,
+)
 from ...store.sqlite import Store
 from .. import render
 from ..lookup import local_records, match_currency, ref_is_code, resolve, source_of
@@ -85,11 +93,13 @@ def run(store: Store, args: argparse.Namespace) -> int:
             # --strict 不得放行（M6）
             code_conf = primary["confidence"]
 
-    # 编号来源的信任度取最诚实一档：解析结果 > 落库标注 > unknown。
-    # "arg"（ref 兜底）与缺省都归 unknown，不再伪装成 parsed。
-    confidence = target.get("confidence") or (
-        {"arg": "unknown"}.get(code_conf, code_conf) if code_conf else None
-    ) or "unknown"
+    # 编号来源的信任度取最诚实一档：正文/落库证据 > 解析链路的先验值。
+    # P2-11：名称/公告ID/URL 路径的 target.confidence 恒为 "unknown"（那是"没有先验值"），
+    # 不能盖掉 primary mention 的 parsed —— 否则编号明明来自正文解析也报 unknown。
+    if code_conf is not None:
+        confidence = {"arg": "unknown"}.get(code_conf, code_conf)
+    else:
+        confidence = target.get("confidence") or "unknown"
     text, warnings = build_citation(
         ann["doc_name"] or "", code_display, clause, confidence=confidence
     )
@@ -101,21 +111,45 @@ def run(store: Store, args: argparse.Namespace) -> int:
     elif code_conf is not None and code_conf != "parsed" and confidence != "ambiguous":
         warnings.append(f"编号经目录缓存获得、未经正文核实（confidence={code_conf}）")
 
-    # 权威时效校验：宁可多一次查询，也不能引用一个已被替代的版本
-    status, current_hint, records = _check_currency(code_display, offline=args.offline, store=store)
+    # 权威时效校验：宁可多一次查询，也不能引用一个已被替代的版本。
+    # 拿不到结论时按 CurrencyCheck 的 state 分流（ADR 0004 D4）：
+    #   非 strict：照常输出引用串 + warning（status=unknown）；
+    #   strict：不可达 → 20、未覆盖/无记录 → 34、其他 warning 维持 32。
+    check = _check_currency(code_display, offline=args.offline, store=store)
+    status = check.status
+    current_hint = check.current
+    records = list(check.records)
     if status in ("superseded", "withdrawn"):
         warnings.append(
             f"该版本状态为 {status}"
             + (f"，现行版为 {current_hint}" if current_hint else "")
         )
+    check_warning = check.warning_text()
+    if check_warning:
+        warnings.append(check_warning)
 
-    if args.strict and warnings:
-        raise AmbiguousCode(
-            "引用串存在未核实项，--strict 下拒绝输出",
-            hint="人工确认编号后去掉 --strict",
-            warnings=warnings,
-            cite=text,
-        )
+    if args.strict:
+        if check.state is CurrencyState.UNREACHABLE:
+            raise SourceUnreachable(
+                check.message or "时效服务不可达",
+                hint="稍后重试；或加 --offline / 去掉 --strict，接受一份带 warning 的引用串",
+                cite=text,
+                currency_check=check.as_payload(),
+            )
+        if check.state in (CurrencyState.UNSUPPORTED, CurrencyState.NO_RECORD):
+            raise NoCurrencyRecord(
+                check.message or "时效侧没有该编号的记录",
+                hint="时效路由未覆盖该编号体系；去掉 --strict 可输出引用串 + warning，或加 --offline",
+                cite=text,
+                currency_check=check.as_payload(),
+            )
+        if warnings:
+            raise AmbiguousCode(
+                "引用串存在未核实项，--strict 下拒绝输出",
+                hint="人工确认编号后去掉 --strict",
+                warnings=warnings,
+                cite=text,
+            )
 
     payload = {
         "ok": True,
@@ -127,6 +161,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "confidence": confidence,
         "status": status,
         "currency": [r.as_payload() for r in records],
+        "currency_check": check.as_payload(),
         "warnings": warnings,
         "published_on": ann["published_on"],
         "url": ann["url"],
@@ -139,37 +174,84 @@ def run(store: Store, args: argparse.Namespace) -> int:
     return 0
 
 
-def _check_currency(code_display: str | None, *, offline: bool, store=None):
-    """问权威时效服务：这个编号现在是什么状态。拿不到就返回 unknown，不阻断引用。"""
+def _check_currency(code_display: str | None, *, offline: bool, store=None) -> CurrencyCheck:
+    """问权威时效服务：这个编号现在是什么状态。
+
+    返回类型化结果（ADR 0004 D4）：「拿不到结论」也要说清是哪一种 ——
+    不可达（20）、路由未覆盖（34）、没有记录（34）都不能伪装成"已校验为现行"。
+    """
     from ... import currency as currency_mod
     from ...domain.codes import normalize_key
 
-    if offline or not code_display:
-        return "unknown", "", []
-    records = []
-    note = ""
+    if offline:
+        return CurrencyCheck(CurrencyState.OFFLINE)
+    if not code_display:
+        return CurrencyCheck(
+            CurrencyState.NO_RECORD, message="编号未核实：本引用无从做现行性校验"
+        )
+
+    state = CurrencyState.OK
+    records: tuple = ()
+    message = ""
+    complete: bool | None = None
+    incomplete_reason = ""
     try:
-        records = currency_mod.CachedCurrency(store=store).lookup(code_display)
+        port = currency_mod.CachedCurrency(store=store)
+        records = tuple(port.lookup(code_display))
+        # W3/P1-4：没取全的答案不能被当成权威结论（尤其是空结果）
+        complete, incomplete_reason = completeness_of(port)
     except SourceUnreachable:
         # 引用串本身来自本地目录，时效服务挂了只影响"是否现行"，不该整条失败
-        note = "时效服务不可达：本引用未做现行性校验"
-    if not records and not offline and localstatus.is_local_code(code_display):
+        state = CurrencyState.UNREACHABLE
+        message = "时效服务不可达：本引用未做现行性校验"
+    except NoCurrencyRecord:
+        # 34：编号体系不在时效路由覆盖内；地方标准仍可由源站回答（见下）
+        state = CurrencyState.UNSUPPORTED
+        message = f"时效服务未覆盖该编号体系（{code_display}）：本引用未做现行性校验"
+
+    if not records and localstatus.is_local_code(code_display):
         # 地方标准：源站自己有现行/废止分栏，用它兜底。问谁交给
         # lookup.local_records（按 api_mode+find 挑源，不再写死 shzjw，M4）；
         # 前缀闸门 localstatus.is_local_code 仍是唯一地方口径常量。
         try:
-            records = local_records(code_display)
-            note = ""
-        except GuijuError:
-            pass
+            records = tuple(local_records(code_display))
+            state = CurrencyState.OK
+            message = ""
+        except GuijuError as exc:
+            if state is CurrencyState.OK and isinstance(exc, SourceUnreachable):
+                state = CurrencyState.UNREACHABLE
+                message = "时效服务不可达：本引用未做现行性校验"
+
     # mine + current 的挑法与 lookup 共用 match_currency（M13）：mine 按规范化
     # 编号精确匹配；现行版先挑同族（同前缀同基号只差年份），再退服务给的第一个。
     key = normalize_key(code_display)
-    mine, current_rec = match_currency(records, key)
+    mine, current_rec = match_currency(list(records), key)
     if mine is None:
-        return "unknown", note, records
+        # 只有"完整"的空结果/同族结果才能断言"没有这条编号"；不完整时保持 OK，
+        # 由 complete=False 走 warning（strict 32），绝不冒充权威否定（P1-4）。
+        if state is CurrencyState.OK and complete is not False:
+            state = CurrencyState.NO_RECORD
+            message = (
+                f"时效服务没有该编号的记录（{code_display}）：本引用未做现行性校验"
+                if not records
+                else f"时效服务只返回了同族其他版本、没有 {code_display}：本引用未做现行性校验"
+            )
+        return CurrencyCheck(
+            state,
+            message=message,
+            records=records,
+            complete=complete,
+            incomplete_reason=incomplete_reason,
+        )
     current = current_rec.code if current_rec and normalize_key(current_rec.code) != key else ""
-    return mine.status, current, records
+    return CurrencyCheck(
+        CurrencyState.OK,
+        status=mine.status,
+        current=current,
+        records=records,
+        complete=complete,
+        incomplete_reason=incomplete_reason,
+    )
 
 
 def add_parser(sub, parents) -> None:
