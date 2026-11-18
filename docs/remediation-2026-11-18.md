@@ -1,6 +1,6 @@
 # 根源性修复方案（2026-11-18）
 
-- 状态：**提议**；与 ADR 0004 配套，待所有者批准后按 P0/P1 开工
+- 状态：**已批准，A1 已完成（2026-11-18），B1 待开工**；与 ADR 0004 配套
 - 关系：问题清单见 `docs/audit/code-review-2026-11-18.md`；架构决策见 `docs/adr/0004-contract-first-hardening.md`
 - 目标：不是"把 10 条 P1 修一遍"，而是把产生这 10 条的六个根因收口，做到"修一类、不留同类"。
 - 交付：1.1.1（安全热修，不改退出码/DB/工具形状；MCP 路径收紧是安全例外）+ 1.2.0（契约与架构收口）。
@@ -390,21 +390,25 @@ CI 门禁：
 
 ### P0
 
-- [ ] ADR 0004 批准（或按反馈修订）
-- [ ] 建 refactor/root-cause 分支
+- [x] ADR 0004 批准（2026-11-18 所有者按默认批准）
+- [x] 建 A1 分支 fix/a1-safety-20261118（P2 前再建 refactor/root-cause）
 - [ ] 补 characterization 测试（同步/下载/附件/cite/MCP）
-- [ ] 记录当前 3256 条目录 baseline
-- [ ] 建立缺陷→工作流→阶段的跟踪表（本文件第七节）
+- [x] 记录当前 3256 条目录 baseline（评审报告 §0）
+- [x] 建立缺陷→工作流→阶段的跟踪表（本文件第七节）
 
 ### A1（1.1.1）
 
-- [ ] P1-2 下载长度校验
-- [ ] P1-5 currency 限速锁
-- [ ] P1-8 batch 40 停止
-- [ ] P1-10 MCP 路径白名单（systemd 降权放 B4）
-- [ ] P2-2 autosync 冷却 suppress
-- [ ] P2-3 损坏库 JSON
-- [ ] P2-4 stdio 兜底
+- [x] P1-2 下载长度校验
+- [x] P1-5 currency 限速锁
+- [x] P1-8 batch 40 停止
+- [x] P1-10 MCP 路径白名单（systemd 降权放 B4）
+- [x] P2-2 autosync 冷却 suppress
+- [x] P2-3 损坏库 JSON
+- [x] P2-4 stdio 兜底
+
+A1 实施记录（2026-11-18）：分支 fix/a1-safety-20261118；测试 601→617（新增 16 个 A1 契约测试）；
+scripts/ci.sh 与 Python 3.10 全量单测均通过；未改退出码/DB schema/MCP 工具形状；
+systemd 降权按计划留到 B4。
 
 ### B1（1.2.0-alpha）
 
