@@ -89,17 +89,22 @@ class NativeDiskIntegrationTest(unittest.TestCase):
         self.assertEqual(paths[0].read_bytes(), before)
         self.assertIsNone(self.native.last_outcome)
 
-    def test_primary_success_empty_stops_fallback_and_is_persisted_negative(self):
-        self.client._opener.open.return_value = FakeResponse(b"<html></html>", url=CSRES)
+    def test_primary_success_empty_stops_fallback_but_is_not_negative_cached(self):
+        # ADR 0002：主源成功空仍是终局，不转备源。
+        # W3/P1-4：但"没有总页数证据的空页"不是权威空结果，不许写 24h 负缓存。
+        # 每次请求都给一个新响应对象：HttpClient 会关闭 resp，复用同一个会报 closed file。
+        self.client._opener.open.side_effect = lambda *args, **kwargs: FakeResponse(b"<html></html>", url=CSRES)
         first = self.native.query(CODE)
         self.assertEqual(first.results, ())
         self.assertFalse(first.stale)
+        self.assertFalse(first.complete)
+        self.assertTrue(any("不完整" in note for note in first.critical_notes()))
         self.client._opener.open.assert_called_once()
-        self.client._opener.open.side_effect = AssertionError("负缓存不应查询备源")
         second = self.native.query(CODE)
-        self.assertTrue(second.from_cache)
+        self.assertFalse(second.from_cache)
         self.assertEqual(second.results, ())
-        self.assertEqual(len(list(self.directory.iterdir())), 1)
+        self.assertEqual(self.client._opener.open.call_count, 2)
+        self.assertFalse(self.directory.exists(), "不完整的空结果不得落盘")
 
     def test_too_old_disk_result_cannot_hide_whole_chain_failure(self):
         self.client._opener.open.side_effect = [down(), down(), down(), self.fallback_response()]

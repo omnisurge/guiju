@@ -136,6 +136,9 @@ class CachedCurrency:
         self.stale = False
         self.upstream_error: Exception | None = None
         self.cache_age_days: float | None = None
+        # W3/P1-4：结果是否完整可信（False = 没取全、未写缓存）。
+        # None 表示内层适配器没有完整性契约（老实现），调用方不得当成"已完整"。
+        self.complete: bool | None = None
 
     def lookup(self, code: str) -> list[Record]:
         # 每次都重置：上一题的"缓存命中/降级"绝不能污染本题。
@@ -143,6 +146,7 @@ class CachedCurrency:
         self.stale = False
         self.upstream_error = None
         self.cache_age_days = None
+        self.complete = None
         if self.inner.name == "native":
             # 原生内部已按 TTL 管理缓存；不能再外包旧 CachedCurrency 的无 TTL memo。
             records = self.inner.lookup(code)
@@ -150,6 +154,7 @@ class CachedCurrency:
             self.stale = bool(getattr(self.inner, "stale", False))
             self.upstream_error = getattr(self.inner, "upstream_error", None)
             self.cache_age_days = getattr(self.inner, "cache_age_days", None)
+            self.complete = getattr(self.inner, "complete", None)
             return records
         # 进程级 memo 的 key 必须带端点：同进程换 GUIJU_CURRENCY
         # 不能用旧端点的结论回答新端点的问题。
@@ -170,6 +175,7 @@ class CachedCurrency:
             self.upstream_error = exc
             _cache[key] = (records, True, True, exc, self.cache_age_days)
             return records
+        self.complete = getattr(self.inner, "complete", None)
         if records:
             self._save(code, records)
         _cache[key] = (records, self.from_cache, self.stale, self.upstream_error, self.cache_age_days)

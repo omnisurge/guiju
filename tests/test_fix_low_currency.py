@@ -41,7 +41,7 @@ from guiju.currency.native import NativeCurrency, NoCurrencyRecord, NoCurrencySo
 from guiju.currency.registry import Registry, Route, default_registry
 from guiju.currency.shzjw import _valid_query, is_shanghai_code, normalize_code
 from guiju.currency.stdsamr import StdSamrCurrency
-from guiju.errors import ComplianceDenied, GuijuError, NotIndexed, SourceUnreachable
+from guiju.errors import ComplianceDenied, GuijuError, NeedsHuman, NotIndexed, SourceUnreachable
 
 CODE = "GB 1-2000"
 NOW = 10_000_000.0
@@ -321,22 +321,25 @@ class L5JtstTest(unittest.TestCase):
         self.assertEqual(records, [])
         self.assertFalse(any("jtst" in str(w.message) for w in seen))
 
-    def test_rows_present_but_unparseable_warns(self):
-        html = '<table><tr><td><span class="other">no code</span></td></tr></table>'
-        with warnings.catch_warnings(record=True) as seen:
-            warnings.simplefilter("always")
-            records = parse_jtst(html.encode())
-        self.assertEqual(records, [])
-        self.assertTrue(any("jtst" in str(w.message) and "0 条" in str(w.message) for w in seen))
+    def test_rows_present_but_unparseable_is_needs_human(self):
+        # W3/P1-4：有数据痕迹（en-code 标记在）却 0 条可解析 = 改版，不是"没有"，必须 50。
+        html = '<table><tr><td><span class="en-code">&nbsp;</span></td></tr></table>'
+        with self.assertRaises(NeedsHuman) as ctx:
+            parse_jtst(html.encode())
+        self.assertEqual(ctx.exception.exit, 50)
+        self.assertIn("0 条可解析", str(ctx.exception))
 
     def test_pagination_honest_and_close(self):
         client = FakeClient(b"<table></table>")
         jtst = JtstCurrency(client)
-        self.assertEqual(jtst.pagination, {"fetched_pages": 0, "total": None, "has_more": None})
+        self.assertEqual(jtst.pagination["fetched_pages"], 0)
+        self.assertIsNone(jtst.pagination["total"])
+        self.assertIsNone(jtst.pagination["has_more"])
         jtst.lookup("JTG 1")
         self.assertEqual(jtst.pagination["fetched_pages"], 1)
         self.assertIsNone(jtst.pagination["total"])      # HTML 页无总数：None 而非猜 0
         self.assertIsNone(jtst.pagination["has_more"])   # 无法判定不猜 False
+        self.assertFalse(jtst.complete)                  # 无完整性证据 → 不得写负缓存
         jtst.close()
         self.assertTrue(client.closed)
 
@@ -350,23 +353,22 @@ class L5JtstTest(unittest.TestCase):
 # ---------- L6：csres/stdsamr/dbba 同型修复 ----------
 
 class L6CsresTest(unittest.TestCase):
-    def test_data_rows_but_zero_records_warns(self):
-        # parse_csres 按 GBK 解码：title 标记必须用 GBK 字节，utf-8 的"编号："会被解成乱码
+    def test_data_rows_but_zero_records_is_needs_human(self):
+        # W3/P1-4：有 title 数据痕迹但解析不出记录 = 改版，必须 50，不能静默成无命中。
+        # parse_csres 按 GBK 解码：title 标记必须用 GBK 字节，utf-8 的"编号："会被解成乱码。
         html = ('<table><tr title="编号：GB 1"><td>a</td><td>b</td><td>c</td></tr>'
                 '<tr title="编号：GB 2"><td>a</td><td>b</td><td>c</td></tr></table>')
-        with warnings.catch_warnings(record=True) as seen:
-            warnings.simplefilter("always")
-            records = parse_csres(html.encode("gbk", "replace"))
-        self.assertEqual(records, [])
-        self.assertTrue(any("csres" in str(w.message) for w in seen))
+        with self.assertRaises(NeedsHuman) as ctx:
+            parse_csres(html.encode("gbk", "replace"))
+        self.assertEqual(ctx.exception.exit, 50)
+        self.assertIn("csres", str(ctx.exception))
 
-    def test_structured_rows_without_marker_warns(self):
+    def test_structured_rows_without_marker_is_needs_human(self):
         html = "<table><tr><td>a</td><td>b</td><td>c</td><td>d</td></tr></table>"
-        with warnings.catch_warnings(record=True) as seen:
-            warnings.simplefilter("always")
-            records = parse_csres(html.encode())
-        self.assertEqual(records, [])
-        self.assertTrue(any("csres" in str(w.message) for w in seen))
+        with self.assertRaises(NeedsHuman) as ctx:
+            parse_csres(html.encode())
+        self.assertEqual(ctx.exception.exit, 50)
+        self.assertIn("csres", str(ctx.exception))
 
     def test_truly_empty_page_no_warning(self):
         with warnings.catch_warnings(record=True) as seen:
@@ -413,13 +415,13 @@ class L6StdSamrTest(unittest.TestCase):
         self.assertEqual(rows, [])
         self.assertFalse(any("std_samr" in str(w.message) for w in seen))
 
-    def test_total_positive_but_empty_records_warns(self):
+    def test_total_positive_but_empty_records_is_needs_human(self):
+        # W3/P1-4：源声称 3 条却一行没给 = 结构不符（不是"没有"）。
         client = FakeClient(json.dumps({"total": 3, "rows": []}).encode())
-        samr = StdSamrCurrency(client)
-        with warnings.catch_warnings(record=True) as seen:
-            warnings.simplefilter("always")
-            samr.lookup("GB 1")
-        self.assertTrue(any("0 条" in str(w.message) for w in seen))
+        with self.assertRaises(NeedsHuman) as ctx:
+            StdSamrCurrency(client).lookup("GB 1")
+        self.assertEqual(ctx.exception.exit, 50)
+        self.assertIn("total=3", str(ctx.exception))
 
     def test_close_and_context(self):
         client = FakeClient(b"")
@@ -443,13 +445,13 @@ class L6DbbaTest(unittest.TestCase):
         self.assertTrue(any("dbba" in str(w.message) for w in seen))
         self.assertEqual(len(rows), 1)
 
-    def test_total_positive_empty_records_warns(self):
+    def test_total_positive_empty_records_is_needs_human(self):
+        # W3/P1-4：源声称 2 条却一行没给 = 结构不符（不是"没有"）。
         client = FakeClient(json.dumps({"total": 2, "records": []}).encode())
-        dbba = DbbaCurrency(client)
-        with warnings.catch_warnings(record=True) as seen:
-            warnings.simplefilter("always")
-            dbba.lookup("DB 9")
-        self.assertTrue(any("0 条" in str(w.message) for w in seen))
+        with self.assertRaises(NeedsHuman) as ctx:
+            DbbaCurrency(client).lookup("DB 9")
+        self.assertEqual(ctx.exception.exit, 50)
+        self.assertIn("total=2", str(ctx.exception))
 
     def test_no_json_accept_header_and_close(self):
         seen_accept = []

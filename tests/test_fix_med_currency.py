@@ -14,7 +14,7 @@ from guiju.currency.ccsn import SEARCH_URL, CcsnCurrency, status_ccsn
 from guiju.currency.model import QueryCancelled, Record
 from guiju.currency.native import NativeCurrency
 from guiju.currency.registry import Registry, Route
-from guiju.errors import SourceUnreachable
+from guiju.errors import NeedsHuman, SourceUnreachable
 
 CODE = "GB 1-2000"
 NOW = 10_000_000.0
@@ -330,12 +330,11 @@ def _ccsn_payload(total=1, rows=1):
 
 
 class M18CcsnPaginationTest(unittest.TestCase):
-    def test_total_missing_means_no_has_more(self):
+    def test_total_missing_is_needs_human(self):
+        # W3/P1-4：Total 是必需字段；缺 key 不能再被当成"total=0 的权威空结果"缓存。
         client = _FakeClient(json.dumps({"List": []}).encode())
-        cur = CcsnCurrency(client)
-        cur.lookup("CECS 1-2020")
-        self.assertEqual(cur.pagination["total"], 0)
-        self.assertFalse(cur.pagination["has_more"])
+        with self.assertRaises(NeedsHuman):
+            CcsnCurrency(client).lookup("CECS 1-2020")
 
     def test_more_than_page_marks_has_more_without_truncation(self):
         # 老响应不带 HasNextPage：Total>已取 → has_more（服务端声称未完），
@@ -368,7 +367,9 @@ class M20bCcsnStatusTest(unittest.TestCase):
         self.assertEqual(status_ccsn("局修完成", ""), "unknown")
 
     def test_other_unknown_words_keep_abolish_fallback(self):
-        self.assertEqual(status_ccsn("奇怪状态", "2016-08-01"), "superseded")
+        # W3/P2-18：没有 ReplaceStandardCode 的废止证据只能判废止，不能判"被替代"。
+        self.assertEqual(status_ccsn("奇怪状态", "2016-08-01"), "withdrawn")
+        self.assertEqual(status_ccsn("奇怪状态", "2016-08-01", "GB 1-2020"), "superseded")
         self.assertEqual(status_ccsn("奇怪状态", ""), "unknown")
 
 

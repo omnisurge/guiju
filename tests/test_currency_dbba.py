@@ -13,6 +13,11 @@ FIXTURES = Path(__file__).parent / "fixtures" / "currency"
 
 
 def body(payload):
+    # W3/P1-4：total 是必需字段。测试默认补一个与 records 等长的 total，
+    # 只有显式缺字段的分支才构造不带 total 的 payload。
+    if isinstance(payload, dict) and "total" not in payload:
+        records = payload.get("records")
+        payload = {**payload, "total": len(records) if isinstance(records, list) else 0}
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
@@ -88,7 +93,10 @@ class DbbaParseTest(unittest.TestCase):
                 self.assertEqual(record.publish_date, expected)
 
     def test_empty_missing_null_fields_use_go_zero_values(self):
-        for payload in ({}, {"records": None}, {"records": []}):
+        # W3/P1-4：{} 连 total 都没有 → 50；缺一条 keys 的 {} 不再被当成"权威空"。
+        with self.subTest(payload={}), self.assertRaises(NeedsHuman):
+            parse_dbba(json.dumps({}).encode("utf-8"))
+        for payload in ({"records": None}, {"records": []}):
             with self.subTest(payload=payload):
                 self.assertEqual(parse_dbba(body(payload)), [])
         null_item = {key: None for key in ("code", "chName", "status", "reviseStdCodes", "actDate", "issueDate", "fzDate")}

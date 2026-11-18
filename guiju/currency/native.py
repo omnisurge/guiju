@@ -40,6 +40,10 @@ class Outcome:
     cache_age: float = 0.0
     stale: bool = False
     upstream_error: Exception | None = None
+    # W3/P1-4：结果是否完整可信。False = 没取全（无总页数证据/截断/明文回退），
+    # 不会被写成缓存，调用方必须把它当作"可能缺少记录"而不是权威空结论。
+    complete: bool = True
+    incomplete_reason: str = ""
 
     @property
     def fallback_source(self) -> str:
@@ -47,6 +51,9 @@ class Outcome:
 
     def critical_notes(self) -> list[str]:
         notes = []
+        if not self.complete:
+            reason = f"：{self.incomplete_reason}" if self.incomplete_reason else ""
+            notes.append(f"⚠ 结果不完整{reason}；未写入缓存，重要结论建议复核")
         if self.stale:
             notes.append(f"⚠ 上游查询失败，以下为 {human_age(self.cache_age)}前的缓存结果，可能已过期：{self.upstream_error}")
         if self.fallback_source:
@@ -61,6 +68,8 @@ class Outcome:
 
     def annotation(self) -> str:
         parts = []
+        if not self.complete:
+            parts.append("[! 不完整: 可能缺少记录，未写缓存]")
         if self.stale:
             parts.append(f"[! 降级: {human_age(self.cache_age)}前的缓存]")
         elif self.from_cache:
@@ -172,9 +181,13 @@ class NativeCurrency:
                 return self._succeed(code, Outcome(entry.results, adapter.name, True, entry.age(self.clock()), True, exc))
             raise
         self._guard(code)
+        # 只有"完整且可信"的结果才能当权威结论写缓存：不完整的空结果一旦落盘，
+        # 就是 24 小时假阴性（W3/P1-4）；没有 complete 字段的老适配器沿用旧契约。
+        complete = bool(getattr(adapter, "complete", True))
+        incomplete_reason = "" if complete else str(getattr(adapter, "incomplete_reason", "") or "")
         if self.admit is not None:
             self.admit(code)  # put 前复验：查到的数据还没落盘，此刻拒绝就不能写缓存
-        if self.cache is not None:
+        if self.cache is not None and complete:
             try:
                 self.cache.put(code, rows, namespace=namespace)
             except (GuijuError, QueryCancelled):
@@ -182,7 +195,9 @@ class NativeCurrency:
             except Exception:
                 pass  # 写不进缓存不影响把刚查到的结果给调用方
         self._guard(code)
-        return self._succeed(code, Outcome(tuple(rows), adapter.name))
+        return self._succeed(code, Outcome(
+            tuple(rows), adapter.name, complete=complete, incomplete_reason=incomplete_reason,
+        ))
 
     def _succeed(self, code: str, outcome: Outcome) -> Outcome:
         # 只有完整走到底的成果才进 memo（且仅无缓存路径会用）；失败/取消/拒绝都不会被记忆。
@@ -205,6 +220,11 @@ class NativeCurrency:
     def stale(self) -> bool:
         """上游刚失败、靠有界陈旧缓存回答 → True；which --json 的告警依据，不是 from_cache。"""
         return self.last_outcome is not None and self.last_outcome.stale
+
+    @property
+    def complete(self) -> bool:
+        """最近一次成功结果是否完整；False = 没取全、未写缓存，结论需复核。"""
+        return self.last_outcome is not None and self.last_outcome.complete
 
     @property
     def upstream_error(self) -> Exception | None:

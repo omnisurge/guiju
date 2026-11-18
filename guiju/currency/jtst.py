@@ -6,13 +6,13 @@
 from __future__ import annotations
 
 import urllib.parse
-import warnings
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
 from ..errors import NeedsHuman
 from .codes import query_with_base_fallback
+from .contract import Completeness, CompletenessMixin, page_error
 from .httpx import HttpClient
 from .model import Record
 
@@ -113,8 +113,8 @@ def _row(tr: _Node) -> Record | None:
 def parse_jtst(raw: bytes) -> list[Record]:
     """UTF-8 原始字节的纯解析；只认源站状态，不推断历史旧号。
 
-    页面含表格行但一条都解析不出来时发 RuntimeWarning：空结果页合法、
-    解析失败不许静默成"无命中"。
+    空结果页合法（源明确没给行）；页面含表格行却一条都解析不出来 = 改版，
+    抛 NeedsHuman(50)，不许静默成"无命中"（W3/P1-4）。
     """
     try:
         text = raw.decode("utf-8")
@@ -126,22 +126,20 @@ def parse_jtst(raw: bytes) -> list[Record]:
     rows = [node for node in _walk(parser.root)
             if isinstance(node, _Node) and node.tag == "tr"]
     records = [record for node in rows if (record := _row(node)) is not None]
-    if rows and not records:
-        warnings.warn(
-            f"jtst 页面含 {len(rows)} 个 tr 但 0 条可解析记录：可能是站点改版或布局行误判",
-            RuntimeWarning, stacklevel=2,
-        )
+    # 数据痕迹 = 页面里出现过 en-code 标记；只有布局行/表头行不算（真实空结果页没有 en-code）。
+    if not records and any(_find(node, lambda part: _span(part, "en-code")) is not None for node in rows):
+        raise page_error("jtst", f"页面含 {len(rows)} 个 tr 且有 en-code 标记，但 0 条可解析记录")
     return records
 
 
-class JtstCurrency:
+class JtstCurrency(CompletenessMixin):
     name = "jtst"
     url = SEARCH_URL
 
     def __init__(self, client: HttpClient | None = None) -> None:
         self.client = client if client is not None else HttpClient()
         # HTML 列表页无总数字段：has_more=None 表示"无法判定"，不猜 False。
-        self.pagination: dict = {"fetched_pages": 0, "total": None, "has_more": None}
+        self._completeness = Completeness()
 
     def close(self) -> None:
         close = getattr(self.client, "close", None)
@@ -156,12 +154,17 @@ class JtstCurrency:
 
     def lookup(self, code: str) -> list[Record]:
         if not code.strip():
+            self._record_completeness(Completeness(has_more=False, reason="空查询，未访问上游"))
             return []
 
         def fetch(term: str) -> list[Record]:
             query = urllib.parse.urlencode({"tid": "", "op": "", "q": term})
             records = parse_jtst(self.client.get(f"{SEARCH_URL}?{query}", accept="text/html"))
-            self.pagination = {"fetched_pages": 1, "total": None, "has_more": None}
+            # 列表页没有总条数/总页数：无法证明已取全 → complete=False，不写缓存。
+            self._record_completeness(Completeness(
+                fetched_pages=1, total=None, has_more=None,
+                reason="HTML 列表页没有总数/页数证据，无法证明结果已取全",
+            ))
             return records
 
         return query_with_base_fallback(code, fetch)

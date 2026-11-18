@@ -148,9 +148,11 @@ class StdSamrParseTest(OfflineTestCase):
         for row in ({}, None, {"C_STD_CODE": None, "C_C_NAME": None, "STATE": None, "ISSUE_DATE": None, "ACT_DATE": None}):
             with self.subTest(row=row):
                 self.assertEqual([asdict(record) for record in parse_stdsamr(response(row))], [empty])
-        for raw in (b"{}", b'{"rows":null}', response()):
-            with self.subTest(raw=raw):
-                self.assertEqual(parse_stdsamr(raw), [])
+        # W3/P1-4：缺 total 不是「源明确回答没有」→ 50；只有空 list 才是权威空结果。
+        for raw in (b"{}", b'{"rows":null}'):
+            with self.subTest(raw=raw), self.assertRaises(NeedsHuman):
+                parse_stdsamr(raw)
+        self.assertEqual(parse_stdsamr(response()), [])
 
     def test_rows_and_duplicates_keep_upstream_order(self):
         codes = ("GB1-2010", "GB1-2000", "GB1-2010")
@@ -158,8 +160,10 @@ class StdSamrParseTest(OfflineTestCase):
 
     def test_total_accepts_missing_null_and_int64_values(self):
         rows = [{"C_STD_CODE": "GB1"}]
-        payloads = [{"rows": rows}]
-        payloads.extend({"total": value, "rows": rows} for value in (None, 0, 1, -1, -(2**63), 2**63 - 1))
+        # W3/P1-4：total 是必需字段；null 按 Go 零值 0 处理（键在即不是「缺字段」）。
+        payloads = [{"total": value, "rows": rows} for value in (None, 0, 1, -1, -(2**63), 2**63 - 1)]
+        with self.assertRaises(NeedsHuman):
+            parse_stdsamr(json.dumps({"rows": rows}).encode("utf-8"))
         for payload in payloads:
             with self.subTest(payload=payload):
                 raw = json.dumps(payload).encode("utf-8")

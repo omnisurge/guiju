@@ -21,6 +21,7 @@ import urllib.request
 
 from .._version import __version__
 from ..errors import ComplianceDenied, NeedsHuman, SourceUnreachable
+from .contract import json_error as _json_error
 
 DEFAULT_TIMEOUT = 25.0
 MAX_ATTEMPTS = 3
@@ -53,6 +54,16 @@ _last_call: dict[str, float] = {}
 _throttle_lock = threading.Lock()
 
 
+def _normalize_path(path: str) -> str:
+    """规范化 path 再比对白名单（P2-17）。
+
+    csres 会在 URL 里挂 ;jsessionid=...；重复斜杠也等价。只做等价化，不做通配：
+    /s.jsp 与 /s.jsp/extra 仍然不同。
+    """
+    segments = (segment.split(";", 1)[0] for segment in path.split("/"))
+    return re.sub(r"/{2,}", "/", "/".join(segments)) or "/"
+
+
 def _check_url(url: str) -> str:
     try:
         parts = urllib.parse.urlsplit(url)
@@ -63,7 +74,7 @@ def _check_url(url: str) -> str:
     if (
         parts.scheme not in ("http", "https")
         or host not in _ENDPOINTS
-        or parts.path not in _ENDPOINTS[host]
+        or _normalize_path(parts.path) not in _ENDPOINTS[host]
         or parts.username is not None
         or parts.password is not None
         or (host == _SHANGHAI_HOST and (parts.scheme != "https" or port != 9175))
@@ -81,7 +92,7 @@ def _check_redirect_target(req, target: str) -> str:
         parts = urllib.parse.urlsplit(target)
         current = urllib.parse.urlsplit(req.full_url)
         if ((parts.hostname or "").lower() == (current.hostname or "").lower()
-                and parts.path.split(";", 1)[0] == "/error/noright.html"):
+                and _normalize_path(parts.path) == "/error/noright.html"):
             # csres 用错误页代替 4xx/5xx；这是源故障，应允许 fallback，
             # 不能伪装成“命中合规护栏”而阻断备源。
             raise SourceUnreachable(f"元数据源返回错误页，不跟随：{target}") from exc
@@ -105,7 +116,7 @@ def _check_headers(headers, url: str, *, redirect: bool = False) -> None:
     ctype = headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
     disposition = headers.get("Content-Disposition", "").lower()
     parts = urllib.parse.urlsplit(url)
-    allowed = _ENDPOINTS[parts.hostname.lower()][parts.path]
+    allowed = _ENDPOINTS[parts.hostname.lower()][_normalize_path(parts.path)]
     if "attachment" in disposition or (ctype not in allowed and not (redirect and not ctype)):
         raise ComplianceDenied(f"元数据出口拒绝非查询文本或附件响应：{url}")
 
@@ -165,10 +176,6 @@ def _detect_block(body: bytes) -> None:
                 raise ComplianceDenied(f"元数据源返回人机校验（命中「{marker}」），停止，不重试")
 
 
-def _json_error(source: str, detail: str) -> NeedsHuman:
-    return NeedsHuman(f"{source} 元数据 JSON 结构异常：{detail}", hint=f"检查 {source} 响应结构，不要把解析失败当作无命中")
-
-
 def decode_json(source: str, raw: bytes) -> dict:
     def reject_constant(value):
         raise ValueError(f"非法 JSON 数值 {value}")
@@ -210,6 +217,18 @@ def json_int(item: dict, key: str, source: str) -> int:
     if type(value) is not int or not -(2**63) <= value < 2**63:
         raise _json_error(source, f"{key} 必须为 int64 整数")
     return value
+
+
+def json_flag(item: dict, key: str, source: str) -> bool | None:
+    """布尔开关（如 ccsn HasNextPage）。null 视为未知；0/1 按 Go 解码口径接受。"""
+    value = item.get(key)
+    if value is None:
+        return None
+    if type(value) is bool:
+        return value
+    if type(value) is int and value in (0, 1):
+        return bool(value)
+    raise _json_error(source, f"{key} 必须为布尔值")
 
 
 class HttpClient:

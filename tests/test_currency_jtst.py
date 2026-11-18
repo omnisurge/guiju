@@ -83,11 +83,14 @@ class JtstParseTest(unittest.TestCase):
         self.assertEqual((record.code, record.name, record.status), ("JTG D60-2015", "名称", "current"))
 
     def test_missing_or_first_empty_code_is_not_a_record(self):
-        for content in ('<tr><td><span class="s-status">现行</span></td></tr>',
-                        '<tr><td><span class="en-code">&nbsp;</span>'
-                        '<a><span class="en-code">JTG D60-2015</span> 名称</a></td></tr>'):
-            with self.subTest(content=content):
-                self.assertEqual(parse_jtst(document(content)), [])
+        # 纯布局行（无 en-code）不是数据痕迹：空结果，不报 50。
+        self.assertEqual(parse_jtst(document('<tr><td><span class="s-status">现行</span></td></tr>')), [])
+        # 有 en-code 标记但首条编号为空 → 0 条可解析 = 改版，按 P1-4 抛 50（不再静默成无命中）。
+        content = ('<tr><td><span class="en-code">&nbsp;</span>'
+                   '<a><span class="en-code">JTG D60-2015</span> 名称</a></td></tr>')
+        with self.assertRaises(NeedsHuman) as ctx:
+            parse_jtst(document(content))
+        self.assertEqual(ctx.exception.exit, 50)
 
     def test_first_code_only_and_no_anchor_means_empty_name(self):
         content = ('<tr><td><span class="en-code">JTG D60-2015</span> 外部名称'

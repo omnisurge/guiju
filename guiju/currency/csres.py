@@ -2,23 +2,39 @@
 
 只有显式构造 CsresCurrency 才使用此源；M1 不接入默认路由。
 不读取链接、不取正文、不落文件、不推断替代关系或现行性。
+
+传输（W3/P1-4）：默认只走 https。站点若不支持 HTTPS，需要显式构造
+CsresCurrency(..., plaintext_fallback=True) 才会回退明文 http —— 回退会留下
+RuntimeWarning 与 plaintext_risk，并把结果标记为"不可作为权威答案"（不写缓存）。
+明文通道仅用于这份只读元数据，绝不用于正文下载。
 """
 
 from __future__ import annotations
 
+import re
 import urllib.parse
 import warnings
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
-from ..errors import NeedsHuman
+from ..errors import NeedsHuman, SourceUnreachable
 from .codes import filter_by_code
+from .contract import Completeness, CompletenessMixin, page_error
 from .httpx import HttpClient
 from .model import Record
 
-SEARCH_URL = "http://www.csres.com/s.jsp"
+SEARCH_URL = "https://www.csres.com/s.jsp"
+PLAINTEXT_SEARCH_URL = "http://www.csres.com/s.jsp"
+PLAINTEXT_RISK = "csres 查询显式回退明文 HTTP：结果未经传输保护，仅用于元数据，绝不用作正文来源"
 _STATUS = {"现行": "current", "作废": "superseded", "即将实施": "upcoming", "废止": "withdrawn"}
 _VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
+
+# 列表页把"共有 N 条…共 M 页"和 25 行/页写在页面里（2026-11-18 fixture 实测）。
+_TOTAL = re.compile(r"共有\s*(\d+)\s*条")
+_FOUND = re.compile(r"共找到\s*(\d+)\s*条")
+_PAGES = re.compile(r"共\s*(\d+)\s*页")
+_PAGE_SIZE = re.compile(r'name\s*=\s*["\']?pageSize["\']?[^>]*?value\s*=\s*["\']?(\d+)', re.IGNORECASE)
+_PAGE_NO = re.compile(r'name\s*=\s*["\']?pageNum["\']?[^>]*?value\s*=\s*["\']?(\d+)', re.IGNORECASE)
 
 
 def extract_title_field(title: str, field_name: str) -> str:
@@ -29,6 +45,11 @@ def extract_title_field(title: str, field_name: str) -> str:
     # 属性实体已解码为真换行；兼容旧实现也认字面量 &#xA;，取最早分隔符。
     cut = min((rest.find(sep) for sep in ("\n", "\r", "&#xA;") if sep in rest), default=len(rest))
     return rest[:cut].strip()
+
+
+def _int_or_none(pattern: re.Pattern[str], text: str) -> int | None:
+    match = pattern.search(text)
+    return int(match[1]) if match else None
 
 
 @dataclass
@@ -102,8 +123,23 @@ class _TableParser(HTMLParser):
                 row.cells[-1].append(data)
 
 
-def parse_csres(raw: bytes) -> list[Record]:
-    """原始 GBK 字节的纯解析；发布日期取首个 title 字段，实施日期取第 4 列。"""
+@dataclass(frozen=True)
+class CsresPage:
+    """一页列表页的解析结果 + 页面自己声明的分页证据（缺失即 None，不猜）。"""
+
+    records: list[Record]
+    total: int | None = None
+    pages: int | None = None
+    page: int | None = None
+    page_size: int | None = None
+
+
+def _has_data_traces(rows: list[_Row]) -> bool:
+    return any(row.title.startswith("编号：") or len(row.cells) >= 4 for row in rows)
+
+
+def parse_csres_page(raw: bytes) -> CsresPage:
+    """原始 GBK 字节 → 记录 + 页数证据；有数据痕迹但 0 条记录 = 改版，抛 50。"""
     try:
         text = raw.decode("gbk")
     except UnicodeDecodeError as exc:
@@ -112,26 +148,41 @@ def parse_csres(raw: bytes) -> list[Record]:
     parser.feed(text.replace("\r\n", "\n").replace("\r", "\n"))
     parser.close()
     records = [record for row in parser.rows if (record := row.record()) is not None]
-    if not records and (
-        any(row.title.startswith("编号：") for row in parser.rows)
-        or any(len(row.cells) >= 4 for row in parser.rows)
-    ):
+    if not records and _has_data_traces(parser.rows):
         # 数据行痕迹在（编号：前缀或 >=4 单元格）却零记录：改版/解析失败，不许静默成无命中。
-        warnings.warn(
-            f"csres 页面含 {len(parser.rows)} 个 tr 但 0 条可解析记录：可能是站点改版",
-            RuntimeWarning, stacklevel=2,
-        )
-    return records
+        raise page_error("csres", f"页面含 {len(parser.rows)} 个 tr 但 0 条可解析记录（有数据痕迹）")
+    total = _int_or_none(_TOTAL, text)
+    if total is None:
+        total = _int_or_none(_FOUND, text)
+    return CsresPage(
+        records=records,
+        total=total,
+        pages=_int_or_none(_PAGES, text),
+        page=_int_or_none(_PAGE_NO, text),
+        page_size=_int_or_none(_PAGE_SIZE, text),
+    )
 
 
-class CsresCurrency:
+def parse_csres(raw: bytes) -> list[Record]:
+    """兼容入口：只要记录（发布日期取首个 title 字段，实施日期取第 4 列）。"""
+    return parse_csres_page(raw).records
+
+
+class CsresCurrency(CompletenessMixin):
     name = "csres"
     url = SEARCH_URL
+    MAX_PAGES = 5
 
-    def __init__(self, client: HttpClient | None = None) -> None:
+    def __init__(self, client: HttpClient | None = None, *, plaintext_fallback: bool = False) -> None:
         self.client = client if client is not None else HttpClient()
-        # HTML 列表页无总数字段：has_more=None 表示"无法判定"，不猜 False。
-        self.pagination: dict = {"fetched_pages": 0, "total": None, "has_more": None}
+        self.plaintext_fallback = plaintext_fallback
+        self.transport = "https"
+        self.plaintext_risk = ""
+        self._completeness = Completeness()
+
+    @property
+    def plaintext(self) -> bool:
+        return self.transport == "http"
 
     def close(self) -> None:
         close = getattr(self.client, "close", None)
@@ -144,9 +195,70 @@ class CsresCurrency:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
+    def _enter_plaintext(self) -> None:
+        if self.transport == "http":
+            return
+        self.transport = "http"
+        self.plaintext_risk = PLAINTEXT_RISK
+        warnings.warn(PLAINTEXT_RISK, RuntimeWarning, stacklevel=3)
+
+    def _request_page(self, code: str, page: int) -> bytes:
+        query = urllib.parse.urlencode({"keyword": code, "pageNum": str(page)})
+        if self.transport == "http":
+            return self.client.get(f"{PLAINTEXT_SEARCH_URL}?{query}")
+        try:
+            return self.client.get(f"{SEARCH_URL}?{query}")
+        except SourceUnreachable:
+            if not self.plaintext_fallback:
+                # 不自动降级：能阻断 TLS 的人不该顺带拿到明文通道（W3/P1-4）。
+                raise
+            self._enter_plaintext()
+            return self.client.get(f"{PLAINTEXT_SEARCH_URL}?{query}")
+
+    def _finish(self, fetched_pages: int, total: int | None, has_more: bool | None,
+                *, truncated: bool = False, reason: str = "") -> None:
+        if self.plaintext:
+            reason = f"{self.plaintext_risk}；{reason}" if reason else self.plaintext_risk
+        self._record_completeness(Completeness(
+            fetched_pages=fetched_pages, total=total, has_more=has_more, truncated=truncated,
+            reason=reason, insecure_transport=self.plaintext,
+        ))
+
     def lookup(self, code: str) -> list[Record]:
-        query = urllib.parse.urlencode({"keyword": code, "pageNum": "1"})
-        raw = self.client.get(f"{SEARCH_URL}?{query}")
-        records = filter_by_code(parse_csres(raw), code)
-        self.pagination = {"fetched_pages": 1, "total": None, "has_more": None}
-        return records
+        if not code.strip():
+            self._record_completeness(Completeness(has_more=False, reason="空查询，未访问上游"))
+            return []
+        collected: list[Record] = []
+        total: int | None = None
+        pages: int | None = None
+        page = 1
+        while True:
+            parsed = parse_csres_page(self._request_page(code, page))
+            collected.extend(parsed.records)
+            if page == 1:
+                total, pages = parsed.total, parsed.pages
+                if pages is None and total is not None and parsed.page_size:
+                    pages = max(1, -(-total // parsed.page_size))
+            else:
+                # 翻页期间总条数/总页数变化 = 结果集在动：混页会得到"看似完整"的假结论。
+                if parsed.total is not None and total is not None and parsed.total != total:
+                    raise page_error("csres", f"翻页期间总条数从 {total} 变为 {parsed.total}（第 {page} 页）")
+                if parsed.pages is not None and pages is not None and parsed.pages != pages:
+                    raise page_error("csres", f"翻页期间总页数从 {pages} 变为 {parsed.pages}（第 {page} 页）")
+            if pages is None:
+                # 没有总页数证据：只取第 1 页；has_more 保持 None，不把部分当完整。
+                has_more = None if total is None else total > len(collected)
+                self._finish(page, total, has_more,
+                             reason="" if has_more is False else "页面未提供总页数，无法证明结果已取全")
+                return filter_by_code(collected, code)
+            if page >= pages:
+                self._finish(page, total, False)
+                return filter_by_code(collected, code)
+            if page >= self.MAX_PAGES:
+                reason = f"翻到第 {page} 页上限（{self.MAX_PAGES} 页），共 {pages} 页，结果被截断"
+                self._finish(page, total, True, truncated=True, reason=reason)
+                warnings.warn(f"csres {reason}：结果不完整，建议按名称复核", RuntimeWarning, stacklevel=2)
+                return filter_by_code(collected, code)
+            if not parsed.records:
+                raise page_error("csres", f"第 {page} 页没有数据行但源声称共 {pages} 页：无法继续取全")
+            page += 1

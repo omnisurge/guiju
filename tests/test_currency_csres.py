@@ -85,7 +85,9 @@ class CsresParseTest(unittest.TestCase):
 
     def test_column_count_and_no_guessing(self):
         cells = ["GB 1-2000", "标准", "部门", "未公布", "现行", "废止"]
-        self.assertEqual(parse(row(cells[:3])), [])
+        # 3 列 + 「编号：」title = 残缺数据行（有痕迹、0 条可解析）→ 50，不再静默成空。
+        with self.assertRaises(NeedsHuman):
+            parse(row(cells[:3]))
         self.assertEqual(parse(row(cells[:4]))[0].status, "unknown")
         for n in (5, 6):
             record = parse(row(cells[:n]))[0]
@@ -95,12 +97,19 @@ class CsresParseTest(unittest.TestCase):
         self.assertEqual((empty.code, empty.name, empty.implement_date), ("", "", ""))
 
     def test_only_tr_own_exact_title_prefix_is_a_data_row(self):
+        # 这些 title 都不算数据行：5 列结构在但 0 条可解析 = 改版痕迹 → 50（不猜编号）。
         cells = ["GB 1-2000", "标准", "部门", "2000-01-01", "现行"]
         for title in ("", " 编号：GB 1-2000", "编号:GB 1-2000", "标准编号：GB 1-2000"):
-            with self.subTest(title=title):
-                self.assertEqual(parse(row(cells, title)), [])
-        self.assertEqual(parse('<tr><td title="编号：GB1">1</td><td>2</td><td>3</td><td>4</td></tr>'), [])
-        self.assertEqual(parse(row(cells).replace("<td>", "<th>").replace("</td>", "</th>")), [])
+            with self.subTest(title=title), self.assertRaises(NeedsHuman):
+                parse(row(cells, title))
+        with self.assertRaises(NeedsHuman):
+            parse('<tr><td title="编号：GB1">1</td><td>2</td><td>3</td><td>4</td></tr>')
+        # th 不是数据单元格：既不成记录也不算数据痕迹（title 为空时是成功的空结果）；
+        # 但「编号：」title 本身仍是数据痕迹 → 50。
+        th_only = row(cells, title="").replace("<td>", "<th>").replace("</td>", "</th>")
+        self.assertEqual(parse(th_only), [])
+        with self.assertRaises(NeedsHuman):
+            parse(row(cells).replace("<td>", "<th>").replace("</td>", "</th>"))
 
     def test_nested_text_entities_and_void_tags(self):
         record = parse(row(["&nbsp;<a><font>GB 1-2000</font></a>&nbsp;",
@@ -160,7 +169,9 @@ class CsresParseTest(unittest.TestCase):
         with self.assertRaises(SourceUnreachable):
             CsresCurrency(client).lookup("GB1")
 
-    def test_query_escapes_user_input_and_stays_on_page_one(self):
+    def test_query_escapes_user_input_and_without_total_stays_on_page_one(self):
+        # 页面没有"共 N 页"证据时只取第 1 页，且 has_more=None（W3/P1-4）：
+        # 输入里的 pageNum=99 不能改写请求参数。
         client = mock.Mock()
         client.get.return_value = b"<html></html>"
         code = "GB/T 50011-2010（2024年版）&pageNum=99"

@@ -88,9 +88,13 @@ class CcsnParseTest(OfflineTestCase):
     def test_status_vocabulary_and_unknown_are_not_guessed(self):
         for state, abolish, expected in (
             ("现行", "", "current"), ("废止", "", "withdrawn"),
-            ("即将实施", "", "upcoming"), ("在编", "", "upcoming"),
+            ("即将实施", "", "upcoming"),
+            # W3/P2-18：「在编」是编制中，不是「即将实施」。
+            ("在编", "", "unknown"), ("在编", "2016-08-01", "unknown"),
             ("局修完成", "", "unknown"), ("未知词", "", "unknown"),
-            ("", "", "unknown"), ("未知词", "2016-08-01", "superseded"),
+            ("", "", "unknown"),
+            # W3/P2-18：有废止日期、没有替代编号 = 废止；不是「被替代」。
+            ("未知词", "2016-08-01", "withdrawn"),
             # M20 修正：「局修完成」是明确词，即使有 abolish 日期也判 unknown，不再被兜底成 superseded
             ("局修完成", "2016-08-01", "unknown"),
             ("未知词", " \t ", "unknown"), (" 现行 ", "2000-01-01", "current"),
@@ -100,6 +104,9 @@ class CcsnParseTest(OfflineTestCase):
                 record = parse_ccsn(response({"StandardCode": "GB1-2000", "StandardState": state, "AbolishDate": abolish}))[0]
                 self.assertEqual(record.status, expected)
                 self.assertEqual(record.raw, state)
+        # W3/P2-18：ReplaceStandardCode 是"被替代"的证据，缺它只能判"废止"。
+        self.assertEqual(status_ccsn("未知词", "2016-08-01", "GB 1-2020"), "superseded")
+        self.assertEqual(status_ccsn("在编", "", "GB 1-2020"), "unknown")
 
     def test_trim_dates_and_replaces_but_preserve_raw_state(self):
         record = parse_ccsn(response({
@@ -124,9 +131,11 @@ class CcsnParseTest(OfflineTestCase):
             "code": "GB1", "name": "", "status": "unknown", "publish_date": "", "implement_date": "",
             "source": "ccsn", "replaces": "", "raw": "", "fallback": "",
         })
+        # W3/P1-4：缺 Total、或有行但 0 条可解析，都不是「源明确回答没有」，必须 50。
         for raw in (b"{}", b'{"List":null}', response(None), response({}, {"StandardCode": " \t"})):
-            with self.subTest(raw=raw):
-                self.assertEqual(parse_ccsn(raw), [])
+            with self.subTest(raw=raw), self.assertRaises(NeedsHuman):
+                parse_ccsn(raw)
+        self.assertEqual(parse_ccsn(response()), [])
 
     def test_rows_and_duplicates_keep_upstream_order(self):
         rows = [{"StandardCode": code} for code in ("JGJ2-2000", "JGJ1-2010", "JGJ2-2000")]
@@ -134,8 +143,10 @@ class CcsnParseTest(OfflineTestCase):
 
     def test_total_accepts_missing_null_and_int64_values(self):
         rows = [{"StandardCode": "GB1"}]
-        payloads = [{"List": rows}]
-        payloads.extend({"Total": value, "List": rows} for value in (None, 0, 1, -1, -(2**63), 2**63 - 1))
+        # W3/P1-4：Total 是必需字段；null 仍按 Go 零值 0 处理（键在就不是「缺字段」）。
+        payloads = [{"Total": value, "List": rows} for value in (None, 0, 1, -1, -(2**63), 2**63 - 1)]
+        with self.assertRaises(NeedsHuman):
+            parse_ccsn(json.dumps({"List": rows}).encode("utf-8"))
         for payload in payloads:
             with self.subTest(payload=payload):
                 raw = json.dumps(payload).encode("utf-8")
@@ -263,6 +274,7 @@ class CcsnPaginationTest(OfflineTestCase):
         self.assertEqual(cur.pagination["fetched_pages"], 3)
         self.assertFalse(cur.pagination["has_more"])
         self.assertFalse(cur.pagination["truncated"])
+        self.assertTrue(cur.complete)  # 取全 + 无截断 = 可以写缓存
 
     def test_truncated_at_max_pages_warns(self):
         client = mock.Mock(spec=HttpClient)
@@ -276,6 +288,7 @@ class CcsnPaginationTest(OfflineTestCase):
             cur.lookup("GB 50000")
         self.assertEqual(client.post_form.call_count, cur.MAX_PAGES)
         self.assertTrue(cur.pagination["truncated"])
+        self.assertFalse(cur.complete)  # 截断结果不是权威答案
         self.assertTrue(any("截断" in str(w.message) for w in caught))
 
 
