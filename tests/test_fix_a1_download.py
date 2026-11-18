@@ -55,6 +55,20 @@ class RangeHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(PAYLOAD[:100])
             self.close_connection = True
             return
+        if self.mode == "partial_known_total":
+            self.send_response(206)
+            self.send_header("Content-Range", "bytes 0-999/2009")
+            self.send_header("Content-Length", "1000")
+            self.end_headers()
+            self.wfile.write(PAYLOAD[:1000])
+            return
+        if self.mode == "body_longer_than_range":
+            self.send_response(206)
+            self.send_header("Content-Range", "bytes 0-99/200")
+            self.send_header("Content-Length", "200")
+            self.end_headers()
+            self.wfile.write(PAYLOAD[:200])
+            return
         if self.mode == "unknown_total":
             start = self._range_start()
             self.send_response(206)
@@ -141,6 +155,18 @@ class DownloadIntegrityTest(unittest.TestCase):
             compliance.download(self.url, part, attempts=2)
         self.assertIn("总长", str(ctx.exception))
         self.assertFalse(part.exists())
+
+    def test_206_partial_known_total_is_rejected(self):
+        RangeHandler.mode = "partial_known_total"
+        part = self.dir / "partial-total.part"
+        with self.assertRaises(SourceUnreachable):
+            compliance.download(self.url, part, attempts=2)
+
+    def test_206_body_longer_than_declared_range_is_rejected(self):
+        RangeHandler.mode = "body_longer_than_range"
+        part = self.dir / "longer-body.part"
+        with self.assertRaises(SourceUnreachable):
+            compliance.download(self.url, part, attempts=2)
 
     def test_206_uppercase_unit_is_accepted(self):
         RangeHandler.mode = "uppercase_unit"

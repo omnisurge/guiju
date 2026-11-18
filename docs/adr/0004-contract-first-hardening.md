@@ -63,7 +63,7 @@
    - **BodyPolicy**：只允许 *.gov.cn；可以写文件；只能由 net.body 写；负责正文下载完整性。
    - **MetadataPolicy**：只允许注册表里的 host+path；只返回字节，不写文件、不返回正文。
 3. 两个策略共享：per-host 限速（锁保护）、重定向逐跳校验、超时/重试/退避、body 大小上限、block marker 检测、IDNA、probe 记录。
-4. 正文下载必须校验 Content-Length（200）或 Content-Range 起点/总长（206）；续传带 If-Range（ETag/Last-Modified）；不符即失败并保留 .part。
+4. 正文下载必须校验 Content-Length（200）或 Content-Range 起点/总长（206）；续传带 If-Range（ETag/Last-Modified）；不符即失败并保留 .part。总长为 `*` 时视为不可验证，按 fail-closed 返回 20；不静默接受未知完整性的文件。
 5. 不再有模块级可变状态；Throttle 是实例，注入 clock/sleep，便于并发测试。
 6. compliance.py 与 currency/httpx.py 变成兼容 facade，1.2.0 删除；新代码不得直接引用。
 

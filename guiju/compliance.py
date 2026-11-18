@@ -227,7 +227,7 @@ def _header_int(value: str | None) -> int | None:
     if value is None:
         return None
     text = value.strip()
-    if not text.isascii() or not text.isdigit():
+    if not text.isascii() or not text.isdigit() or len(text) > 32:
         return None
     try:
         return int(text)
@@ -279,7 +279,8 @@ def download(
     续传条件：`part_path` 已存在且非空 → 发 `Range: bytes=<size>-`。
     - 服务器回 206 → 追加（真续传）
     - 服务器回 200 → 服务端不支持 Range，截断重下（不是错误，只是没省流量）
-    - 服务器回 416 → 本地已有的部分不小于远端总长，按"已完成"处理
+    - 服务器回 416 → 只有 HEAD 明确给出与本地相同的总长才按"已完成"；
+      否则丢弃 .part 从 0 重下，仍失败则 20，绝不接受未知长度的旧部分
     """
     part = Path(part_path)
     part.parent.mkdir(parents=True, exist_ok=True)

@@ -7,8 +7,9 @@
   list/out 限制在 GUIJU_HOME/mcp 并拒绝 symlink 逃逸；autosync 冷却时间戳写失败不阻断命令；
   损坏数据库返回 JSON 50 而非裸 traceback；stdio 非 object params 不再打死服务。
   A1 独立复审后返工：混合 20/50/1 + 40 时顶层仍返回 40；206 的 `*` 总长/起点错位/缺
-  Content-Range、416+HEAD 不可用都不再静默成功；MCP 根自动创建并拒绝 symlink；Store
-  初始化失败统一关闭连接。测试 601→640，scripts/ci.sh 与 Python 3.10 全量单测通过。
+  Content-Range、416+HEAD 不可用都不再静默成功；206 总长为 `*` 时按 fail-closed 拒绝
+  （无法证明完整，宁可 20；如需支持另立 ADR）。MCP 根自动创建并拒绝 symlink；Store
+  初始化失败统一关闭连接。测试 601→642，scripts/ci.sh 与 Python 3.10 全量单测通过。
 
 - **根源性修复方案（ADR 0004，2026-11-18）**：全仓评审确认 10 个 P1、20 个 P2；
   复盘认定其中 7 条是 2026-11-12 止血修复的残留或副作用。新增
