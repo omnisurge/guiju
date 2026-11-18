@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **根源性修复方案（ADR 0004 提议，2026-11-18）**：全仓评审确认 10 个 P1、20 个 P2；
+  复盘认定其中 7 条是 2026-11-12 止血修复的残留或副作用。新增
+  `docs/adr/0004-contract-first-hardening.md`（提议，待所有者批准）与
+  `docs/remediation-2026-11-18.md`（P0-P5、1.1.1 安全热修 + 1.2.0 架构收口）。
+  本条仅为方案记录，尚未修改产品代码。
+
 - **spec-currency 退役（ADR 0002 期 4 收口，2026-11-13）**：`GUIJU_CURRENCY` 只认
   `native[:off|dir]` 与 `off`；旧 `cmd:`/`mcp:` 覆盖连同 `CommandCurrency`/`McpCurrency`、
   `DEFAULT_MCP_URL`/`DEFAULT_CMD`、`GUIJU_CURRENCY_URL`/`GUIJU_CURRENCY_TOKEN` 一并删除。
