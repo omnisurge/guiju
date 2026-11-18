@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **B1 契约修复（2026-11-19）**：同步完成判定改为按源证据（空页/99 条/total=0 不再误报完整）；
+  时效适配器统一 fail-closed 与完整性契约，空编号行/末页缺少/重复页不再伪装成权威空结果或写负缓存；
+  多名称公告按所选名称选附件、编号与引用书名（按名称/编号/ID/URL 一致），多 target 与跨主体编号返回 32/33；
+  cite strict 正确分流 20/34/32，confidence 从 primary mention 推导；存储层保持 announcement/mention 事实一致。
+  测试 642→781，`scripts/ci.sh` 与 Python 3.10 全量单测通过。
+
 - **A1 安全热修（2026-11-18）**：正文下载校验 Content-Length/Content-Range，截断响应不再当成功；
   currency 元数据出口的限速补上读-睡-写锁；批量 pull 命中 40 立即停止；MCP batch 的
   list/out 限制在 GUIJU_HOME/mcp 并拒绝 symlink 逃逸；autosync 冷却时间戳写失败不阻断命令；
