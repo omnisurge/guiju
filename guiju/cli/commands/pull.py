@@ -16,6 +16,7 @@ from ...domain import attachment as att_domain
 from ...domain import availability, naming
 from ...domain.codes import Confidence, classify
 from ...errors import (
+    EXIT_COMPLIANCE,
     EXIT_EXISTS,
     EXIT_OK,
     AmbiguousAttachment,
@@ -281,6 +282,7 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
 
     out_dir = Path(args.out).expanduser() if args.out else default_out_dir()
     results: list[dict] = []
+    stopped: str | None = None
     for index, ref in enumerate(refs, 1):
         render.note(f"[{index}/{len(refs)}] {ref}")
         try:
@@ -297,12 +299,18 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
                 }
             )
             render.note(f"  → {'已存在' if exit_code == EXIT_EXISTS else '完成'} {payload.get('code') or ''}")
+            if exit_code == EXIT_COMPLIANCE:
+                stopped = "compliance"
+                break
         except GuijuError as exc:
             results.append(
                 {"ref": ref, "exit": exc.exit, "outcome": exc.reason,
                  "error": exc.message, "hint": exc.hint}
             )
             render.note(f"  → 未达成 exit={exc.exit} {exc.reason}：{exc.message[:60]}")
+            if exc.exit == EXIT_COMPLIANCE:
+                stopped = "compliance"
+                break
         except Exception as exc:  # 非 GuijuError 不得中断整批；批内兜底成 internal
             results.append(
                 {"ref": ref, "exit": 1, "outcome": "internal",
@@ -319,6 +327,7 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
         "counts": {str(k): v for k, v in sorted(counts.items())},
         "bytes_total": sum(r.get("bytes") or 0 for r in results),
         "out_dir": str(out_dir),
+        "stopped": stopped,
         "results": results,
     }
     render.emit(payload)

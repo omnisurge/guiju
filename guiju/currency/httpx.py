@@ -13,6 +13,7 @@ import io
 import json
 import math
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -47,6 +48,9 @@ _BLOCK_MARKERS = (
     "verify you are human", "cf-chl-",
 )
 _last_call: dict[str, float] = {}
+# H4 同类问题：读-睡-写必须是一个临界区，否则两个线程会同时读到旧的 last，
+# 都判定"不需要等"，限速形同虚设。与 compliance._throttle_lock 保持同一模式。
+_throttle_lock = threading.Lock()
 
 
 def _check_url(url: str) -> str:
@@ -88,11 +92,13 @@ def _check_redirect_target(req, target: str) -> str:
 
 
 def _throttle(host: str) -> None:
-    now = time.monotonic()
-    last = _last_call.get(host)
-    if last is not None and now - last < MIN_INTERVAL:
-        time.sleep(MIN_INTERVAL - (now - last))
-    _last_call[host] = time.monotonic()
+    # 整个"读 last → 计算/等待 → 写 last"必须在锁内完成；只锁写等于没锁。
+    with _throttle_lock:
+        now = time.monotonic()
+        last = _last_call.get(host)
+        if last is not None and now - last < MIN_INTERVAL:
+            time.sleep(MIN_INTERVAL - (now - last))
+        _last_call[host] = time.monotonic()
 
 
 def _check_headers(headers, url: str, *, redirect: bool = False) -> None:

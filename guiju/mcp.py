@@ -46,7 +46,7 @@ TOOLS = (
     },
     {
         "name": "batch",
-        "description": "批量盘点规范清单：输入清单文件路径，执行批量查询，返回统计。",
+        "description": "批量盘点规范清单：输入 GUIJU_HOME/mcp 下的清单文件路径，执行批量查询，返回统计。",
         "inputSchema": {
             "type": "object",
             "properties": {"list": {"type": "string"}, "out": {"type": "string"}, "cache": {"type": "string"}},
@@ -63,6 +63,34 @@ TOOLS = (
         },
     },
 )
+
+
+def _mcp_io_root() -> Path:
+    """MCP batch 的唯一文件根：GUIJU_HOME/mcp。
+
+    服务面不再拥有 CLI 的任意路径能力；目录本身由部署创建（不在这里 mkdir，
+    避免只读挂载/只读 Store 场景被一次 batch 调用意外写盘）。
+    """
+    from .store.sqlite import default_home
+
+    return (default_home() / "mcp").resolve()
+
+
+def _safe_mcp_path(raw: str, *, label: str) -> Path:
+    """把 batch 的 list/out 限制在 GUIJU_HOME/mcp 下，跟随 symlink 后仍须在根内。"""
+    path = Path(raw).expanduser()
+    root = _mcp_io_root()
+    if not path.is_absolute():
+        # 相对路径按 MCP 专用根解析，避免服务进程 cwd（/opt/guiju）把合法清单挡在外面。
+        path = root / path
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            f"{label}必须位于 {root} 下（收到 {raw}）；MCP 不接受任意文件路径"
+        ) from exc
+    return resolved
 
 
 def _text_result(text: str, *, error: bool = False) -> dict:
@@ -173,7 +201,10 @@ class McpServer:
         if not list_path:
             return _error_result("缺少 list 参数")
         try:
-            lines = Path(list_path).read_text(encoding="utf-8").splitlines()
+            list_file = _safe_mcp_path(list_path, label="清单")
+            lines = list_file.read_text(encoding="utf-8").splitlines()
+        except ValueError as exc:
+            return _error_result(str(exc))
         except OSError as exc:
             return _error_result(f"清单不可读：{exc}")
         codes = [line.split("#", 1)[0].strip() for line in lines]
@@ -201,11 +232,14 @@ class McpServer:
         out_path = str(arguments.get("out") or "").strip()
         if out_path:
             try:
-                Path(out_path).write_text(
+                out_file = _safe_mcp_path(out_path, label="盘点表")
+                out_file.write_text(
                     "# format: guiju-mcp-batch-v1\n# 输入\t规范号\t状态\t名称\t实施日期\t数据源\n"
                     + "\n".join(out_rows) + ("\n" if out_rows else ""),
                     encoding="utf-8",
                 )
+            except ValueError as exc:
+                return _error_result(str(exc))
             except OSError as exc:
                 return _error_result(f"盘点表写入失败：{exc}")
         return _text_result(
@@ -307,8 +341,18 @@ class McpServer:
                     "error": {"code": -32600, "message": "请求必须是 JSON object"}}
         method = payload.get("method")
         request_id = payload.get("id")
+        params = payload.get("params")
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            # 非 object 的 params 以前会在 initialize/tools.call 的 .get() 上抛异常，
+            # 直接打死 stdio 循环；这里统一按 JSON-RPC -32602 处理。
+            if request_id is None:
+                return None
+            return {"jsonrpc": "2.0", "id": request_id,
+                    "error": {"code": -32602, "message": "params 必须是 JSON object"}}
         if method == "initialize":
-            requested = str((payload.get("params") or {}).get("protocolVersion") or PROTOCOL_VERSIONS[-1])
+            requested = str(params.get("protocolVersion") or PROTOCOL_VERSIONS[-1])
             return {
                 "jsonrpc": "2.0", "id": request_id,
                 "result": {
@@ -322,7 +366,6 @@ class McpServer:
         if method == "tools/list":
             return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": list(TOOLS)}}
         if method == "tools/call":
-            params = payload.get("params") or {}
             name = str(params.get("name") or "")
             arguments = params.get("arguments") or {}
             if not isinstance(arguments, dict):
@@ -351,7 +394,17 @@ def serve_stdio(server: McpServer) -> int:
                 print(json.dumps({"jsonrpc": "2.0", "id": None,
                                   "error": {"code": -32700, "message": "JSON 解析失败"}}, ensure_ascii=False), flush=True)
                 continue
-            response = server.handle(payload)
+            try:
+                response = server.handle(payload)
+            except Exception:
+                # 兜底：即使某个新方法再次漏掉类型校验，也不能让一行坏请求
+                # 杀死整个 stdio 服务；回一条 JSON-RPC 内部错误后继续下一行。
+                import traceback
+
+                traceback.print_exc(file=sys.stderr)
+                response = {"jsonrpc": "2.0",
+                            "id": payload.get("id") if isinstance(payload, dict) else None,
+                            "error": {"code": -32603, "message": "内部错误"}}
             if response is not None:
                 print(json.dumps(response, ensure_ascii=False), flush=True)
     finally:

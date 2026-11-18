@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..domain.codes import Codes
-from ..errors import GuijuError
+from ..errors import GuijuError, NeedsHuman
 
 SCHEMA_VERSION = 2
 _SCHEMA_FILE = Path(__file__).with_name("schema.sql")
@@ -36,18 +36,29 @@ class Store:
         home = None
         if path is None:
             home = default_home()
-            home.mkdir(parents=True, exist_ok=True)
             path = home / "catalog.db"
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.legacy_backup: Path | None = None
         self._cross_thread = cross_thread
-        self.db = sqlite3.connect(
-            self.path, check_same_thread=not cross_thread)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA foreign_keys = ON")
-        self._migrate()
-        self._ensure_additions()
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.db = sqlite3.connect(
+                self.path, check_same_thread=not cross_thread)
+            self.db.row_factory = sqlite3.Row
+            self.db.execute("PRAGMA foreign_keys = ON")
+            self._migrate()
+            self._ensure_additions()
+        except (sqlite3.DatabaseError, OSError) as exc:
+            # 损坏库/权限/只读/并发锁都走这里：不能让 CLI 以裸 traceback 结束，
+            # 也不能假装"目录为空"继续查。给出可操作的 50（需人工）。
+            db = getattr(self, "db", None)
+            with contextlib.suppress(Exception):
+                if db is not None:
+                    db.close()
+            raise NeedsHuman(
+                f"数据库无法打开或已损坏：{self.path}（{type(exc).__name__}: {exc}）",
+                hint="先备份该文件，再把它移走让 guiju 重建目录；原始文件保留用于排查",
+            ) from exc
 
     # ---------------------------------------------------------------- schema
     def _migrate(self) -> None:

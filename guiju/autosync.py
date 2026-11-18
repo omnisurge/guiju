@@ -164,8 +164,11 @@ def evaluate(
         try:
             result = crawl(store)
         except Exception as exc:
-            store.set_meta("auto_sync_failed_at", now())
-            store.commit()
+            # 冷却时间戳写失败（只读库/磁盘满/并发锁）不能反过来阻断命令：
+            # 刷新失败本来就要降级为"用旧目录继续"，记录失败只是锦上添花。
+            with contextlib.suppress(Exception):
+                store.set_meta("auto_sync_failed_at", now())
+                store.commit()
             return _snap(
                 store,
                 state="refresh_failed",
@@ -175,8 +178,9 @@ def evaluate(
                 ),
                 retry_after_seconds=RETRY_AFTER_SECONDS,
             )
-        store.set_meta("auto_sync_failed_at", "")
-        store.commit()
+        with contextlib.suppress(Exception):
+            store.set_meta("auto_sync_failed_at", "")
+            store.commit()
         return _snap(
             store,
             state="refreshed",

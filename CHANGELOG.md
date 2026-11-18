@@ -2,11 +2,17 @@
 
 ## Unreleased
 
-- **根源性修复方案（ADR 0004 提议，2026-11-18）**：全仓评审确认 10 个 P1、20 个 P2；
+- **A1 安全热修（2026-11-18）**：正文下载校验 Content-Length/Content-Range，截断响应不再当成功；
+  currency 元数据出口的限速补上读-睡-写锁；批量 pull 命中 40 立即停止；MCP batch 的
+  list/out 限制在 GUIJU_HOME/mcp 并拒绝 symlink 逃逸；autosync 冷却时间戳写失败不阻断命令；
+  损坏数据库返回 JSON 50 而非裸 traceback；stdio 非 object params 不再打死服务。
+  测试 601→617，scripts/ci.sh 与 Python 3.10 全量单测通过。
+
+- **根源性修复方案（ADR 0004，2026-11-18）**：全仓评审确认 10 个 P1、20 个 P2；
   复盘认定其中 7 条是 2026-11-12 止血修复的残留或副作用。新增
-  `docs/adr/0004-contract-first-hardening.md`（提议，待所有者批准）与
+  `docs/adr/0004-contract-first-hardening.md`（2026-11-18 所有者按默认批准）与
   `docs/remediation-2026-11-18.md`（P0-P5、1.1.1 安全热修 + 1.2.0 架构收口）。
-  本条仅为方案记录，尚未修改产品代码。
+  A1 安全热修已按该方案实施；B1-B5 待续。
 
 - **spec-currency 退役（ADR 0002 期 4 收口，2026-11-13）**：`GUIJU_CURRENCY` 只认
   `native[:off|dir]` 与 `off`；旧 `cmd:`/`mcp:` 覆盖连同 `CommandCurrency`/`McpCurrency`、

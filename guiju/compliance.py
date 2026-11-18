@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import http.client
+import re
 import ssl
 import threading
 import time
@@ -220,6 +222,31 @@ def _remote_length(url: str, *, referer: str | None, timeout: int) -> int | None
         return None
 
 
+def _header_int(value: str | None) -> int | None:
+    """只接受纯数字头；缺失/畸形一律视为未知，不拿猜的长度做校验。"""
+    if value is None:
+        return None
+    text = value.strip()
+    return int(text) if text.isdigit() else None
+
+
+def _parse_content_range(value: str | None) -> tuple[int | None, int | None, int | None]:
+    """解析 Content-Range：bytes start-end/total 或 bytes */total。
+
+    返回 (start, end, total)；无法识别时返回 (None, None, None)。
+    """
+    if not value:
+        return None, None, None
+    match = re.fullmatch(r"\s*bytes\s+(\d+)-(\d+)/(\d+|\*)\s*", value)
+    if match:
+        total = None if match.group(3) == "*" else int(match.group(3))
+        return int(match.group(1)), int(match.group(2)), total
+    match = re.fullmatch(r"\s*bytes\s+\*/(\d+)\s*", value)
+    if match:
+        return None, None, int(match.group(1))
+    return None, None, None
+
+
 class _Retryable(Exception):
     """内部标记：这类失败值得再试一次。"""
 
@@ -296,14 +323,50 @@ def _download_once(
                             f"目标站点返回人机校验（命中「{marker}」）。按要求放弃，不做绕过。"
                         )
                 raise SourceUnreachable(f"附件返回 HTML 而非文件（{len(head)} 字节）：{url}")
+            if status not in (200, 206):
+                raise SourceUnreachable(f"附件返回意外状态 {status}：{url}")
             append = status == 206 and start > 0
             mode = "ab" if append else "wb"
+            content_length = _header_int(resp.headers.get("Content-Length"))
+            range_start = range_end = range_total = None
+            if status == 206:
+                range_start, range_end, range_total = _parse_content_range(
+                    resp.headers.get("Content-Range")
+                )
+                if range_start is None or range_end is None:
+                    raise SourceUnreachable(f"206 响应缺少可校验的 Content-Range：{url}")
+                if range_start != start:
+                    part.unlink(missing_ok=True)
+                    raise _Retryable(
+                        f"206 起点 {range_start} 与本地 {start} 不符，已丢弃 .part 重下：{url}"
+                    )
+                if range_end < range_start or (
+                    range_total is not None and range_end >= range_total
+                ):
+                    raise SourceUnreachable(
+                        f"206 Content-Range 非法：{range_start}-{range_end}/{range_total}［{url}］"
+                    )
             with part.open(mode) as fh:
                 while True:
                     chunk = resp.read(chunk_size)
                     if not chunk:
                         break
                     fh.write(chunk)
+            final_size = part.stat().st_size
+            if status == 200:
+                if content_length is not None and final_size != content_length:
+                    raise _Retryable(
+                        f"响应截断：声明 {content_length} 字节，实收 {final_size} 字节［{url}］"
+                    )
+            else:
+                if final_size != range_end + 1:
+                    raise _Retryable(
+                        f"206 响应截断：应到 {range_end}，实收 {final_size - 1}［{url}］"
+                    )
+                if range_total is not None and final_size != range_total:
+                    raise _Retryable(
+                        f"206 响应不完整：总长 {range_total}，实收 {final_size}［{url}］"
+                    )
     except urllib.error.HTTPError as exc:
         if exc.code == 416 and start > 0:
             # 416 多半是"本地已下完"（部分 ≥ 远端总长）；但也可能是 .part 损坏超界。
@@ -322,6 +385,8 @@ def _download_once(
         raise SourceUnreachable(f"HTTP {exc.code}：{url}") from exc
     except ComplianceDenied:
         raise
+    except http.client.IncompleteRead as exc:
+        raise _Retryable(f"响应截断：{exc}［{url}］") from exc
     except ssl.SSLError as exc:
         raise _Retryable(f"TLS 失败：{exc}") from exc
     except OSError as exc:
