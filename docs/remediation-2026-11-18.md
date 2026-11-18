@@ -1,6 +1,6 @@
 # 根源性修复方案（2026-11-18）
 
-- 状态：**已批准，A1 已通过独立复验（2026-11-18），B1 已完成并待最终独立复验（2026-11-19）**；与 ADR 0004 配套
+- 状态：**已批准，A1 与 B1 均已通过独立复验（A1 2026-11-18，B1 2026-11-19）**；与 ADR 0004 配套
 - 关系：问题清单见 `docs/audit/code-review-2026-11-18.md`；架构决策见 `docs/adr/0004-contract-first-hardening.md`
 - 目标：不是"把 10 条 P1 修一遍"，而是把产生这 10 条的六个根因收口，做到"修一类、不留同类"。
 - 交付：1.1.1（安全热修，不改退出码/DB/工具形状；MCP 路径收紧是安全例外）+ 1.2.0（契约与架构收口）。
@@ -432,8 +432,8 @@ A1 独立复审（2026-11-18，5 名 reviewer：net/store/cli/domain-mcp/tests�
 
 B1 实施记录（2026-11-19）：分支 `refactor/root-cause`；W2/W4 `fb2f196`、W3 `ea9c006`、
 W6 `3721f4a`，复审修复 `c00a7a9`/`9457d5b`/`1275294`。测试 642→781；
-`scripts/ci.sh`、Python 3.10 全量单测通过。独立复审：net/store/cli/currency/domain-mcp/tests
-（详见评审报告；P3 残余按计划转 B3/B4，不阻塞 B1）。
+`scripts/ci.sh`、Python 3.10 全量单测通过。独立复审 net/store/cli/currency/domain-mcp/tests
+全部 PASS（a367253）；P3 残余按计划转 B3/B4，不阻塞 B1。
 
 ### B2-B5
 
