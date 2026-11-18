@@ -68,6 +68,11 @@ def _cooldown_left(store: Store) -> int:
     return max(0, int(left))
 
 
+def _age(store: Store, source: str) -> float | None:
+    """mohurd 走无参路径，保留现有 mock/兼容；其它源按源查询。"""
+    return store.catalog_age_days() if source == "mohurd" else store.catalog_age_days(source)
+
+
 def _snap(
     store: Store,
     *,
@@ -75,16 +80,22 @@ def _snap(
     message: str = "",
     new: int | None = None,
     retry_after_seconds: int | None = None,
+    source: str = "mohurd",
 ) -> dict:
-    age = store.catalog_age_days()
+    age = _age(store, source)
+    meta = store.source_meta(source)
     return {
         "state": state,
         "message": message,
+        "source": source,
+        "complete": meta["complete"],
+        "complete_reason": meta["reason"],
         "age_days": None if age is None else round(age, 2),
-        "synced_at": store.get_meta("synced_at") or None,
+        "synced_at": meta["synced_at"] or None,
         "announcements": store.count_announcements(),
         "new": new,
         "retry_after_seconds": retry_after_seconds,
+        "sources": [meta],
     }
 
 
@@ -94,6 +105,7 @@ def evaluate(
     command: str,
     offline: bool = False,
     notify: Notify | None = None,
+    source: str = "mohurd",
 ) -> dict:
     """判断目录是否需要刷新，需要就刷。
 
@@ -101,12 +113,18 @@ def evaluate(
     这次结果基于哪个时点的目录、有没有在刷新、失败后多久可以再试。
     状态：fresh / refreshed / refreshing / refresh_failed / stale。
     """
-    age = store.catalog_age_days()
+    age = _age(store, source)
     empty = store.count_announcements() == 0
+    meta = store.source_meta(source)
     needs = empty or age is None or age > MAX_AGE_DAYS
+    # 按源水位判断：别的源完整不能把本源授权成 fresh；显式不完整（0）必须重试。
+    raw_complete = store.get_meta(f"sync:{source}:complete")
+    if ((source != "mohurd" and raw_complete != "1")
+            or (source == "mohurd" and raw_complete == "0")):
+        needs = True
 
     if not needs:
-        return _snap(store, state="fresh")
+        return _snap(store, state="fresh", source=source)
 
     if offline or os.environ.get("GUIJU_NO_AUTO_SYNC") == "1" or command not in AUTO_SYNC_COMMANDS:
         if offline:
@@ -125,6 +143,7 @@ def evaluate(
             store,
             state="stale",
             message=f"{why}；{what}，本次结果可能不含最新公告（需要时跑 guiju sync）",
+            source=source,
         )
 
     left = _cooldown_left(store)
@@ -134,6 +153,7 @@ def evaluate(
             state="refresh_failed",
             message="上次目录刷新失败，冷却中；本次结果基于现有目录",
             retry_after_seconds=left,
+            source=source,
         )
 
     with _try_lock(store) as locked:
@@ -143,11 +163,15 @@ def evaluate(
                 state="refreshing",
                 message="另一个进程正在更新目录；本次结果基于现有目录，建议 30 秒后重试",
                 retry_after_seconds=30,
+                source=source,
             )
         # 等锁期间别人可能已经同步好了 —— 复查一次再决定要不要花请求
-        age = store.catalog_age_days()
-        if store.count_announcements() and age is not None and age <= MAX_AGE_DAYS:
-            return _snap(store, state="fresh")
+        age = _age(store, source)
+        meta = store.source_meta(source)
+        raw_complete = store.get_meta(f"sync:{source}:complete")
+        complete_ok = meta["complete"] if source != "mohurd" else raw_complete != "0"
+        if store.count_announcements() and age is not None and age <= MAX_AGE_DAYS and complete_ok:
+            return _snap(store, state="fresh", source=source)
 
         from .syncengine import crawl
 
@@ -162,7 +186,7 @@ def evaluate(
             else:
                 notify("目录上次同步时间未知，正在增量同步（约 3 秒）")
         try:
-            result = crawl(store)
+            result = crawl(store, source=source)
         except Exception as exc:
             # 冷却时间戳写失败（只读库/磁盘满/并发锁）不能反过来阻断命令：
             # 刷新失败本来就要降级为"用旧目录继续"，记录失败只是锦上添花。
@@ -177,6 +201,7 @@ def evaluate(
                     f"{RETRY_AFTER_SECONDS // 60} 分钟后会自动再试"
                 ),
                 retry_after_seconds=RETRY_AFTER_SECONDS,
+                source=source,
             )
         with contextlib.suppress(Exception):
             store.set_meta("auto_sync_failed_at", "")
@@ -186,4 +211,5 @@ def evaluate(
             state="refreshed",
             message=f"目录已更新（新增 {result['new']} 条），本次结果基于新目录",
             new=result["new"],
+            source=source,
         )

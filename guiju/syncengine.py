@@ -28,26 +28,59 @@ def crawl(
     source: str = "mohurd",
     on_page: PageHook | None = None,
 ) -> dict:
-    """抓取目录直到完整或无可新增（连续两页 0 新增即停）。
+    """抓取目录直到有完整证据或无可新增。
 
-    早停前提：上一轮的 corpus_meta["catalog_complete"] == "1"（目录已爬到底）。
-    否则静默早停会掩盖缺口：首轮爬一半失败，重跑时前几页全是已入库条目，
-    连续两页 0 新增即停，缺口之后的内容永远爬不到，而 synced_at 照常刷新。
-    截断（--pages 截停的轮次）既不写 synced_at 也不置 catalog_complete。
+    完成不再由"空页"或"page * page_size >= total"单独宣布：
+      - 空页 + seen < total → 缺口（empty_page_before_total），不写完整/同步时间；
+      - 已知 total 且 seen >= total → 完整；
+      - 未知 total 且遇到空页 → 不把部分当完整；
+      - 截断（--pages）→ 不写完整/同步时间；
+      - 上一轮已完整时，连续两页 0 新增才允许 quiet stop（仅增量场景）。
+    seen 按实际条目累加，所以站点每页少于请求 page_size（mohurd 实测 99/100）
+    不会再用放大后的 page * page_size 提前宣布完整。
     """
     src = registry()[source]
     page = 1
-    new_total = seen = total = 0
+    new_total = seen = 0
+    best_total: int | None = None
     quiet_pages = 0
-    # 上一轮已完整才允许增量早停；未知（默认/截断后）必须爬到底
-    was_complete = store.get_meta("catalog_complete") == "1"
-    completed = truncated = False
+    complete = truncated = False
+    reason = ""
+
+    # 按源读完成水位；mohurd 过渡期兼容旧的全局键。
+    source_complete = store.get_meta(f"sync:{source}:complete")
+    if not source_complete and source == "mohurd":
+        source_complete = store.get_meta("catalog_complete")
+    was_complete = source_complete == "1"
 
     while True:
-        items, total = src.catalog_page(page, page_size)
+        items, page_total = src.catalog_page(page, page_size)
+        if page_total is not None:
+            try:
+                page_total = int(page_total)
+            except (TypeError, ValueError):
+                page_total = 0
+            if page_total:
+                best_total = page_total if best_total is None else max(best_total, page_total)
+            elif not items and best_total is None:
+                # 明确回 0 条且没有历史 total：空目录，不是"未知"。
+                best_total = 0
+
         if not items:
-            completed = True
+            if best_total is None:
+                complete = False
+                reason = "total_unknown"
+            elif seen < best_total:
+                complete = False
+                reason = "empty_page_before_total"
+            elif best_total == 0:
+                complete = True
+                reason = "empty_catalog"
+            else:
+                complete = True
+                reason = "empty_page"
             break
+
         fresh = 0
         for item in items:
             name, category = _classify(src, item["title"])
@@ -60,32 +93,54 @@ def crawl(
         seen += len(items)
         quiet_pages = quiet_pages + 1 if fresh == 0 else 0
         if on_page is not None:
-            on_page(page, len(items), fresh, seen, total)
+            on_page(page, len(items), fresh, seen, best_total or 0)
 
         if pages and page >= pages:
             truncated = True
+            reason = "truncated"
             break
         if was_complete and quiet_pages >= 2:
+            complete = True
+            reason = "previous_complete"
             break
-        if total and page * page_size >= total:
-            completed = True
+        if best_total is not None and seen >= best_total:
+            complete = True
+            reason = "seen_ge_total"
             break
         page += 1
 
-    complete = completed or was_complete
     if complete and not truncated:
-        store.set_meta("catalog_complete", "1")
-        store.set_meta("synced_at", now())
-    store.set_meta("catalog_total", str(total or store.count_announcements()))
+        stamp = now()
+        store.set_meta(f"sync:{source}:complete", "1")
+        store.set_meta(f"sync:{source}:reason", reason)
+        store.set_meta(f"sync:{source}:synced_at", stamp)
+        if source == "mohurd":
+            # 只保留给旧版/旧调用方读；新逻辑不再用全局 complete 代替任何源。
+            store.set_meta("catalog_complete", "1")
+            store.set_meta("synced_at", stamp)
+    else:
+        store.set_meta(f"sync:{source}:complete", "0")
+        store.set_meta(f"sync:{source}:reason", reason)
+        if source == "mohurd":
+            # 旧读者即使只看全局键，也不能把这一轮缺口当成完整。
+            store.set_meta("catalog_complete", "0")
+    store.set_meta(f"sync:{source}:total", "" if best_total is None else str(best_total))
+    store.set_meta(f"sync:{source}:seen", str(seen))
+    if source == "mohurd":
+        store.set_meta(
+            "catalog_total", str(best_total if best_total is not None else store.count_announcements())
+        )
     store.commit()
     return {
+        "source": source,
         "new": new_total,
         "scanned": seen,
-        "total_reported": total,
+        "total_reported": best_total,
         "total_in_db": store.count_announcements(),
         "latest_published_on": store.max_published_on(),
-        "synced_at": store.get_meta("synced_at"),
+        "synced_at": store.source_meta(source)["synced_at"],
         "complete": complete,
+        "complete_reason": reason,
         "truncated": truncated,
         "db": str(store.path),
     }

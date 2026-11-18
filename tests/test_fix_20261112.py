@@ -20,15 +20,18 @@ from guiju.store.sqlite import Store
 class _FakeSource:
     """会数自己被抓了几页的假目录源。"""
 
-    def __init__(self, pages):
+    def __init__(self, pages, total=None):
         # pages: 1-based 页号 -> [{url,date,title}]，None 表示无此页（返回空）
         self._pages = dict(pages)
+        self._total = total
         self.calls = []
 
     def catalog_page(self, page_no, page_size):
         self.calls.append(page_no)
         items = self._pages.get(page_no) or []
-        total = sum(len(v) for v in self._pages.values() if v)
+        total = self._total if self._total is not None else sum(
+            len(v) for v in self._pages.values() if v
+        )
         return list(items), total
 
 
@@ -58,8 +61,8 @@ class CrawlCompleteTest(unittest.TestCase):
         self.assertEqual(src.calls, [1])
         self.assertTrue(res["truncated"])
         self.assertFalse(res["complete"])
-        self.assertEqual(self.store.get_meta("synced_at"), "")
-        self.assertNotEqual(self.store.get_meta("catalog_complete"), "1")
+        self.assertEqual(self.store.get_meta("sync:fake:synced_at"), "")
+        self.assertNotEqual(self.store.get_meta("sync:fake:complete"), "1")
 
     def test_incomplete_catalog_does_not_quiet_stop(self):
         """缺口的增量轮不得静默早停：前 2 条已入库、catalog_complete 未置，
@@ -73,21 +76,21 @@ class CrawlCompleteTest(unittest.TestCase):
         self.assertEqual(src.calls, [1, 2, 3, 4])   # 爬满，不是 [1, 2]
         self.assertEqual(res["scanned"], 8)
         self.assertTrue(res["complete"])
-        self.assertEqual(self.store.get_meta("catalog_complete"), "1")
-        self.assertNotEqual(self.store.get_meta("synced_at"), "")
+        self.assertEqual(self.store.get_meta("sync:fake:complete"), "1")
+        self.assertNotEqual(self.store.get_meta("sync:fake:synced_at"), "")
 
     def test_complete_catalog_allows_quiet_stop(self):
         """目录已完整后，增量轮允许连续两页 0 新增即停。"""
         src = _FakeSource(self._pages(1, 4))
         self._crawl(src)                            # 首轮爬到底
-        self.assertEqual(self.store.get_meta("catalog_complete"), "1")
+        self.assertEqual(self.store.get_meta("sync:fake:complete"), "1")
 
         src2 = _FakeSource(self._pages(1, 4))       # 目录不变
         res = self._crawl(src2)
         self.assertEqual(src2.calls, [1, 2])        # 两页 0 新增即停
         self.assertEqual(res["new"], 0)
         self.assertTrue(res["complete"])
-        self.assertNotEqual(self.store.get_meta("synced_at"), "")  # 早停也刷新
+        self.assertNotEqual(self.store.get_meta("sync:fake:synced_at"), "")  # 早停也刷新
 
     def test_truncate_then_next_run_recovers_gap(self):
         """截断轮之后的下一轮：不带 pages 限制时仍爬到底并置完整。"""
@@ -95,7 +98,49 @@ class CrawlCompleteTest(unittest.TestCase):
         self._crawl(src, pages=1)
         res = self._crawl(src)
         self.assertTrue(res["complete"])
-        self.assertEqual(self.store.get_meta("catalog_complete"), "1")
+        self.assertEqual(self.store.get_meta("sync:fake:complete"), "1")
+
+    def test_empty_page_before_total_is_incomplete(self):
+        """空页不再直接 complete：total=10、只见到 2 条时是缺口。"""
+        src = _FakeSource({1: [_item(1), _item(2)], 2: []}, total=10)
+        res = self._crawl(src)
+        self.assertEqual(src.calls, [1, 2])
+        self.assertFalse(res["complete"])
+        self.assertEqual(res["complete_reason"], "empty_page_before_total")
+        self.assertEqual(self.store.get_meta("sync:fake:complete"), "0")
+        self.assertEqual(self.store.get_meta("sync:fake:synced_at"), "")
+
+    def test_page_size_99_uses_actual_seen_not_page_times_size(self):
+        """站点每页 99（请求 100）时，page*page_size 会虚高；必须按 seen 判断。"""
+        pages = {
+            1: [_item(n) for n in range(1, 100)],
+            2: [_item(n) for n in range(100, 199)],
+            3: [_item(199)],
+        }
+        src = _FakeSource(pages, total=199)
+        res = self._crawl(src)
+        self.assertEqual(src.calls, [1, 2, 3])
+        self.assertEqual(res["scanned"], 199)
+        self.assertTrue(res["complete"])
+        self.assertEqual(res["complete_reason"], "seen_ge_total")
+
+    def test_empty_catalog_total_zero_is_complete(self):
+        src = _FakeSource({}, total=0)
+        res = self._crawl(src)
+        self.assertTrue(res["complete"])
+        self.assertEqual(res["complete_reason"], "empty_catalog")
+        self.assertEqual(self.store.get_meta("sync:fake:total"), "0")
+        self.assertEqual(self.store.get_meta("sync:fake:seen"), "0")
+
+    def test_source_complete_is_isolated(self):
+        """alpha 完整不能把 beta 授权成完整；全局 catalog_complete 不再替所有源背书。"""
+        alpha = _FakeSource({1: [_item(1)]}, total=1)
+        beta = _FakeSource({1: [_item(2)]}, total=1)
+        with mock.patch("guiju.syncengine.registry", return_value={"alpha": alpha, "beta": beta}):
+            syncengine.crawl(self.store, source="alpha", page_size=2)
+        self.assertTrue(self.store.source_meta("alpha")["complete"])
+        self.assertFalse(self.store.source_meta("beta")["complete"])
+        self.assertEqual(self.store.get_meta("catalog_complete"), "")
 
 
 class ThrottleTest(unittest.TestCase):

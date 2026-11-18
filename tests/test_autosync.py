@@ -97,6 +97,40 @@ class AutoSyncTest(unittest.TestCase):
         self.assertEqual(snap["new"], 1)
         self.assertIn("新目录", snap["message"])
 
+    def _synced_source(self, source: str, days_ago: float = 0, complete: bool = True):
+        ts = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
+        self.store.set_meta(f"sync:{source}:synced_at", ts)
+        self.store.set_meta(f"sync:{source}:complete", "1" if complete else "0")
+        self.store.commit()
+
+    def test_other_source_complete_does_not_authorize_shzjw(self):
+        """mohurd 的新鲜/完整不能把 shzjw 授权成 fresh。"""
+        self._seed()
+        self._synced(1)
+        calls: list = []
+        with mock.patch("guiju.syncengine.crawl", side_effect=self._fake_crawl(calls)):
+            snap = autosync.evaluate(self.store, command="pull", source="shzjw")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(snap["state"], "refreshed")
+        self.assertEqual(snap["source"], "shzjw")
+
+    def test_shzjw_complete_and_fresh_makes_no_requests(self):
+        self._seed()
+        self._synced_source("shzjw", 1, complete=True)
+        with mock.patch("guiju.syncengine.crawl", side_effect=AssertionError("不该联网")):
+            snap = autosync.evaluate(self.store, command="pull", source="shzjw")
+        self.assertEqual(snap["state"], "fresh")
+        self.assertEqual(snap["source"], "shzjw")
+
+    def test_mohurd_fresh_ignores_incomplete_shzjw(self):
+        self._seed()
+        self._synced(1)
+        self._synced_source("shzjw", 1, complete=False)
+        with mock.patch("guiju.syncengine.crawl", side_effect=AssertionError("不该联网")):
+            snap = autosync.evaluate(self.store, command="search")
+        self.assertEqual(snap["state"], "fresh")
+        self.assertEqual(snap["source"], "mohurd")
+
     def test_empty_catalog_triggers_first_sync(self):
         calls: list = []
         with mock.patch("guiju.syncengine.crawl", side_effect=self._fake_crawl(calls)):

@@ -96,11 +96,13 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_OK
         # 进程内目录保鲜：过期就顺手增量刷新，不依赖设备级定时任务（见 ADR 0003）。
         # 刷新状态会注入到每份 JSON 结果，agent 不必猜"结果是不是旧的"。
+        source = getattr(args, "source", "mohurd") or "mohurd"
         catalog = autosync.evaluate(
             store,
             command=args.cmd,
             offline=bool(getattr(args, "offline", False)),
             notify=render.note,
+            source=source,
         )
         render.set_catalog(catalog)
         if catalog.get("message"):

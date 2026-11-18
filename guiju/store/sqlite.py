@@ -14,7 +14,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from ..domain.codes import Codes
+from ..domain.codes import Codes, Role, _code_stem
 from ..errors import GuijuError, NeedsHuman
 
 SCHEMA_VERSION = 2
@@ -123,15 +123,24 @@ class Store:
     def upsert_announcement(
         self, url: str, published_on: str, title: str, doc_name: str, category: str
     ) -> tuple[int, bool]:
+        """按 URL 幂等写入；已存在时更新可变的展示字段，保留 id 与首次 fetched_at。
+
+        旧实现是 INSERT OR IGNORE：标题/分类/日期永远停留在首抓值，修好解析器也修不到
+        存量。这里只更新事实字段，不改 fetched_at（它表示首次抓取时间）；id 不变，
+        已有 mention 的引用关系不会被破坏。
+        """
+        row = self.db.execute("SELECT id FROM announcement WHERE url=?", (url,)).fetchone()
+        if row is not None:
+            self.db.execute(
+                "UPDATE announcement SET published_on=?, title=?, doc_name=?, category=? WHERE id=?",
+                (published_on, title, doc_name, category, int(row["id"])),
+            )
+            return int(row["id"]), False
         cur = self.db.execute(
             "INSERT INTO announcement(url,published_on,title,doc_name,category,fetched_at) "
-            "VALUES(?,?,?,?,?,?) ON CONFLICT(url) DO NOTHING",
+            "VALUES(?,?,?,?,?,?)",
             (url, published_on, title, doc_name, category, now()),
         )
-        is_new = cur.rowcount > 0
-        if not is_new:
-            row = self.db.execute("SELECT id FROM announcement WHERE url=?", (url,)).fetchone()
-            return int(row["id"]), False
         return int(cur.lastrowid or 0), True
 
     def get_ann(self, ann_id: int) -> sqlite3.Row | None:
@@ -256,9 +265,18 @@ class Store:
     def set_meta(self, key: str, value: str) -> None:
         self.db.execute("INSERT OR REPLACE INTO corpus_meta(k,v) VALUES(?,?)", (key, value))
 
-    def catalog_age_days(self) -> float | None:
-        """目录上次同步距今多少天；从未同步返回 None。"""
-        raw = self.get_meta("synced_at")
+    def _synced_at(self, source: str | None = None) -> str:
+        """按源取 synced_at；mohurd 在过渡期回退旧的全局键。"""
+        if source is None:
+            return self.get_meta("synced_at")
+        raw = self.get_meta(f"sync:{source}:synced_at")
+        if not raw and source == "mohurd":
+            raw = self.get_meta("synced_at")
+        return raw
+
+    def catalog_age_days(self, source: str | None = None) -> float | None:
+        """目录上次同步距今多少天；从未同步返回 None。可按源查询。"""
+        raw = self._synced_at(source)
         if not raw:
             return None
         try:
@@ -269,20 +287,45 @@ class Store:
             return None
         return (datetime.now() - then).total_seconds() / 86400
 
-    def catalog_meta_corrupt(self) -> str | None:
-        """corpus_meta.synced_at 存在但解析不出 → 返回描述串；否则 None。
-
-        catalog_age_days 返回 None 分两种：没同步过（正常）和 meta 值坏了（脏库信号）。
-        调用方用这个区分，别把"解析失败"当成"尚未同步"抹掉。
-        """
-        raw = self.get_meta("synced_at")
+    def catalog_meta_corrupt(self, source: str | None = None) -> str | None:
+        """对应源的 synced_at 存在但解析不出 → 返回描述串；否则 None。"""
+        raw = self._synced_at(source)
         if not raw:
             return None
         try:
             datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
         except ValueError:
-            return f"catalog meta 损坏：synced_at={raw!r}"
+            label = f"sync:{source}:synced_at" if source else "synced_at"
+            return f"catalog meta 损坏：{label}={raw!r}"
         return None
+
+    def source_meta(self, source: str) -> dict:
+        """读一个源的同步状态；catalog 完成不再用全局单值代替所有源。"""
+        def field(name: str) -> str:
+            return self.get_meta(f"sync:{source}:{name}")
+
+        complete_raw = field("complete")
+        if not complete_raw and source == "mohurd":
+            complete_raw = self.get_meta("catalog_complete")
+        try:
+            total: int | None = int(field("total")) if field("total") else None
+        except ValueError:
+            total = None
+        try:
+            seen: int | None = int(field("seen")) if field("seen") else None
+        except ValueError:
+            seen = None
+        synced_at = self._synced_at(source)
+        age = self.catalog_age_days() if source == "mohurd" else self.catalog_age_days(source)
+        return {
+            "source": source,
+            "complete": complete_raw == "1",
+            "reason": field("reason"),
+            "total": total,
+            "seen": seen,
+            "synced_at": synced_at,
+            "age_days": None if age is None else round(age, 2),
+        }
 
     def get_meta(self, key: str, default: str = "") -> str:
         row = self.db.execute("SELECT v FROM corpus_meta WHERE k=?", (key,)).fetchone()
@@ -323,18 +366,27 @@ class Store:
 
 
 def persist_codes(store: Store, ann_id: int, codes: Codes, doc_name: str, status: str = "unknown") -> None:
-    """把一次 classify 的结果落库（edition + mention + scan）。"""
+    """把一次 classify 的结果落库（edition + mention + scan）。
+
+    重扫必须替换旧结果：先删该公告的旧 mention，再写本次结果，避免"新解析比旧结果少"
+    时旧编号永久残留。mention 的角色只在同族同号时降级，不能把无关引用说成被代替。
+    """
     if codes.primary_key:
         store.upsert_edition(codes.primary_key, codes.primary_display or codes.primary_key,
                              doc_name, codes.confidence.value)
+    store.db.execute("DELETE FROM mention WHERE ann_id=?", (ann_id,))
     for m in codes.mentions:
         if m.code_key != codes.primary_key:
-            store.upsert_edition(m.code_key, m.code_display, None, "parsed")
+            decisive = m.role in (Role.TARGET_OF_REVISION, Role.PRIMARY, Role.SUPERSEDED_REF)
+            store.upsert_edition(
+                m.code_key, m.code_display, None, "parsed" if decisive else "ambiguous"
+            )
         role = m.role.value
-        # 兜底降级只在 primary 是决定性证据（parsed）时成立：
-        # ambiguous 兜底 primary 没资格把同族编号判成旧版（与 domain._demote_older 一致）。
+        # 兜底降级只在 primary 是决定性证据（parsed）时成立，且必须同族同号：
+        # "参考 GB 50016-2014" 这类无关引用不能被说成被 primary 代替。
         if (codes.primary_key and codes.confidence.value == "parsed"
-                and m.code_key != codes.primary_key and m.role.value == "mentioned"):
+                and m.code_key != codes.primary_key and m.role is Role.MENTIONED
+                and _code_stem(m.code_key) == _code_stem(codes.primary_key)):
             role = "superseded_ref"
         store.add_mention(ann_id, m.code_key, role, m.evidence)
     store.mark_scanned(ann_id, len(codes.mentions))

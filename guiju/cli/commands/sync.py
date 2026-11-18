@@ -18,26 +18,33 @@ def run(store: Store, args: argparse.Namespace) -> int:
     # 总数只查一次（原来条件里一次、payload 里又一次，白白扫两遍表）
     total_in_db = store.count_announcements()
     if args.if_stale is not None and total_in_db:
-        age = store.catalog_age_days()
+        age = store.catalog_age_days(args.source)
         if age is None:
             # None 分"没同步过"与"meta 坏了"：后者必须露出来，不能静默当旧库
-            corrupt = store.catalog_meta_corrupt()
+            corrupt = store.catalog_meta_corrupt(args.source)
             if corrupt:
                 render.note(f"! {corrupt}，按未同步处理继续抓取")
         elif age <= args.if_stale:
-            render.emit(
-                {
-                    "ok": True,
-                    "skipped": True,
-                    "reason": "fresh",
-                    "age_days": round(age, 2),
-                    "total_in_db": total_in_db,
-                    "synced_at": store.get_meta("synced_at"),
-                    "db": str(store.path),
-                }
+            explicit = store.get_meta(f"sync:{args.source}:complete")
+            complete_ok = bool(store.source_meta(args.source)["complete"]) or (
+                args.source == "mohurd" and not explicit
             )
-            render.note(f"目录 {age:.1f} 天前同步，未超过 {args.if_stale} 天阈值，跳过（0 请求）")
-            return 0
+            if not complete_ok:
+                render.note("目录未标记完整，忽略 --if-stale，继续同步")
+            else:
+                render.emit(
+                    {
+                        "ok": True,
+                        "skipped": True,
+                        "reason": "fresh",
+                        "age_days": round(age, 2),
+                        "total_in_db": total_in_db,
+                        "synced_at": store.source_meta(args.source)["synced_at"],
+                        "db": str(store.path),
+                    }
+                )
+                render.note(f"目录 {age:.1f} 天前同步，未超过 {args.if_stale} 天阈值，跳过（0 请求）")
+                return 0
 
     def on_page(page: int, count: int, fresh: int, seen: int, total: int) -> None:
         render.note(f"第 {page:>3} 页：{count:>3} 条，新增 {fresh:>3}（累计 {seen}/{total}）")

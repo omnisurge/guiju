@@ -21,6 +21,15 @@ def run(store: Store, args: argparse.Namespace) -> int:
     in_window = sum(c for y, c in by_year.items() if y and y.isdigit() and int(y) >= FULL_TEXT_SINCE_YEAR)
 
     from ... import currency as currency_mod
+    from ...sources import registry
+
+    sources = []
+    for source_id in registry():
+        meta = store.source_meta(source_id)
+        meta["stale"] = (
+            not meta["complete"] or meta["age_days"] is None or meta["age_days"] > 7
+        )
+        sources.append(meta)
 
     probe = store.db.execute(
         "SELECT outcome, COUNT(*) c FROM probe GROUP BY outcome ORDER BY c DESC"
@@ -39,6 +48,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "synced_at": st["synced_at"],
         "catalog_age_days": None if age is None else round(age, 2),
         "catalog_stale": age is None or age > 7,
+        "sources": sources,
         "latest_published_on": store.max_published_on(),
         "coverage": {
             "full_text_since_year": FULL_TEXT_SINCE_YEAR,
@@ -58,6 +68,11 @@ def run(store: Store, args: argparse.Namespace) -> int:
         render.out(f"库：{payload['db']}（schema v{payload['schema_version']}）")
         render.out(f"公告 {st['announcements']} 条 · 版本 {st['editions']} 个 · 提及 {st['mentions']} 处")
         render.out(f"同步于 {st['synced_at'] or '尚未同步'}")
+        for meta in sources:
+            total = "?" if meta["total"] is None else meta["total"]
+            seen = "?" if meta["seen"] is None else meta["seen"]
+            state = "完整" if meta["complete"] else f"不完整（{meta['reason'] or '未知'}）"
+            render.out(f"  {meta['source']}：{state} {seen}/{total}")
         render.out(f"时效服务：{payload['currency_source']}　请求台账：{payload['probe'] or '无'}")
         render.out(f"可得性：{coverage_statement()}")
         render.out(f"  {FULL_TEXT_SINCE_YEAR} 年及以后 {in_window} 条 / 之前 {pre} 条（后者通常无正文，不是故障）")
