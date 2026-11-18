@@ -165,14 +165,33 @@ def run(store: Store, args: argparse.Namespace) -> int:
         if len(parsed) == 1:
             primary = parsed[0]
         elif len(parsed) > 1:
-            raise AmbiguousCode(
-                "公告有多个已核实编号，无法确定引用哪一本",
-                candidates=[
-                    {"code": m["code_display"], "role": m["role"],
-                     "confidence": m["confidence"]}
-                    for m in primary_candidates
-                ],
-            )
+            # 同一本规范的两个编号写法（JGJ450-2018 与 JGJ/T450-2018）不是两个版本：
+            # 取年份更新的一条；同年优先 target_of_revision。跨主体才交 32。
+            from ...domain.codes import _code_subject
+
+            def _year_of(key: str) -> str:
+                import re
+                match = re.search(r"-(\d{4})$", key or "")
+                return match[1] if match else ""
+
+            subjects = {_code_subject(m["code_key"]) for m in parsed}
+            if len(subjects) == 1:
+                primary = max(
+                    parsed,
+                    key=lambda m: (
+                        _year_of(m["code_key"]),
+                        m["role"] == "target_of_revision",
+                    ),
+                )
+            else:
+                raise AmbiguousCode(
+                    "公告有多个已核实编号，无法确定引用哪一本",
+                    candidates=[
+                        {"code": m["code_display"], "role": m["role"],
+                         "confidence": m["confidence"]}
+                        for m in primary_candidates
+                    ],
+                )
         elif len(primary_candidates) == 1:
             # 单条 primary 但 confidence=ambiguous：仍可出串，但 confidence 会带
             # ambiguous，warnings 非空；不把它伪装成已核实。

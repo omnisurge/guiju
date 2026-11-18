@@ -339,6 +339,24 @@ class CiteConfidenceTest(_CiteCase):
             self._run(_FakeCurrency)
         self.assertEqual(cm.exception.exit, 32)
 
+    def test_same_subject_target_and_primary_is_not_ambiguous(self):
+        # 真实页面：JGJ450-2018（primary）与 JGJ/T450-2018（target）是同一本；
+        # cite 不能因为两条都 parsed 就 32。
+        from guiju.domain.codes import classify
+        from guiju.store.sqlite import persist_codes
+
+        self.store.db.execute("DELETE FROM mention WHERE ann_id=1")
+        text = (
+            "现批准《老年人照料设施建筑设计标准》JGJ450-2018局部修订的条文，"
+            "自2027年1月1日起实施。标准编号修改为JGJ/T450-2018。"
+        )
+        persist_codes(self.store, 1, classify(text, "老年人照料设施建筑设计标准"), "老年人照料设施建筑设计标准")
+        self.store.commit()
+        rc, emitted = self._run(_FakeCurrency)
+        self.assertEqual(rc, 0)
+        self.assertIn("JGJ/T 450-2018", emitted["cite"])
+        self.assertEqual(emitted["confidence"], "parsed")
+
     def test_ambiguous_mention_stays_ambiguous(self):
         # edition.confidence 一旦 parsed 不会被降级（upsert_edition 的既有约定），
         # 所以这里另建一个"正文解析就是 ambiguous"的库。

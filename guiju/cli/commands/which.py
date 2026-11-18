@@ -116,6 +116,21 @@ def run(store: Store, args: argparse.Namespace) -> int:
         chosen, _matched = match_name(names_of(ann["title"], ann["doc_name"]), args.ref)
         if chosen:
             ann_name = chosen
+    elif ann is not None and target.get("code_key"):
+        # 按编号查多名称公告时，展示名也按该编号的 mention 证据选书。
+        from ...domain.announcement import contains_name, names_of
+        from ...domain.codes import normalize_key
+
+        want_key = normalize_key(target["code_key"])
+        for row in store.mentions_for(int(ann["id"])):
+            if row["code_key"] != want_key:
+                continue
+            for candidate_name in names_of(ann["title"], ann["doc_name"]):
+                if contains_name(row["evidence"], candidate_name):
+                    ann_name = candidate_name
+                    break
+            if ann_name != ann["doc_name"]:
+                break
     # W3/P1-4：complete=False 表示这次答案没取全（空结果可能是漏记录，不是"没有"）
     currency_complete, incomplete_reason = completeness_of(cur)
     payload = {
