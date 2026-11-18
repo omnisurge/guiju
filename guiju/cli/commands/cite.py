@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 from ... import localstatus
+from ...domain.announcement import contains_name, match_name, names_of
 from ...domain.cite import build_citation, normalize_clause
 from ...domain.currency_check import CurrencyCheck, CurrencyState, completeness_of
 from ...errors import (
@@ -48,6 +49,13 @@ def run(store: Store, args: argparse.Namespace) -> int:
         allow_network=not args.offline,
     )
     ann = target["ann"]
+    # 多名称公告（P1-3）：按名称引用时用用户查询的那一本，不能固定写标题里的第一本。
+    citation_name = ann["doc_name"] or ""
+    book_name = ""
+    if target.get("via") in ("name", "name_current_version"):
+        chosen, _matched = match_name(names_of(ann["title"], ann["doc_name"]), args.ref)
+        if chosen:
+            citation_name = book_name = chosen
     code_key = target.get("code_key")
     code_display = target.get("code_display")
     # 兜底编号来源的置信度（None=正文解析所得，自带核实）；
@@ -68,11 +76,110 @@ def run(store: Store, args: argparse.Namespace) -> int:
             detail = getattr(source, "detail", None)
             if detail is not None:
                 _, text = detail(ann["url"])
-                codes = classify(text, ann["doc_name"] or "")
-                persist_codes(store, int(ann["id"]), codes, ann["doc_name"] or "")
+                codes = classify(text, citation_name or ann["doc_name"] or "")
+                if book_name and len(names_of(ann["title"], ann["doc_name"])) > 1:
+                    # 多名称公告按名称引用：只落这本书证据里的编号，
+                    # 否则会把另一本的编号写进库（P1-A 的落库侧）。
+                    from ...domain.codes import Codes, Confidence, Role
+
+                    relevant = tuple(
+                        m for m in codes.mentions
+                        if contains_name(m.evidence, book_name)
+                    )
+                    decisive = tuple(
+                        m for m in relevant
+                        if m.role in (Role.PRIMARY, Role.TARGET_OF_REVISION)
+                    )
+                    keys = {m.code_key for m in decisive}
+                    if len(keys) != 1:
+                        raise AmbiguousCode(
+                            f"公告标题含多本规范，正文没有与「{book_name}」"
+                            "对应的唯一编号证据",
+                            hint="按编号引用，或人工确认这本书的编号后再试",
+                            candidates=[
+                                {"code": m.code_display, "role": m.role.value,
+                                 "evidence": m.evidence[:160]}
+                                for m in (relevant or codes.mentions)
+                            ],
+                        )
+                    chosen = decisive[0]
+                    codes = Codes(
+                        mentions=relevant,
+                        primary_key=chosen.code_key,
+                        primary_display=chosen.code_display,
+                        confidence=Confidence.PARSED,
+                    )
+                persist_codes(store, int(ann["id"]), codes, citation_name or ann["doc_name"] or "")
                 store.commit()
                 mentions = store.mentions_for(int(ann["id"]))
-        primary = next((m for m in mentions if m["role"] in ("primary", "target_of_revision")), None)
+        # 多名称公告按名称引用时，只认证据里出现这本书的编号；否则正文里
+        # 第一个编号会被静默写成另一本书的引用（P1-3 / P1-A）。
+        if book_name and len(names_of(ann["title"], ann["doc_name"])) > 1:
+            relevant = [m for m in mentions if contains_name(m["evidence"], book_name)]
+            if not relevant:
+                raise AmbiguousCode(
+                    f"公告标题含多本规范，正文没有与「{book_name}」对应的编号证据",
+                    hint="按编号引用，或人工确认这本书的编号后再试",
+                    candidates=[
+                        {"code": m["code_display"], "role": m["role"],
+                         "confidence": m["confidence"]}
+                        for m in mentions
+                    ],
+                )
+            mentions = relevant
+        target_rows = [m for m in mentions if m["role"] == "target_of_revision"]
+        parsed_targets = [m for m in target_rows if m["confidence"] == "parsed"]
+        if len(target_rows) > 1 or (target_rows and not parsed_targets):
+            # 多 target（或落库的 target 本身 ambiguous）不能按排序取第一条：
+            # 那会把 P1-9 的歧义重新变成确定引用。交 32，让人选。
+            raise AmbiguousCode(
+                "公告含多个局部修订目标，无法确定引用哪一本"
+                if len(target_rows) > 1
+                else "局部修订目标未经正文核实，无法确定引用",
+                hint="从 candidates 里人工选定版本，禁止按年份/排序自行猜测",
+                candidates=[
+                    {"code": m["code_display"], "role": m["role"],
+                     "confidence": m["confidence"]}
+                    for m in target_rows
+                ],
+            )
+        primary_candidates = [
+            m for m in mentions if m["role"] in ("primary", "target_of_revision")
+        ]
+        parsed = [m for m in primary_candidates if m["confidence"] == "parsed"]
+        if len(parsed) == 1:
+            primary = parsed[0]
+        elif len(parsed) > 1:
+            raise AmbiguousCode(
+                "公告有多个已核实编号，无法确定引用哪一本",
+                candidates=[
+                    {"code": m["code_display"], "role": m["role"],
+                     "confidence": m["confidence"]}
+                    for m in primary_candidates
+                ],
+            )
+        elif len(primary_candidates) == 1:
+            # 单条 primary 但 confidence=ambiguous：仍可出串，但 confidence 会带
+            # ambiguous，warnings 非空；不把它伪装成已核实。
+            primary = primary_candidates[0]
+        elif len(primary_candidates) > 1:
+            raise AmbiguousCode(
+                "公告有多个编号候选，无法确定引用哪一本",
+                candidates=[
+                    {"code": m["code_display"], "role": m["role"],
+                     "confidence": m["confidence"]}
+                    for m in primary_candidates
+                ],
+            )
+        else:
+            primary = None
+        # 多名称公告按 ID/编号引用时，引用书名取"编号证据所在的那本书"，
+        # 不能固定写 doc_name（第一本）；否则会出现《甲》+乙编号的错配。
+        if primary is not None and not book_name:
+            for candidate_name in names_of(ann["title"], ann["doc_name"]):
+                if contains_name(primary["evidence"], candidate_name):
+                    citation_name = book_name = candidate_name
+                    break
         if primary is None and ref_is_code(args.ref):
             # M14：公告正文没解析出编号，但 ref 本身就是编号——用 ref 出引用串，
             # 标 confidence=unknown + warning（--strict 会因 warning 硬失败），
@@ -101,7 +208,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     else:
         confidence = target.get("confidence") or "unknown"
     text, warnings = build_citation(
-        ann["doc_name"] or "", code_display, clause, confidence=confidence
+        citation_name, code_display, clause, confidence=confidence
     )
     # M6：落库兜底且标注非 parsed，或编号取自命令行 ref——都属于"未经正文核实"，
     # 必须进 warnings（--strict 靠 warnings 硬失败，见下）。"ambiguous" 由
@@ -154,7 +261,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     payload = {
         "ok": True,
         "cite": text,
-        "name": ann["doc_name"],
+        "name": citation_name,
         "code": code_display,
         "code_key": code_key,
         "clause": clause,
@@ -200,6 +307,11 @@ def _check_currency(code_display: str | None, *, offline: bool, store=None) -> C
         records = tuple(port.lookup(code_display))
         # W3/P1-4：没取全的答案不能被当成权威结论（尤其是空结果）
         complete, incomplete_reason = completeness_of(port)
+        # P1-6：磁盘缓存 stale 不是"校验成功"。CachedCurrency 吞掉
+        # SourceUnreachable 后返回旧记录，必须把这次查询降级为不可达。
+        if bool(getattr(port, "stale", False)):
+            state = CurrencyState.UNREACHABLE
+            message = "时效服务不可达：本引用基于旧缓存，未做现行性校验"
     except SourceUnreachable:
         # 引用串本身来自本地目录，时效服务挂了只影响"是否现行"，不该整条失败
         state = CurrencyState.UNREACHABLE
@@ -245,10 +357,11 @@ def _check_currency(code_display: str | None, *, offline: bool, store=None) -> C
         )
     current = current_rec.code if current_rec and normalize_key(current_rec.code) != key else ""
     return CurrencyCheck(
-        CurrencyState.OK,
+        state,
         status=mine.status,
         current=current,
         records=records,
+        message=message,
         complete=complete,
         incomplete_reason=incomplete_reason,
     )

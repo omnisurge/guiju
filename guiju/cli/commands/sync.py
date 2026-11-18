@@ -26,8 +26,9 @@ def run(store: Store, args: argparse.Namespace) -> int:
                 render.note(f"! {corrupt}，按未同步处理继续抓取")
         elif age <= args.if_stale:
             explicit = store.get_meta(f"sync:{args.source}:complete")
+            legacy_complete = store.get_meta("catalog_complete")
             complete_ok = bool(store.source_meta(args.source)["complete"]) or (
-                args.source == "mohurd" and not explicit
+                args.source == "mohurd" and not explicit and legacy_complete != "0"
             )
             if not complete_ok:
                 render.note("目录未标记完整，忽略 --if-stale，继续同步")

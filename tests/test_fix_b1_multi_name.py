@@ -20,7 +20,8 @@ from guiju.cli import render
 from guiju.cli.commands.pull import _pull_one
 from guiju.domain.announcement import classify_title, extract_names, match_name, names_of
 from guiju.domain.attachment import Attachment, Verdict, pick
-from guiju.errors import AmbiguousAttachment
+from guiju.errors import AmbiguousAttachment, AmbiguousCode
+from guiju.store.sqlite import Store
 
 from .paths import FIXTURES
 
@@ -210,14 +211,15 @@ class _FakeSource:
     id = "mohurd"
     display_name = "住房和城乡建设部"
 
-    def __init__(self, atts):
+    def __init__(self, atts, text="正文没有编号"):
         self.atts = atts
+        self.text = text
         self.downloads = []
         self.detail_calls = []
 
     def detail(self, url):
         self.detail_calls.append(url)
-        return "<html></html>", "正文没有编号"
+        return "<html></html>", self.text
 
     def attachments(self, html):
         return list(self.atts)
@@ -252,8 +254,8 @@ class PullMultiNameTest(unittest.TestCase):
             "status": "",
         }
 
-    def _run(self, row, ref, via, *, cached=None, expect_ambiguous=True):
-        source = _FakeSource(attachments_for(row))
+    def _run(self, row, ref, via, *, cached=None, expect_ambiguous=True, text="正文没有编号"):
+        source = _FakeSource(attachments_for(row), text=text)
         store = mock.Mock()
         args = argparse.Namespace(force=False, readable=False, out=None)
         tmp = tempfile.TemporaryDirectory()
@@ -277,7 +279,8 @@ class PullMultiNameTest(unittest.TestCase):
 
     def test_pull_by_second_name_uses_that_name(self):
         payload, source, _ = self._run(
-            MULTI, MULTI["names"][1], "name", expect_ambiguous=False
+            MULTI, MULTI["names"][1], "name", expect_ambiguous=False,
+            text="现批准《湿地保护工程项目建设标准》，编号为GB 2-2020。",
         )
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["name"], MULTI["names"][1])
@@ -303,6 +306,112 @@ class PullMultiNameTest(unittest.TestCase):
         exc, _source, find_cached = self._run(MULTI, "GB 1-2020", "code_local", cached=cached)
         self.assertEqual(exc.exit, 33)
         self.assertFalse(find_cached.called, "多本公告按编号 pull 必须先 33，不能命中缓存")
+
+
+class PullRealStoreTest(unittest.TestCase):
+    """P1-A/P1-B：多名称 pull 的编号归属与 33 前不写库，必须用真实 Store 验证。"""
+
+    def setUp(self):
+        render.configure(as_json=True, quiet=True)
+        self.addCleanup(render.configure, as_json=False, quiet=False)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Store(Path(self.tmp.name) / "c.db")
+        self.addCleanup(self.store.close)
+        self.store.upsert_announcement(
+            MULTI["url"], MULTI["published_on"], MULTI["title"],
+            MULTI["doc_name"], "other",
+        )
+        self.store.commit()
+
+    def _target(self, via, ref):
+        ann = dict(self.store.get_ann(1))
+        return {
+            "ann": ann, "code_key": None, "code_display": None,
+            "confidence": "unknown", "via": via, "status": "",
+        }
+
+    def _run(self, text, via, ref, expect_error=None):
+        source = _FakeSource(attachments_for(MULTI), text=text)
+        args = argparse.Namespace(force=False, readable=False, out=None)
+        with (
+            mock.patch("guiju.cli.commands.pull.resolve", return_value=self._target(via, ref)),
+            mock.patch("guiju.cli.commands.pull.find_cached", return_value=None),
+            mock.patch("guiju.cli.commands.pull.sha256_file", return_value="0" * 64),
+            mock.patch("guiju.cli.commands.pull.sha256_bytes", return_value="key"),
+            mock.patch("os.replace"),
+            mock.patch("guiju.cli.commands.pull.render.warn"),
+        ):
+            if expect_error is not None:
+                with self.assertRaises(expect_error) as cm:
+                    _pull_one(self.store, args, ref, source, Path(self.tmp.name))
+                self.assertEqual(cm.exception.exit, expect_error.exit)
+                return source, cm.exception
+            payload = _pull_one(self.store, args, ref, source, Path(self.tmp.name))
+        return source, payload
+
+    def test_second_name_with_first_book_code_is_32(self):
+        text = "现批准《自然保护区工程项目建设标准》，编号为GB 1-2020。"
+        source, exc = self._run(text, "name", MULTI["names"][1], expect_error=AmbiguousCode)
+        self.assertEqual(exc.exit, 32)
+        self.assertEqual(source.downloads, [])
+        self.assertEqual(self.store.mentions_for(1), [])
+
+    def test_second_name_with_second_code_uses_it(self):
+        text = (
+            "现批准《自然保护区工程项目建设标准》，编号为GB 1-2020。"
+            "现批准《湿地保护工程项目建设标准》，编号为GB 2-2020。"
+        )
+        source, payload = self._run(text, "name", MULTI["names"][1])
+        self.assertEqual(payload["code"], "GB 2-2020")
+        self.assertEqual(source.downloads, [attachments_for(MULTI)[1].url])
+        rows = self.store.mentions_for(1)
+        self.assertEqual([r["code_key"] for r in rows], ["GB2-2020"])
+
+    def test_cite_after_second_name_pull_uses_second_book_and_code(self):
+        from guiju import currency as currency_mod
+        from guiju.cli.commands import cite
+
+        text = (
+            "现批准《自然保护区工程项目建设标准》，编号为GB 1-2020。"
+            "现批准《湿地保护工程项目建设标准》，编号为GB 2-2020。"
+        )
+        _source, payload = self._run(text, "name", MULTI["names"][1])
+        self.assertEqual(payload["code"], "GB 2-2020")
+        target = self._target("name", MULTI["names"][1])
+
+        class EmptyCurrency:
+            name = "fake"
+            complete = True
+
+            def __init__(self, inner=None, store=None):
+                pass
+
+            def lookup(self, code):
+                return []
+
+        emitted = {}
+        args = argparse.Namespace(
+            ref=MULTI["names"][1], clause="", strict=False, offline=False, format="json"
+        )
+        with (
+            mock.patch.object(cite, "resolve", return_value=target),
+            mock.patch.object(currency_mod, "CachedCurrency", EmptyCurrency),
+            mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted.update(p)),
+        ):
+            cite.run(self.store, args)
+        self.assertTrue(emitted["cite"].startswith(f"《{MULTI['names'][1]}》"))
+        self.assertEqual(emitted["code"], "GB 2-2020")
+        self.assertEqual(emitted["confidence"], "parsed")
+
+    def test_ambiguous_33_does_not_touch_existing_mentions(self):
+        self.store.upsert_edition("GB2-2020", "GB 2-2020", None, "parsed")
+        self.store.add_mention(1, "GB2-2020", "primary", "已有编号")
+        self.store.commit()
+        source, exc = self._run("正文没有编号", "ann_id", "1", expect_error=AmbiguousAttachment)
+        self.assertEqual(exc.exit, 33)
+        self.assertEqual(source.downloads, [])
+        self.assertEqual([r["code_key"] for r in self.store.mentions_for(1)], ["GB2-2020"])
 
 
 class McpAnnouncementSurfaceTest(unittest.TestCase):
@@ -363,6 +472,57 @@ class McpAnnouncementSurfaceTest(unittest.TestCase):
         self.assertEqual(payload["attachment_verdict"], "ambiguous")
         self.assertIsNone(payload["attachment_url"], "多本公告不许给第一个附件的链接")
         self.assertEqual(len(payload["attachment_candidates"]), 2)
+
+    def test_mcp_announcement_name_path_uses_second_book(self):
+        # P1-3 跨面：按第二本名称查 MCP，也必须用第二本做附件匹配，不能回退 doc_name。
+        from guiju.cli import lookup as lookup_mod
+        from guiju.mcp import McpServer
+
+        class Backend:
+            name = "fake"
+
+            def lookup(self, code):
+                return []
+
+        server = McpServer(Backend())
+        self.addCleanup(server.close)
+        ann = {
+            "id": MULTI["id"], "url": MULTI["url"],
+            "published_on": MULTI["published_on"], "title": MULTI["title"],
+            "doc_name": MULTI["doc_name"], "category": "other",
+        }
+        target = {
+            "ann": ann, "code_key": None, "code_display": None,
+            "confidence": "unknown", "status": "", "via": "name",
+        }
+
+        class FakeSource:
+            id = "mohurd"
+            api_mode = False
+
+            def detail(self, url):
+                return "<html></html>", "正文"
+
+            def attachments(self, html):
+                return attachments_for(MULTI)
+
+        with (
+            tempfile.TemporaryDirectory() as home,
+            mock.patch.dict("os.environ", {"GUIJU_HOME": home}),
+            mock.patch.object(lookup_mod, "resolve", return_value=target),
+            mock.patch("guiju.sources.registry", return_value={"mohurd": FakeSource()}),
+        ):
+            response = server.handle({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {
+                    "name": "announcement",
+                    "arguments": {"ref": MULTI["names"][1]},
+                },
+            })
+        payload = json.loads(response["result"]["content"][0]["text"])
+        self.assertEqual(payload["attachment_verdict"], "ok")
+        self.assertEqual(payload["attachment_url"], attachments_for(MULTI)[1].url)
+        self.assertEqual(payload["name"], MULTI["names"][1])
 
 
 if __name__ == "__main__":

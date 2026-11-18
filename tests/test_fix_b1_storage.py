@@ -91,6 +91,25 @@ class PersistCodesTest(unittest.TestCase):
         rows = {r["code_key"]: r for r in self.store.mentions_for(self.ann_id)}
         self.assertEqual(rows["GB/T50362-2005"]["role"], "superseded_ref")
 
+    def test_ambiguous_target_is_not_persisted_as_parsed(self):
+        codes = Codes(
+            mentions=(
+                Mention("GB/T50362-2022", "GB/T 50362-2022", Role.TARGET_OF_REVISION, "修改为"),
+                Mention("GB/T50378-2019", "GB/T 50378-2019", Role.TARGET_OF_REVISION, "修改为"),
+            ),
+            confidence=Confidence.AMBIGUOUS,
+        )
+        persist_codes(self.store, self.ann_id, codes, "名称")
+        rows = {r["code_key"]: r for r in self.store.mentions_for(self.ann_id)}
+        self.assertEqual(rows["GB/T50362-2022"]["role"], "target_of_revision")
+        self.assertEqual(rows["GB/T50378-2019"]["role"], "target_of_revision")
+        conf = {
+            r["code_key"]: r["confidence"]
+            for r in self.store.db.execute("SELECT code_key,confidence FROM edition")
+        }
+        self.assertEqual(conf["GB/T50362-2022"], "ambiguous")
+        self.assertEqual(conf["GB/T50378-2019"], "ambiguous")
+
     def test_non_primary_confidence_follows_evidence(self):
         codes = self._codes(
             "GB55037-2022",

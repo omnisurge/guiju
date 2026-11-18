@@ -62,6 +62,18 @@ class MultiTargetTest(unittest.TestCase):
         roles = {m.code_key: m.role for m in got.mentions}
         self.assertIs(roles["GB50016-2014"], Role.MENTIONED)
 
+    def test_target_older_than_primary_does_not_win(self):
+        # 真实陷阱：批准 2022 版，后文却把局部修订号写成 2021；不能按 target 优先级选旧版。
+        text = (
+            "现批准《某标准》为国家标准，编号为GB/T 50362-2022，自2023年1月1日起实施；"
+            "《某标准》局部修订，编号修改为GB/T 50362-2021。"
+        )
+        got = classify(text, "某标准")
+        self.assertEqual(got.primary_key, "GB/T50362-2022")
+        self.assertEqual(got.confidence, Confidence.PARSED)
+        roles = {m.code_key: m.role for m in got.mentions}
+        self.assertIs(roles["GB/T50362-2021"], Role.SUPERSEDED_REF)
+
     def test_two_targets_same_subject_are_not_parsed(self):
         # 同一本被写了两遍改号（异常排版）：可以给兜底 primary，但 confidence 不许是 parsed
         text = "标准编号修改为GB/T 50362-2021；标准编号修改为GB/T 50362-2022。"

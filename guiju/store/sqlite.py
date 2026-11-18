@@ -14,7 +14,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from ..domain.codes import Codes, Role, _code_stem
+from ..domain.codes import Codes, Confidence, Role, _code_stem
 from ..errors import GuijuError, NeedsHuman
 
 SCHEMA_VERSION = 2
@@ -377,7 +377,12 @@ def persist_codes(store: Store, ann_id: int, codes: Codes, doc_name: str, status
     store.db.execute("DELETE FROM mention WHERE ann_id=?", (ann_id,))
     for m in codes.mentions:
         if m.code_key != codes.primary_key:
-            decisive = m.role in (Role.TARGET_OF_REVISION, Role.PRIMARY, Role.SUPERSEDED_REF)
+            # 整体 ambiguous 时，即使单条角色看起来像 target/primary，也不能
+            # 把它落成 parsed —— 否则 cite 会把多 target 的猜测重新变成确定引用。
+            decisive = (
+                codes.confidence is Confidence.PARSED
+                and m.role in (Role.TARGET_OF_REVISION, Role.PRIMARY, Role.SUPERSEDED_REF)
+            )
             store.upsert_edition(
                 m.code_key, m.code_display, None, "parsed" if decisive else "ambiguous"
             )

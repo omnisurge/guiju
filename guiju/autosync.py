@@ -119,8 +119,9 @@ def evaluate(
     needs = empty or age is None or age > MAX_AGE_DAYS
     # 按源水位判断：别的源完整不能把本源授权成 fresh；显式不完整（0）必须重试。
     raw_complete = store.get_meta(f"sync:{source}:complete")
+    legacy_complete = store.get_meta("catalog_complete") if source == "mohurd" else ""
     if ((source != "mohurd" and raw_complete != "1")
-            or (source == "mohurd" and raw_complete == "0")):
+            or (source == "mohurd" and (raw_complete == "0" or (not raw_complete and legacy_complete == "0")))):
         needs = True
 
     if not needs:
@@ -169,7 +170,10 @@ def evaluate(
         age = _age(store, source)
         meta = store.source_meta(source)
         raw_complete = store.get_meta(f"sync:{source}:complete")
-        complete_ok = meta["complete"] if source != "mohurd" else raw_complete != "0"
+        legacy_complete = store.get_meta("catalog_complete") if source == "mohurd" else ""
+        complete_ok = meta["complete"] if source != "mohurd" else (
+            raw_complete != "0" and not (not raw_complete and legacy_complete == "0")
+        )
         if store.count_announcements() and age is not None and age <= MAX_AGE_DAYS and complete_ok:
             return _snap(store, state="fresh", source=source)
 

@@ -7,10 +7,12 @@ import unittest
 from argparse import Namespace
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from guiju.cli import render
 from guiju.cli.commands import status
-from guiju.store.sqlite import Store
+from guiju.cli.commands import sync as sync_mod
+from guiju.store.sqlite import Store, now
 
 
 class SourceStatusTest(unittest.TestCase):
@@ -32,6 +34,23 @@ class SourceStatusTest(unittest.TestCase):
         self.assertEqual(meta["reason"], "empty_page_before_total")
         self.assertEqual(meta["total"], 10)
         self.assertEqual(meta["seen"], 2)
+
+    def test_if_stale_does_not_skip_legacy_incomplete(self):
+        self.store.upsert_announcement(
+            "https://x/1", "2026-01-01", "标题", "名称", "other"
+        )
+        self.store.set_meta("synced_at", now())
+        self.store.set_meta("catalog_complete", "0")
+        self.store.commit()
+        args = Namespace(if_stale=7, source="mohurd", page_size=100, pages=0)
+        with mock.patch.object(
+            sync_mod, "crawl", return_value={
+                "new": 0, "total_in_db": 1, "scanned": 0, "complete": False,
+                "truncated": False, "source": "mohurd",
+            }
+        ) as crawl:
+            sync_mod.run(self.store, args)
+        self.assertEqual(crawl.call_count, 1)
 
     def test_status_lists_each_source(self):
         self.store.set_meta("sync:mohurd:complete", "1")

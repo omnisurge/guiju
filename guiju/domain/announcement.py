@@ -54,6 +54,12 @@ def _norm_name(s: str | None) -> str:
     return _NAME_NOISE.sub("", s or "").casefold()
 
 
+def contains_name(text: str | None, name: str | None) -> bool:
+    """正文/证据片段里是否出现这本书名（忽略书名号与空白）。"""
+    target = _norm_name(name)
+    return bool(target) and target in _norm_name(text)
+
+
 def match_name(names, ref: str | None) -> tuple[str | None, tuple[str, ...]]:
     """用户给的名称 → 公告名称里的那一本。
 

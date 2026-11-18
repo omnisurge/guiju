@@ -108,6 +108,14 @@ def run(store: Store, args: argparse.Namespace) -> int:
         error = exc
 
     ann = target["ann"] if target else None
+    # P1-3：多名称公告按第二本名称查询时，展示名也不能固定用第一本 doc_name。
+    ann_name = ann["doc_name"] if ann else None
+    if ann is not None and target.get("via") in ("name", "name_current_version"):
+        from ...domain.announcement import match_name, names_of
+
+        chosen, _matched = match_name(names_of(ann["title"], ann["doc_name"]), args.ref)
+        if chosen:
+            ann_name = chosen
     # W3/P1-4：complete=False 表示这次答案没取全（空结果可能是漏记录，不是"没有"）
     currency_complete, incomplete_reason = completeness_of(cur)
     payload = {
@@ -127,7 +135,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         if ann is None
         else {
             "id": ann["id"],
-            "name": ann["doc_name"],
+            "name": ann_name,
             "published_on": ann["published_on"],
             "url": ann["url"],
             "availability": state(ann["published_on"]).value,

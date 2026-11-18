@@ -265,8 +265,8 @@ class McpServer:
         if not ref:
             return _error_result("缺少 ref 参数")
         from .cli import lookup
+        from .domain import announcement, availability
         from .domain import attachment as att_domain
-        from .domain import availability
         from .sources import registry
 
         try:
@@ -288,6 +288,13 @@ class McpServer:
                         hint="若站点改了域名请在 guiju/cli/lookup.py 的 _SOURCE_HOSTS 补映射，"
                              "或为新站点补适配器",
                     )
+                names = announcement.names_of(ann["title"], ann["doc_name"])
+                picked_name = ann["doc_name"] or ""
+                ref_name = ""
+                if target.get("via") in ("name", "name_current_version"):
+                    chosen, _matched = announcement.match_name(names, ref)
+                    if chosen:
+                        picked_name = ref_name = chosen
                 choice = None
                 candidates: list = []
                 if getattr(source, "api_mode", False):
@@ -297,7 +304,7 @@ class McpServer:
                     html, _ = source.detail(ann["url"])
                     atts = source.attachments(html)
                     picked = att_domain.pick(
-                        atts, ann["doc_name"] or "", announcement_title=ann["title"])
+                        atts, names, ref_name=ref_name, announcement_title=ann["title"])
                     choice = picked.choice if picked.ok else None
                     candidates = (picked.as_payload() or {}).get("candidates") or []
                     verdict = "ok" if picked.ok else getattr(
@@ -306,7 +313,8 @@ class McpServer:
                     "ok": True,
                     "announcement_id": ann["id"],
                     "code": target.get("code_display") or target.get("code_key"),
-                    "name": ann["doc_name"],
+                    "name": picked_name,
+                    "names": list(names),
                     "published_on": ann["published_on"],
                     "title": ann["title"],
                     "category": ann["category"],

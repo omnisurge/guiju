@@ -132,6 +132,15 @@ class CrawlCompleteTest(unittest.TestCase):
         self.assertEqual(self.store.get_meta("sync:fake:total"), "0")
         self.assertEqual(self.store.get_meta("sync:fake:seen"), "0")
 
+    def test_items_with_total_zero_then_empty_is_incomplete(self):
+        """计数元素失效（total=0）但已见到条目：空页不能证明空目录，必须不完整。"""
+        src = _FakeSource({1: [_item(1)], 2: []}, total=0)
+        res = self._crawl(src)
+        self.assertFalse(res["complete"])
+        self.assertEqual(res["complete_reason"], "total_unknown")
+        self.assertEqual(self.store.get_meta("sync:fake:complete"), "0")
+        self.assertEqual(self.store.get_meta("sync:fake:synced_at"), "")
+
     def test_source_complete_is_isolated(self):
         """alpha 完整不能把 beta 授权成完整；全局 catalog_complete 不再替所有源背书。"""
         alpha = _FakeSource({1: [_item(1)]}, total=1)

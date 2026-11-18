@@ -285,6 +285,10 @@ def _choose_primary(mentions: tuple[Mention, ...]) -> tuple[Mention | None, bool
         if any(_code_subject(p.code_key) != _code_subject(target.code_key) for p in primaries):
             # 句式 B：公告发布的是另一本，target 只是顺带提及的修订 —— 判不出主体
             return None, False
+        if primaries:
+            # target 与 primary 指向同一本时，年份更新的一版才是本次发布的版本：
+            # 「现批准 GB/T50362-2022；局部修订改号为 GB/T50362-2021」不能把 2021 当新稿。
+            return max((target, *primaries), key=lambda m: _year(m.code_key)), True
         return target, True
     if len(primaries) == 1:
         return primaries[0], True

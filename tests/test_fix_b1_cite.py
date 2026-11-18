@@ -91,6 +91,12 @@ class _CompleteCurrency(_FakeCurrency):
     complete = True
 
 
+class _StaleCurrency(_FakeCurrency):
+    """CachedCurrency 真实磁盘缓存路径：吞掉 SourceUnreachable 后返回旧记录。"""
+    stale = True
+    from_cache = True
+
+
 class _CiteCase(unittest.TestCase):
     confidence = "parsed"
 
@@ -141,6 +147,50 @@ class CiteUnreachableTest(_CiteCase):
         # 失败也要带上已生成好的引用串，便于人工复核后使用
         self.assertEqual(cm.exception.extra["cite"], "《某标准》GB 1-2020 第5.2.1条")
         self.assertIn("--offline", cm.exception.hint)
+
+
+class CiteStaleCacheTest(_CiteCase):
+    def test_non_strict_warns_on_stale_cache(self):
+        rc, emitted = self._run(_StaleCurrency)
+        self.assertEqual(rc, 0)
+        self.assertEqual(emitted["currency_check"]["state"], "unreachable")
+        self.assertTrue(any("旧缓存" in w for w in emitted["warnings"]))
+
+    def test_strict_stale_cache_does_not_pass_as_verified(self):
+        with self.assertRaises(SourceUnreachable) as cm:
+            self._run(_StaleCurrency, strict=True)
+        self.assertEqual(cm.exception.exit, 20)
+
+
+class CiteMultiNameTest(_CiteCase):
+    def test_name_path_uses_queried_book_not_first_doc_name(self):
+        tmp, store = _make_store()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(store.close)
+        store.db.execute(
+            "UPDATE announcement SET title=?, doc_name=? WHERE id=1",
+            ("关于发布《第一本》《第二本》的公告", "第一本"),
+        )
+        store.db.execute(
+            "UPDATE mention SET evidence=? WHERE ann_id=1",
+            ("《第二本》编号为GB 1-2020",),
+        )
+        store.commit()
+        self.store = store
+        target = self._target()
+        target["via"] = "name"
+        args = argparse.Namespace(
+            ref="第二本", clause="5.2.1", strict=False, offline=False, format="json"
+        )
+        emitted = {}
+        with (
+            mock.patch.object(cite, "resolve", return_value=target),
+            mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted.update(p)),
+            mock.patch.object(currency_mod, "CachedCurrency", _FakeCurrency),
+        ):
+            cite.run(store, args)
+        self.assertEqual(emitted["name"], "第二本")
+        self.assertTrue(emitted["cite"].startswith("《第二本》"))
 
 
 class CiteNoCurrencyRecordTest(_CiteCase):
@@ -252,6 +302,42 @@ class CiteConfidenceTest(_CiteCase):
         self.assertEqual(rc, 0)
         self.assertEqual(emitted["confidence"], "parsed")
         self.assertEqual(emitted["warnings"], [])
+
+    def test_multi_target_mentions_are_ambiguous_not_first_target(self):
+        tmp, store = _make_store()
+        self.addCleanup(tmp.cleanup)
+        self.addCleanup(store.close)
+        store.db.execute("DELETE FROM mention WHERE ann_id=1")
+        for _i, code in enumerate(("GB/T50362-2022", "GB/T50378-2019")):
+            store.upsert_edition(code, code.replace("/", "/ ").replace("-", "-"), None, "ambiguous")
+            store.add_mention(1, code, "target_of_revision", "编号修改为")
+        store.commit()
+        self.store = store
+        with self.assertRaises(AmbiguousCode) as cm:
+            self._run(_FakeCurrency)
+        self.assertEqual(cm.exception.exit, 32)
+        self.assertEqual(len(cm.exception.extra["candidates"]), 2)
+
+    def test_classified_multi_target_persists_ambiguous_and_cite_32(self):
+        # 评审复现：classify 已 ambiguous，但 persist_codes 曾把 target 写成 parsed，
+        # 导致 cite 静默取第一条 target；这里从真实 classify→persist→cite 全链钉住。
+        from guiju.domain.codes import classify
+        from guiju.store.sqlite import persist_codes
+
+        self.store.db.execute("DELETE FROM mention WHERE ann_id=1")
+        self.store.db.execute(
+            "UPDATE announcement SET title=? WHERE id=1",
+            ("关于局部修订《甲标准》《乙标准》的公告",),
+        )
+        text = (
+            "《甲标准》局部修订，编号修改为GB/T 50362-2022；"
+            "《乙标准》局部修订，编号修改为GB/T 50378-2019。"
+        )
+        persist_codes(self.store, 1, classify(text), "甲标准")
+        self.store.commit()
+        with self.assertRaises(AmbiguousCode) as cm:
+            self._run(_FakeCurrency)
+        self.assertEqual(cm.exception.exit, 32)
 
     def test_ambiguous_mention_stays_ambiguous(self):
         # edition.confidence 一旦 parsed 不会被降级（upsert_edition 的既有约定），

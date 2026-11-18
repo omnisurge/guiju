@@ -131,6 +131,18 @@ class AutoSyncTest(unittest.TestCase):
         self.assertEqual(snap["state"], "fresh")
         self.assertEqual(snap["source"], "mohurd")
 
+    def test_legacy_global_incomplete_triggers_refresh(self):
+        """旧全局 catalog_complete=0 且无 per-source 键：仍必须刷新，不能被 synced_at 骗成 fresh。"""
+        self._seed()
+        self._synced(1)
+        self.store.set_meta("catalog_complete", "0")
+        self.store.commit()
+        calls: list = []
+        with mock.patch("guiju.syncengine.crawl", side_effect=self._fake_crawl(calls)):
+            snap = autosync.evaluate(self.store, command="search")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(snap["state"], "refreshed")
+
     def test_empty_catalog_triggers_first_sync(self):
         calls: list = []
         with mock.patch("guiju.syncengine.crawl", side_effect=self._fake_crawl(calls)):

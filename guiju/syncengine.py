@@ -62,8 +62,9 @@ def crawl(
                 page_total = 0
             if page_total:
                 best_total = page_total if best_total is None else max(best_total, page_total)
-            elif not items and best_total is None:
-                # 明确回 0 条且没有历史 total：空目录，不是"未知"。
+            elif not items and best_total is None and seen == 0:
+                # 只有"一条都没见到"时，0 才是空目录的明确证据；
+                # 已见条目却拿到 total=0（计数元素失效）不能当空目录。
                 best_total = 0
 
         if not items:

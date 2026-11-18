@@ -14,12 +14,13 @@ from pathlib import Path
 from ... import currency as currency_mod
 from ...domain import announcement, availability, naming
 from ...domain import attachment as att_domain
-from ...domain.codes import Confidence, classify
+from ...domain.codes import Codes, Confidence, Role, classify
 from ...errors import (
     EXIT_COMPLIANCE,
     EXIT_EXISTS,
     EXIT_OK,
     AmbiguousAttachment,
+    AmbiguousCode,
     BadAttachment,
     BadUsage,
     GuijuError,
@@ -33,6 +34,50 @@ from ..lookup import resolve
 
 #: 这些退出码表示"需要人或环境干预"，批量时视为未达成
 _SEVERE = (1, 20, 40, 50)
+
+
+def _codes_for_book(codes: Codes, book: str) -> Codes:
+    """多名称公告：只保留正文证据里出现这本书的编号。
+
+    不能把整篇正文解析出的第一个编号当成用户点的那本书 —— 实测标题两本、
+    正文只写甲编号时，按乙 pull 会把甲的编号写进乙的文件名和 cite。
+    找不到唯一决定性证据就交 32，让调用方按编号/人工确认。
+    """
+    relevant = tuple(
+        m for m in codes.mentions if announcement.contains_name(m.evidence, book)
+    )
+
+    def _candidates() -> list[dict]:
+        return [
+            {"code": m.code_display or m.code_key, "role": m.role.value,
+             "evidence": m.evidence[:160]}
+            for m in (relevant or codes.mentions)
+        ]
+
+    if not relevant:
+        raise AmbiguousCode(
+            f"公告标题含多本规范，正文没有与「{book}」对应的编号证据",
+            hint="按编号 pull，或人工确认这本书的编号后再试",
+            candidates=_candidates(),
+        )
+    decisive = tuple(
+        m for m in relevant
+        if m.role in (Role.PRIMARY, Role.TARGET_OF_REVISION)
+    )
+    keys = {m.code_key for m in decisive}
+    if len(keys) != 1:
+        raise AmbiguousCode(
+            f"正文中「{book}」对应多个编号或没有决定性编号证据",
+            hint="按编号 pull，或人工确认这本书的编号后再试",
+            candidates=_candidates(),
+        )
+    chosen = decisive[0]
+    return Codes(
+        mentions=relevant,
+        primary_key=chosen.code_key,
+        primary_display=chosen.code_display,
+        confidence=Confidence.PARSED,
+    )
 
 
 def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir: Path) -> dict:
@@ -170,7 +215,7 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     status = target.get("status") or ""
 
     # 幂等快路径：下载目录已有同名文件且指纹一致时，连详情页都不必抓（批量复跑的关键）
-    if not args.force and book_known:
+    if not args.force and book_known and (len(names) <= 1 or code_key):
         cached = find_cached(out_dir, code_key, display_name, readable=args.readable, ann_id=ann_id)
         if cached:
             path, digest = cached
@@ -183,8 +228,22 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     html, text = source.detail(ann["url"])
     # 名称证据用"用户要的那一本"：doc_name（第一本）会把弱证据指向另一本书的编号
     codes = classify(text, display_name)
-    persist_codes(store, ann_id, codes, display_name)
-    store.commit()
+    if len(names) > 1 and ref_name:
+        # 多名称公告必须把"用户选的那本"贯穿到编号，不能只换文件名。
+        codes = _codes_for_book(codes, ref_name)
+        selected_key = normalize_key(codes.primary_key) if codes.primary_key else None
+        if code_key and selected_key and code_key != selected_key:
+            raise AmbiguousCode(
+                f"名称证据与编号先验不一致（{ref_name} vs {code_display or code_key}）",
+                hint="按编号 pull，或人工确认这本书的编号后再试",
+                candidates=[
+                    {"code": codes.primary_display, "key": codes.primary_key},
+                    {"code": code_display, "key": code_key},
+                ],
+            )
+        code_key = code_key or selected_key
+        code_display = code_display or codes.primary_display
+        confidence = codes.confidence.value
 
     code_key = code_key or (normalize_key(codes.primary_key) if codes.primary_key else None)
     code_display = code_display or codes.primary_display
@@ -236,6 +295,10 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
 
     choice = picked.choice
     assert choice is not None
+    # 33/30 在 pick 阶段已抛出：只有附件确实选定后才写 mentions，
+    # 否则一次歧义失败会先删掉旧 mentions，污染已有数据。
+    persist_codes(store, ann_id, codes, display_name)
+    store.commit()
     render.note(f"  附件 {len(atts)} 个，选定：{choice.label[:50] or choice.url[-40:]}")
 
     # 断点续传：`.part` 以「公告 + 附件URL」为键，中途失败重跑会接着下
