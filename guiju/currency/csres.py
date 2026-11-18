@@ -63,6 +63,9 @@ class _Row:
         if not self.title.startswith("编号：") or len(self.cells) < 4:
             return None
         cells = ["".join(parts).strip() for parts in self.cells]
+        if not cells[0]:
+            # 空编号行不是记录；parse_csres_page 会把它判成坏行/结构异常。
+            return None
         return Record(
             code=cells[0], name=cells[1], implement_date=cells[3],
             status=_STATUS.get(cells[4], "unknown") if len(cells) >= 5 else "unknown",
@@ -147,7 +150,17 @@ def parse_csres_page(raw: bytes) -> CsresPage:
     parser = _TableParser()
     parser.feed(text.replace("\r\n", "\n").replace("\r", "\n"))
     parser.close()
-    records = [record for row in parser.rows if (record := row.record()) is not None]
+    records = []
+    bad_rows: list[_Row] = []
+    for row in parser.rows:
+        record = row.record()
+        if record is not None:
+            records.append(record)
+        elif row.title.startswith("编号：") and len(row.cells) >= 4:
+            # 有编号行但首列编号为空：这是坏行，不能静默丢掉后报"完整"。
+            bad_rows.append(row)
+    if bad_rows:
+        raise page_error("csres", f"有 {len(bad_rows)} 个编号行为空/不可解析")
     if not records and _has_data_traces(parser.rows):
         # 数据行痕迹在（编号：前缀或 >=4 单元格）却零记录：改版/解析失败，不许静默成无命中。
         raise page_error("csres", f"页面含 {len(parser.rows)} 个 tr 但 0 条可解析记录（有数据痕迹）")
@@ -234,6 +247,9 @@ class CsresCurrency(CompletenessMixin):
         page = 1
         while True:
             parsed = parse_csres_page(self._request_page(code, page))
+            if parsed.page is not None and parsed.page != page:
+                # 服务端忽略 pageNum（重复返回同一页）时不能把重复记录当完整结果。
+                raise page_error("csres", f"请求第 {page} 页，服务端返回第 {parsed.page} 页")
             collected.extend(parsed.records)
             if page == 1:
                 total, pages = parsed.total, parsed.pages
@@ -252,7 +268,12 @@ class CsresCurrency(CompletenessMixin):
                              reason="" if has_more is False else "页面未提供总页数，无法证明结果已取全")
                 return filter_by_code(collected, code)
             if page >= pages:
-                self._finish(page, total, False)
+                # 末页也要对账：源声称 total=N 但实际少行/末页为空 → 不完整，不写缓存。
+                if total is not None and len(collected) < total:
+                    reason = f"源声称共 {total} 条，实际取回 {len(collected)} 条（末页不完整）"
+                    self._finish(page, total, True, reason=reason)
+                else:
+                    self._finish(page, total, False)
                 return filter_by_code(collected, code)
             if page >= self.MAX_PAGES:
                 reason = f"翻到第 {page} 页上限（{self.MAX_PAGES} 页），共 {pages} 页，结果被截断"

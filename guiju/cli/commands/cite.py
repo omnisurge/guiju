@@ -58,6 +58,21 @@ def run(store: Store, args: argparse.Namespace) -> int:
             citation_name = book_name = chosen
     code_key = target.get("code_key")
     code_display = target.get("code_display")
+    # 按编号查询时 resolve 已给出 code_key；若公告标题多本，仍要按该编号
+    # 的 mention 证据选书名，不能固定用第一本 doc_name（P1-3 跨面）。
+    if code_key:
+        from ...domain.codes import normalize_key as _normalize_key
+
+        want_key = _normalize_key(code_key)
+        for row in store.mentions_for(int(ann["id"])):
+            if row["code_key"] != want_key:
+                continue
+            for candidate_name in names_of(ann["title"], ann["doc_name"]):
+                if contains_name(row["evidence"], candidate_name):
+                    citation_name = book_name = candidate_name
+                    break
+            if book_name:
+                break
     # 兜底编号来源的置信度（None=正文解析所得，自带核实）；
     # 必须在 if 外声明，解析路径下 build_citation 后的 strict 检查也要读它。
     code_conf: str | None = None

@@ -93,8 +93,9 @@ class CsresParseTest(unittest.TestCase):
             record = parse(row(cells[:n]))[0]
             self.assertEqual(record.status, "current")
             self.assertEqual(record.implement_date, "未公布")
-        empty = parse(row(["", "", "", ""]))[0]
-        self.assertEqual((empty.code, empty.name, empty.implement_date), ("", "", ""))
+        # 空编号行是坏行（W3/P1-4）：不能生成空 code 记录后当完整结果。
+        with self.assertRaises(NeedsHuman):
+            parse(row(["", "", "", ""]))
 
     def test_only_tr_own_exact_title_prefix_is_a_data_row(self):
         # 这些 title 都不算数据行：5 列结构在但 0 条可解析 = 改版痕迹 → 50（不猜编号）。

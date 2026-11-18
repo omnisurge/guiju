@@ -63,6 +63,9 @@ def _parse_page(payload: dict) -> tuple[list[Record], int, int]:
             source="ccsn",
             raw=state,
         ))
+    if not rows and total > 0:
+        # Total 声称有数据但 List 为空：结构不符，不是"没有这本规范"。
+        raise json_error("ccsn", f"Total={total} 却返回 0 条记录")
     return parse_or_fail(rows, records, "ccsn", where="List"), len(rows), total
 
 

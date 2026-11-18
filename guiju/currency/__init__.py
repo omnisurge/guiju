@@ -161,7 +161,10 @@ class CachedCurrency:
         key = (endpoint_of(self.inner), self.name, code)
         hit = _cache.get(key)
         if hit is not None:
-            records, self.from_cache, self.stale, self.upstream_error, self.cache_age_days = hit
+            (
+                records, self.from_cache, self.stale, self.upstream_error,
+                self.cache_age_days, self.complete,
+            ) = hit
             return list(records)
         try:
             records = self.inner.lookup(code)
@@ -173,12 +176,17 @@ class CachedCurrency:
             self.from_cache = True
             self.stale = True  # 落库缓存无 TTL：只有上游刚失败才会走到这里 → 一律按陈旧上报
             self.upstream_error = exc
-            _cache[key] = (records, True, True, exc, self.cache_age_days)
+            _cache[key] = (records, True, True, exc, self.cache_age_days, None)
             return records
         self.complete = getattr(self.inner, "complete", None)
-        if records:
+        # 不完整的答案不落库（P1-4）：否则下次进程会在 24 小时缓存里
+        # 把"没取全"当成"没有"。complete=None 是老适配器契约，按完整处理。
+        if records and self.complete is not False:
             self._save(code, records)
-        _cache[key] = (records, self.from_cache, self.stale, self.upstream_error, self.cache_age_days)
+        _cache[key] = (
+            records, self.from_cache, self.stale, self.upstream_error,
+            self.cache_age_days, self.complete,
+        )
         return records
 
     # ---- 落库缓存 ----

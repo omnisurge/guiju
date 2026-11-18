@@ -134,6 +134,12 @@ class JsonAdapterFailClosedTest(OfflineTestCase):
         self.assertEqual(ctx.exception.exit, 50)
         self.assertIn("0 条可解析", str(ctx.exception))
 
+    def test_ccsn_total_positive_but_zero_rows_is_needs_human(self):
+        with self.assertRaises(NeedsHuman) as ctx:
+            parse_ccsn(ccsn_body([], total=3))
+        self.assertEqual(ctx.exception.exit, 50)
+        self.assertIn("Total=3", str(ctx.exception))
+
     def test_total_positive_but_zero_rows_is_needs_human(self):
         for source, _parser, adapter, body in ADAPTERS[1:]:
             client = FakeClient(body(total=3))
@@ -255,8 +261,11 @@ class CsresPaginationTest(OfflineTestCase):
 
     def test_truncated_at_max_pages_is_flagged(self):
         pages = 12
-        page1 = csres_page([csres_row(f"GB 50011-{2010 + i}") for i in range(25)], total=300, pages=pages)
-        client = FakeClient(page1)  # 每一页都返回同样的 25 行
+        client = FakeClient(*[
+            csres_page([csres_row(f"GB 50011-{2010 + i}") for i in range(25)],
+                       total=300, pages=pages, page=page)
+            for page in range(1, CsresCurrency.MAX_PAGES + 1)
+        ])
         cur = CsresCurrency(client)
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -285,6 +294,38 @@ class CsresPaginationTest(OfflineTestCase):
             CsresCurrency(client).lookup("GB50011")
         self.assertEqual(ctx.exception.exit, 50)
         self.assertIn("第 2 页", str(ctx.exception))
+
+    def test_last_page_short_of_total_is_incomplete_not_cached(self):
+        first = csres_page([csres_row(f"GB 50011-{2010 + i}") for i in range(25)], total=30, pages=2, page=1)
+        last = csres_page([csres_row(f"GB 50011-{2040 + i}") for i in range(4)], total=30, pages=2, page=2)
+        cur = CsresCurrency(FakeClient(first, last))
+        cur.lookup("GB50011")
+        self.assertFalse(cur.complete)
+        self.assertIs(cur.pagination["has_more"], True)
+        self.assertIn("30", cur.incomplete_reason)
+
+    def test_last_page_empty_before_total_is_incomplete(self):
+        first = csres_page([csres_row(f"GB 50011-{2010 + i}") for i in range(25)], total=30, pages=2, page=1)
+        last = csres_page([], total=30, pages=2, page=2)
+        cur = CsresCurrency(FakeClient(first, last))
+        rows = cur.lookup("GB50011")
+        self.assertEqual(len(rows), 25)
+        self.assertFalse(cur.complete)
+        self.assertIn("30", cur.incomplete_reason)
+
+    def test_repeated_page_is_needs_human(self):
+        first = csres_page([csres_row(f"GB 50011-{2010 + i}") for i in range(25)], total=30, pages=2, page=1)
+        repeated = csres_page([csres_row(f"GB 50011-{2010 + i}") for i in range(25)], total=30, pages=2, page=1)
+        with self.assertRaises(NeedsHuman) as ctx:
+            CsresCurrency(FakeClient(first, repeated)).lookup("GB50011")
+        self.assertIn("第 2 页", str(ctx.exception))
+
+    def test_empty_code_row_is_needs_human(self):
+        html = csres_page([
+            '<tr title="编号： GB 1-2020"><td></td><td>名称</td><td>部门</td><td>2020-01-01</td><td>现行</td></tr>'
+        ], total=1, pages=1)
+        with self.assertRaises(NeedsHuman):
+            parse_csres(html)
 
     def test_lookup_returns_only_requested_family_after_paging(self):
         page = csres_page([csres_row("GB 50011-2010"), csres_row("GB 50012-2010")], total=2, pages=1)

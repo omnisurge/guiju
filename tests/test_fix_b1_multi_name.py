@@ -404,6 +404,22 @@ class PullRealStoreTest(unittest.TestCase):
         self.assertEqual(emitted["code"], "GB 2-2020")
         self.assertEqual(emitted["confidence"], "parsed")
 
+        # 同一公告按编号 cite 时也要用该编号 evidence 对应的书名，而不是第一本。
+        by_code = self._target("code_local", "GB 2-2020")
+        by_code["code_key"] = "GB2-2020"
+        by_code["code_display"] = "GB 2-2020"
+        emitted2 = {}
+        args2 = argparse.Namespace(
+            ref="GB 2-2020", clause="", strict=False, offline=False, format="json"
+        )
+        with (
+            mock.patch.object(cite, "resolve", return_value=by_code),
+            mock.patch.object(currency_mod, "CachedCurrency", EmptyCurrency),
+            mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted2.update(p)),
+        ):
+            cite.run(self.store, args2)
+        self.assertTrue(emitted2["cite"].startswith(f"《{MULTI['names'][1]}》"))
+
     def test_ambiguous_33_does_not_touch_existing_mentions(self):
         self.store.upsert_edition("GB2-2020", "GB 2-2020", None, "parsed")
         self.store.add_mention(1, "GB2-2020", "primary", "已有编号")

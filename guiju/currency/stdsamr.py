@@ -34,8 +34,11 @@ def _parse_page(payload: dict) -> tuple[list[Record], int, int]:
     records = []
     for item in rows:
         state = json_string(item, "STATE", "std_samr").strip()
+        code = strip_tags(json_string(item, "C_STD_CODE", "std_samr"))
+        if not code:
+            raise json_error("std_samr", "C_STD_CODE 为空，不能把坏行当成记录")
         records.append(Record(
-            code=strip_tags(json_string(item, "C_STD_CODE", "std_samr")),
+            code=code,
             name=strip_tags(json_string(item, "C_C_NAME", "std_samr")),
             status=status_stdsamr(state),
             publish_date=json_string(item, "ISSUE_DATE", "std_samr").strip(),

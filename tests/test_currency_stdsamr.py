@@ -141,14 +141,11 @@ class StdSamrParseTest(OfflineTestCase):
         })
 
     def test_missing_and_null_fields_use_go_zero_values(self):
-        empty = {
-            "code": "", "name": "", "status": "unknown", "publish_date": "", "implement_date": "",
-            "source": "std_samr", "replaces": "", "raw": "", "fallback": "",
-        }
+        # W3/P1-4：行存在但编号为空 = 结构不符（50），不能生成空 code 记录后当完整结果。
         for row in ({}, None, {"C_STD_CODE": None, "C_C_NAME": None, "STATE": None, "ISSUE_DATE": None, "ACT_DATE": None}):
-            with self.subTest(row=row):
-                self.assertEqual([asdict(record) for record in parse_stdsamr(response(row))], [empty])
-        # W3/P1-4：缺 total 不是「源明确回答没有」→ 50；只有空 list 才是权威空结果。
+            with self.subTest(row=row), self.assertRaises(NeedsHuman):
+                parse_stdsamr(response(row))
+        # 缺 total 不是「源明确回答没有」→ 50；只有空 list 才是权威空结果。
         for raw in (b"{}", b'{"rows":null}'):
             with self.subTest(raw=raw), self.assertRaises(NeedsHuman):
                 parse_stdsamr(raw)

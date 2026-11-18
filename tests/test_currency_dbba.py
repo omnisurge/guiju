@@ -100,13 +100,10 @@ class DbbaParseTest(unittest.TestCase):
             with self.subTest(payload=payload):
                 self.assertEqual(parse_dbba(body(payload)), [])
         null_item = {key: None for key in ("code", "chName", "status", "reviseStdCodes", "actDate", "issueDate", "fzDate")}
+        # W3/P1-4：行存在但 code 为空 = 结构不符（50），不能生成空 code 记录。
         for item in ({}, null_item, None):
-            with self.subTest(item=item):
-                record = parse_dbba(body({"records": [item], "total": None}))[0]
-                for field in ("code", "name", "publish_date", "implement_date", "replaces", "raw"):
-                    self.assertEqual(getattr(record, field), "")
-                self.assertEqual(record.status, "unknown")
-                self.assertEqual(record.source, "dbba")
+            with self.subTest(item=item), self.assertRaises(NeedsHuman):
+                parse_dbba(body({"records": [item], "total": None}))
 
     def test_trims_fields_but_keeps_original_code_spelling_and_replaces(self):
         record = parse_dbba(body({"records": [entry(

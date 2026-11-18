@@ -316,7 +316,15 @@ class Store:
         except ValueError:
             seen = None
         synced_at = self._synced_at(source)
-        age = self.catalog_age_days() if source == "mohurd" else self.catalog_age_days(source)
+        # 直接按本源 synced_at 计算，不能对 mohurd 回退到全局值：只写
+        # sync:mohurd:synced_at 时 status.sources 也应给出真实 age，而不是 None。
+        age: float | None = None
+        if synced_at:
+            try:
+                then = datetime.strptime(synced_at, "%Y-%m-%d %H:%M:%S")
+                age = (datetime.now() - then).total_seconds() / 86400
+            except ValueError:
+                age = None
         return {
             "source": source,
             "complete": complete_raw == "1",

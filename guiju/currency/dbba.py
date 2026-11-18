@@ -37,6 +37,8 @@ def _parse_page(payload: dict) -> tuple[list[Record], int, int]:
     out = []
     for item in rows:
         code = json_string(item, "code", "dbba")
+        if not code.strip():
+            raise json_error("dbba", "code 为空，不能把坏行当成记录")
         name = json_string(item, "chName", "dbba")
         raw_status = json_string(item, "status", "dbba")
         replaces = json_string(item, "reviseStdCodes", "dbba")
