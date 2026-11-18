@@ -113,7 +113,9 @@ class _CiteCase(unittest.TestCase):
             "ann": dict(self.store.get_ann(1)),
             "code_key": None,
             "code_display": None,
-            "confidence": None,
+            # 名称/ID/URL 路径的真实先验值是 unknown，不是 None；用 None 会让
+            # P2-11 的旧优先级回归悄悄通过（评审发现）。
+            "confidence": "unknown",
             "versions": [],
         }
 

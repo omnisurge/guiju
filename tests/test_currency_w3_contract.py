@@ -320,6 +320,25 @@ class CsresPaginationTest(OfflineTestCase):
             CsresCurrency(FakeClient(first, repeated)).lookup("GB50011")
         self.assertIn("第 2 页", str(ctx.exception))
 
+    def test_total_unknown_last_page_empty_is_incomplete(self):
+        first = csres_page([csres_row(f"GB 50011-{2010 + i}") for i in range(1)], total=None, pages=2, page=1)
+        last = csres_page([], total=None, pages=2, page=2)
+        tail = "<span>共 2 页</span></body>".encode("gbk")
+        first = first.replace(b"</body>", tail)
+        last = last.replace(b"</body>", tail)
+        self.assertIn("共 2 页".encode("gbk"), first)
+        cur = CsresCurrency(FakeClient(first, last))
+        cur.lookup("GB50011")
+        self.assertFalse(cur.complete)
+        self.assertIn("总条数未知", cur.incomplete_reason)
+
+    def test_more_rows_than_total_is_incomplete(self):
+        first = csres_page([csres_row(f"GB 50011-{2010 + i}") for i in range(3)], total=2, pages=1)
+        cur = CsresCurrency(FakeClient(first))
+        cur.lookup("GB50011")
+        self.assertFalse(cur.complete)
+        self.assertIn("多余", cur.incomplete_reason)
+
     def test_empty_code_row_is_needs_human(self):
         html = csres_page([
             '<tr title="编号： GB 1-2020"><td></td><td>名称</td><td>部门</td><td>2020-01-01</td><td>现行</td></tr>'

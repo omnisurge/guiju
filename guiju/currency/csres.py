@@ -269,9 +269,15 @@ class CsresCurrency(CompletenessMixin):
                 return filter_by_code(collected, code)
             if page >= pages:
                 # 末页也要对账：源声称 total=N 但实际少行/末页为空 → 不完整，不写缓存。
-                if total is not None and len(collected) < total:
+                if total is not None and len(collected) > total:
+                    reason = f"源声称共 {total} 条，实际取回 {len(collected)} 条（多余/重复行）"
+                    self._finish(page, total, True, reason=reason)
+                elif total is not None and len(collected) < total:
                     reason = f"源声称共 {total} 条，实际取回 {len(collected)} 条（末页不完整）"
                     self._finish(page, total, True, reason=reason)
+                elif total is None and page > 1 and not parsed.records:
+                    # 没有 total、不是第一页却给空页：无法证明前面已取全。
+                    self._finish(page, total, True, reason="末页为空且总条数未知")
                 else:
                     self._finish(page, total, False)
                 return filter_by_code(collected, code)

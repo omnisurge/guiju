@@ -178,6 +178,10 @@ class AutoSyncTest(unittest.TestCase):
 class RenderInjectionTest(unittest.TestCase):
     """catalog 由 emit 统一注入 —— 任何命令都不能漏掉目录新鲜度。"""
 
+    def setUp(self):
+        # render 是全局单例；其他测试类可能留下 catalog，反向顺序跑会污染断言。
+        render.set_catalog(None)
+
     def tearDown(self):
         render.configure(as_json=False, quiet=False)
         render.set_catalog(None)
