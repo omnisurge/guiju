@@ -40,6 +40,7 @@ class Store:
         self.path = Path(path)
         self.legacy_backup: Path | None = None
         self._cross_thread = cross_thread
+        ok = False
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.db = sqlite3.connect(
@@ -48,17 +49,22 @@ class Store:
             self.db.execute("PRAGMA foreign_keys = ON")
             self._migrate()
             self._ensure_additions()
+            ok = True
         except (sqlite3.DatabaseError, OSError) as exc:
-            # 损坏库/权限/只读/并发锁都走这里：不能让 CLI 以裸 traceback 结束，
-            # 也不能假装"目录为空"继续查。给出可操作的 50（需人工）。
-            db = getattr(self, "db", None)
-            with contextlib.suppress(Exception):
-                if db is not None:
-                    db.close()
+            # 打开/建库/迁移阶段的损坏库、权限、只读父目录、锁：不能让 CLI
+            # 以裸 traceback 结束，也不能假装"目录为空"继续查。给出可操作的 50。
             raise NeedsHuman(
                 f"数据库无法打开或已损坏：{self.path}（{type(exc).__name__}: {exc}）",
                 hint="先备份该文件，再把它移走让 guiju 重建目录；原始文件保留用于排查",
             ) from exc
+        finally:
+            if not ok:
+                # 包括 GuijuError（未来 schema）和 KeyboardInterrupt：
+                # __init__ 失败时不能把连接留给 GC，否则长跑 MCP 会泄漏。
+                db = getattr(self, "db", None)
+                with contextlib.suppress(Exception):
+                    if db is not None:
+                        db.close()
 
     # ---------------------------------------------------------------- schema
     def _migrate(self) -> None:

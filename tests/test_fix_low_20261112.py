@@ -236,7 +236,7 @@ class Download416Test(unittest.TestCase):
             self.assertEqual(calls[0], "bytes=28-")
             self.assertIsNone(calls[1])                                   # 第二次无 Range
 
-    def test_416_accept_when_head_answers_nothing(self) -> None:
+    def test_416_rejects_when_head_answers_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             part = Path(tmp) / "x.part"
             part.write_bytes(b"done")
@@ -244,10 +244,10 @@ class Download416Test(unittest.TestCase):
             def open_side(req, timeout=0):
                 raise _http416()
 
-            with self._ctx(open_side, None):
+            with self._ctx(open_side, None), self.assertRaises(compliance._Retryable):
                 compliance._download_once("https://x.gov.cn/f.pdf", part, start=4,
                                           referer=None, timeout=10, chunk_size=4)
-            self.assertEqual(part.read_bytes(), b"done")
+            self.assertFalse(part.exists())
 
     def _ctx(self, open_side, remote_len):
         return _PatchCtx(self._patches(open_side, remote_len))

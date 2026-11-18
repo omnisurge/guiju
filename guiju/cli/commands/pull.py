@@ -288,20 +288,24 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
         try:
             payload = _pull_one(store, args, ref, source, out_dir)
             exit_code = int(payload.get("exit", 0))
+            outcome = "already" if payload.get("already") else "ok"
+            if exit_code == EXIT_COMPLIANCE:
+                outcome = "compliance"
             results.append(
                 {
                     "ref": ref,
                     "exit": exit_code,
-                    "outcome": "already" if payload.get("already") else "ok",
+                    "outcome": outcome,
                     "code": payload.get("code"),
                     "path": payload.get("path"),
                     "bytes": payload.get("bytes"),
                 }
             )
-            render.note(f"  → {'已存在' if exit_code == EXIT_EXISTS else '完成'} {payload.get('code') or ''}")
             if exit_code == EXIT_COMPLIANCE:
+                render.note(f"  → 停止（合规红线）{payload.get('code') or ''}")
                 stopped = "compliance"
                 break
+            render.note(f"  → {'已存在' if exit_code == EXIT_EXISTS else '完成'} {payload.get('code') or ''}")
         except GuijuError as exc:
             results.append(
                 {"ref": ref, "exit": exc.exit, "outcome": exc.reason,
@@ -340,6 +344,10 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
         for r in results:
             if r["exit"] not in (0, EXIT_EXISTS):
                 render.warn(f"  {r['ref']} → exit={r['exit']} {r['outcome']}")
+    # 40 是红线：即使同一批里更早出现过 20/50/1，也必须让调用方看到 40，
+    # 不能因为 severe[0] 是 20 就被当成"稍后重试"。
+    if stopped == "compliance":
+        return EXIT_COMPLIANCE
     return severe[0]["exit"] if severe else EXIT_OK
 
 

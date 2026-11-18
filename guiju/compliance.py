@@ -223,28 +223,39 @@ def _remote_length(url: str, *, referer: str | None, timeout: int) -> int | None
 
 
 def _header_int(value: str | None) -> int | None:
-    """只接受纯数字头；缺失/畸形一律视为未知，不拿猜的长度做校验。"""
+    """只接受 ASCII 纯数字头；缺失/畸形/超长一律视为未知，不拿猜的长度做校验。"""
     if value is None:
         return None
     text = value.strip()
-    return int(text) if text.isdigit() else None
+    if not text.isascii() or not text.isdigit():
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        # Python 3.11+ 对超长数字串会抛 ValueError；按未知处理，不能让头部
+        # 解析把下载主路径打成 internal traceback。
+        return None
 
 
 def _parse_content_range(value: str | None) -> tuple[int | None, int | None, int | None]:
-    """解析 Content-Range：bytes start-end/total 或 bytes */total。
+    """解析 206 的 Content-Range：bytes start-end/total 或 bytes start-end/*。
 
-    返回 (start, end, total)；无法识别时返回 (None, None, None)。
+    返回 (start, end, total)；total 为 * 或无法识别时为 None。
+    HTTP 的 range unit 大小写不敏感（RFC 9110），接受 Bytes/BYTES。
     """
     if not value:
         return None, None, None
-    match = re.fullmatch(r"\s*bytes\s+(\d+)-(\d+)/(\d+|\*)\s*", value)
-    if match:
-        total = None if match.group(3) == "*" else int(match.group(3))
-        return int(match.group(1)), int(match.group(2)), total
-    match = re.fullmatch(r"\s*bytes\s+\*/(\d+)\s*", value)
-    if match:
-        return None, None, int(match.group(1))
-    return None, None, None
+    match = re.fullmatch(
+        r"\s*bytes\s+(\d+)-(\d+)/(\d+|\*)\s*", value, re.IGNORECASE
+    )
+    if not match:
+        return None, None, None
+    start = _header_int(match.group(1))
+    end = _header_int(match.group(2))
+    total = None if match.group(3) == "*" else _header_int(match.group(3))
+    if start is None or end is None or (match.group(3) != "*" and total is None):
+        return None, None, None
+    return start, end, total
 
 
 class _Retryable(Exception):
@@ -336,15 +347,22 @@ def _download_once(
                 if range_start is None or range_end is None:
                     raise SourceUnreachable(f"206 响应缺少可校验的 Content-Range：{url}")
                 if range_start != start:
-                    part.unlink(missing_ok=True)
+                    # ADR 0004 D1 规则 4：起点不符必须失败并保留 .part，
+                    # 不能为了自愈丢掉大文件的续传进度；让外层有限次重试后报 20。
                     raise _Retryable(
-                        f"206 起点 {range_start} 与本地 {start} 不符，已丢弃 .part 重下：{url}"
+                        f"206 起点 {range_start} 与本地 {start} 不符，保留 .part：{url}"
                     )
                 if range_end < range_start or (
                     range_total is not None and range_end >= range_total
                 ):
                     raise SourceUnreachable(
                         f"206 Content-Range 非法：{range_start}-{range_end}/{range_total}［{url}］"
+                    )
+                if range_total is None:
+                    # bytes start-end/* 只能证明这一段，不能证明整个文件完整；
+                    # 宁可 20，也不把未知总长的短文件当成功。
+                    raise SourceUnreachable(
+                        f"206 未给出总长（Content-Range 以 * 结尾），无法证明完整：{url}"
                     )
             with part.open(mode) as fh:
                 while True:
@@ -372,9 +390,16 @@ def _download_once(
             # 416 多半是"本地已下完"（部分 ≥ 远端总长）；但也可能是 .part 损坏超界。
             # 别盲信：HEAD 对一次 Content-Length，对不上就删掉重下一次（仅此一次）。
             remote = _remote_length(url, referer=referer, timeout=timeout)
-            if remote is None or remote == start:
-                # 问不出长度时维持旧结论（接受），避免 HEAD 缺陷反过来撕毁续传
+            if remote == start:
+                # HEAD 给出了与本地一致的明确总长，才接受“已完成”。
                 return
+            if remote is None:
+                # HEAD 被站点禁用时，416 不能再被当成“已完成”的证据；
+                # 丢掉 .part 从 0 重下一次，宁可慢，也不接受未知长度的文件。
+                part.unlink(missing_ok=True)
+                raise _Retryable(
+                    f"416 且无法确认远端总长，已丢弃 .part 从 0 重下：{url}"
+                ) from exc
             part.unlink(missing_ok=True)
             _download_once(
                 url, part, start=0, referer=referer, timeout=timeout, chunk_size=chunk_size

@@ -65,7 +65,7 @@ cmd:/mcp: 覆盖已随 spec-currency 退役删除（2026-11-13），设置非 na
 
 在仓库根目录执行：
 
-    ssh root@your-server 'mkdir -p /opt/guiju /var/lib/guiju'
+    ssh root@your-server 'mkdir -p /opt/guiju /var/lib/guiju /var/lib/guiju/mcp'
     tar --exclude='__pycache__' --exclude='*.pyc' -C . -cf - guiju \
       | ssh root@your-server 'tar -C /opt/guiju -xf -'
 
@@ -75,6 +75,7 @@ cmd:/mcp: 覆盖已随 spec-currency 退役删除（2026-11-13），设置非 na
     ssh root@your-server 'systemctl daemon-reload && systemctl enable --now guiju-mcp'
 
 当前单元默认使用 /usr/bin/python3、/opt/guiju、/var/lib/guiju，并只监听 127.0.0.1:18083。
+`/var/lib/guiju/mcp` 是 MCP `batch` 的专用文件根（list/out 都只能落在它下面）；单元里的 `ExecStartPre` 会兜底创建。
 如果服务器路径/用户不同，编辑 unit 中的 WorkingDirectory、Environment、User 和端口。
 直接对外提供时请在前面加 Caddy/nginx 反向代理和认证，不要把 18083 绑到 0.0.0.0。
 

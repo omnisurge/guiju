@@ -16,7 +16,7 @@
 
 ## 安装
 
-    ssh hk 'mkdir -p /opt/guiju /var/lib/guiju'
+    ssh hk 'mkdir -p /opt/guiju /var/lib/guiju /var/lib/guiju/mcp'
     tar --exclude='__pycache__' --exclude='*.pyc' -C . -cf - guiju \
       | ssh hk 'tar -C /opt/guiju -xf -'
     scp deploy/guiju-mcp.service hk:/etc/systemd/system/guiju-mcp.service

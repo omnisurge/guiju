@@ -13,6 +13,9 @@ class AutosyncFailureTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        self.env = mock.patch.dict("os.environ", {"GUIJU_NO_AUTO_SYNC": ""})
+        self.env.start()
+        self.addCleanup(self.env.stop)
         self.store = Store(f"{self.tmp.name}/catalog.db")
         self.addCleanup(self.store.close)
 
@@ -23,12 +26,24 @@ class AutosyncFailureTest(unittest.TestCase):
         self.assertEqual(snap["state"], "refresh_failed")
         self.assertIn("目录刷新失败", snap["message"])
 
+    def test_commit_failure_does_not_escape(self):
+        with mock.patch("guiju.syncengine.crawl", side_effect=RuntimeError("boom")), \
+                mock.patch.object(self.store, "commit", side_effect=sqlite3.OperationalError("disk full")):
+            snap = autosync.evaluate(self.store, command="search")
+        self.assertEqual(snap["state"], "refresh_failed")
+
     def test_clear_failure_does_not_block_refreshed(self):
         with mock.patch("guiju.syncengine.crawl", return_value={"new": 3}), \
                 mock.patch.object(self.store, "set_meta", side_effect=sqlite3.OperationalError("readonly")):
             snap = autosync.evaluate(self.store, command="search")
         self.assertEqual(snap["state"], "refreshed")
         self.assertEqual(snap["new"], 3)
+
+    def test_clear_commit_failure_does_not_block_refreshed(self):
+        with mock.patch("guiju.syncengine.crawl", return_value={"new": 3}), \
+                mock.patch.object(self.store, "commit", side_effect=sqlite3.OperationalError("disk full")):
+            snap = autosync.evaluate(self.store, command="search")
+        self.assertEqual(snap["state"], "refreshed")
 
 
 if __name__ == "__main__":

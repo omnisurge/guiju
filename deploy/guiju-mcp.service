@@ -10,6 +10,8 @@ Environment=PYTHONUNBUFFERED=1
 Environment=GUIJU_HOME=/var/lib/guiju
 Environment=GUIJU_CURRENCY=native
 Environment=GUIJU_CURRENCY_CACHE=/var/lib/guiju/currency-cache
+# MCP batch 的 list/out 只能落在 GUIJU_HOME/mcp；升级后先建好专用根。
+ExecStartPre=/bin/mkdir -p /var/lib/guiju/mcp
 ExecStart=/usr/bin/python3 -m guiju mcp --http --host 127.0.0.1 --port 18083 --path /mcp
 Restart=on-failure
 RestartSec=3

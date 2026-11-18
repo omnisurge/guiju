@@ -46,7 +46,7 @@ TOOLS = (
     },
     {
         "name": "batch",
-        "description": "批量盘点规范清单：输入 GUIJU_HOME/mcp 下的清单文件路径，执行批量查询，返回统计。",
+        "description": "批量盘点规范清单：list/out 都限制在 GUIJU_HOME/mcp 下（相对路径按该根解析），执行批量查询并返回统计。",
         "inputSchema": {
             "type": "object",
             "properties": {"list": {"type": "string"}, "out": {"type": "string"}, "cache": {"type": "string"}},
@@ -68,12 +68,19 @@ TOOLS = (
 def _mcp_io_root() -> Path:
     """MCP batch 的唯一文件根：GUIJU_HOME/mcp。
 
-    服务面不再拥有 CLI 的任意路径能力；目录本身由部署创建（不在这里 mkdir，
-    避免只读挂载/只读 Store 场景被一次 batch 调用意外写盘）。
+    服务面不再拥有 CLI 的任意路径能力。根不存在时按需创建（batch 本来就要
+    落 out 文件）；但拒绝把根本身做成 symlink/普通文件，避免部署时把
+    "专用根"指到 `/` 或其他宽目录后重新放开任意路径。
     """
     from .store.sqlite import default_home
 
-    return (default_home() / "mcp").resolve()
+    raw = default_home() / "mcp"
+    if raw.is_symlink():
+        raise ValueError(f"MCP 文件根不能是 symlink：{raw}")
+    if raw.exists() and not raw.is_dir():
+        raise ValueError(f"MCP 文件根不是目录：{raw}")
+    raw.mkdir(parents=True, exist_ok=True)
+    return raw.resolve()
 
 
 def _safe_mcp_path(raw: str, *, label: str) -> Path:
@@ -211,6 +218,16 @@ class McpServer:
         codes = [code for code in codes if code]
         if not codes:
             return _error_result("清单为空")
+        # 先校验 out，再查后端：越界 out 不应先消耗一批上游请求。
+        out_path = str(arguments.get("out") or "").strip()
+        out_file = None
+        if out_path:
+            try:
+                out_file = _safe_mcp_path(out_path, label="盘点表")
+            except ValueError as exc:
+                return _error_result(str(exc))
+            except OSError as exc:
+                return _error_result(f"盘点表不可写：{exc}")
         completed = skipped = failed = unmatched = 0
         out_rows: list[str] = []
         for code in codes:
@@ -229,17 +246,13 @@ class McpServer:
                 else:
                     completed += 1
                 out_rows.append("\t".join((code, row.code, row.status, row.name, row.implement_date, row.source)))
-        out_path = str(arguments.get("out") or "").strip()
-        if out_path:
+        if out_file is not None:
             try:
-                out_file = _safe_mcp_path(out_path, label="盘点表")
                 out_file.write_text(
                     "# format: guiju-mcp-batch-v1\n# 输入\t规范号\t状态\t名称\t实施日期\t数据源\n"
                     + "\n".join(out_rows) + ("\n" if out_rows else ""),
                     encoding="utf-8",
                 )
-            except ValueError as exc:
-                return _error_result(str(exc))
             except OSError as exc:
                 return _error_result(f"盘点表写入失败：{exc}")
         return _text_result(

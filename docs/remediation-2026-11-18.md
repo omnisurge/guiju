@@ -406,9 +406,15 @@ CI 门禁：
 - [x] P2-3 损坏库 JSON
 - [x] P2-4 stdio 兜底
 
-A1 实施记录（2026-11-18）：分支 fix/a1-safety-20261118；测试 601→617（新增 16 个 A1 契约测试）；
+A1 实施记录（2026-11-18）：分支 fix/a1-safety-20261118；测试 601→640（39 个 A1 契约测试）；
 scripts/ci.sh 与 Python 3.10 全量单测均通过；未改退出码/DB schema/MCP 工具形状；
 systemd 降权按计划留到 B4。
+
+A1 独立复审（2026-11-18，5 名 reviewer：net/store/cli/domain-mcp/tests）：首轮发现 1 个 P1
+（混合批次先 20/50/1 后 40 时顶层返回首个 severe 而非 40）、1 个 P2（206 分支缺测试、
+416+HEAD 不可用仍接受旧 .part）、MCP 根未创建/未文档化、Store 初始化 GuijuError 路径
+连接泄漏等；返工已修并补测试。剩余 P3（只读已有 v2 库的写失败仍是 exit 1、初始化期
+瞬时 database is locked 仍映射 50、MCP `cache` 死参数）转 B3/B4。
 
 ### B1（1.2.0-alpha）
 
