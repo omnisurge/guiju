@@ -37,13 +37,10 @@ class RedirectTest(unittest.TestCase):
     def test_redirect_relative_url_resolves_against_origin(self):
         handler = compliance._GuardedRedirect()
         req = urllib.request.Request("https://www.mohurd.gov.cn/a/b")
-        # 相对跳转应被解析为同域，从而通过白名单（随后由基类构造/拒绝，不作为断言对象）
-        try:
-            handler.redirect_request(req, None, 302, "Found", {}, "/c/d")
-        except ComplianceDenied:  # pragma: no cover - 相对跳转不应触发合规拒绝
-            self.fail("同域相对跳转被误判为非白名单")
-        except Exception:
-            pass
+        # 相对跳转应被解析为同域；不能只用 except Exception: pass 把回归吞掉。
+        result = handler.redirect_request(req, None, 302, "Found", {}, "/c/d")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.full_url, "https://www.mohurd.gov.cn/c/d")
 
 
 if __name__ == "__main__":

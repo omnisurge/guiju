@@ -31,6 +31,7 @@ class McpProtocolTest(unittest.TestCase):
             "DG/TJ08-2007": [Record("DG/TJ08-2007-2026", "current", "地质灾害危险性评估技术标准", "2027-02-01", "shzjw")],
         }
         self.server = McpServer(FakeBackend(self.rows))
+        self.addCleanup(self.server.close)
 
     def call(self, method, params=None, request_id=1, include_id=True):
         payload = {"jsonrpc": "2.0", "method": method, "params": params or {}}
@@ -58,6 +59,12 @@ class McpProtocolTest(unittest.TestCase):
         )
         missing = self.call("tools/call", {"name": "verify", "arguments": {"code": "NOPE"}})
         self.assertEqual(missing["result"]["content"][0]["text"], "unknown")
+
+    def test_tool_schemas_do_not_advertise_unused_cache(self):
+        # P3：cache 参数没有实现，不能继续在 inputSchema 里假装支持。
+        tools = self.call("tools/list")["result"]["tools"]
+        for tool in tools:
+            self.assertNotIn("cache", tool["inputSchema"]["properties"], tool["name"])
 
     def test_missing_arguments_are_tool_errors(self):
         for name in ("query", "verify", "batch", "announcement"):

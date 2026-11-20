@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 
+from ...autosync import safe_sync
 from ...store.sqlite import Store
 from ...syncengine import crawl
 from .. import render
@@ -50,13 +51,28 @@ def run(store: Store, args: argparse.Namespace) -> int:
     def on_page(page: int, count: int, fresh: int, seen: int, total: int) -> None:
         render.note(f"第 {page:>3} 页：{count:>3} 条，新增 {fresh:>3}（累计 {seen}/{total}）")
 
-    payload = crawl(
-        store,
-        page_size=args.page_size,
-        pages=args.pages,
-        source=args.source,
-        on_page=on_page,
-    )
+    with safe_sync(store) as locked:
+        if not locked:
+            # 另一个进程正在同步：不排队、不重复抓，明确返回 refreshing。
+            render.emit({
+                "ok": True,
+                "skipped": True,
+                "reason": "refreshing",
+                "state": "refreshing",
+                "retry_after_seconds": 30,
+                "total_in_db": total_in_db,
+                "synced_at": store.source_meta(args.source)["synced_at"],
+                "db": str(store.path),
+            })
+            render.note("另一个进程正在同步目录；本次未抓取，建议 30 秒后重试")
+            return 0
+        payload = crawl(
+            store,
+            page_size=args.page_size,
+            pages=args.pages,
+            source=args.source,
+            on_page=on_page,
+        )
     payload["ok"] = True
     render.emit(payload)
     if not render.is_json():

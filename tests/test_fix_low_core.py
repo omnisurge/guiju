@@ -133,8 +133,8 @@ class TestAnnouncementUnknownSource(unittest.TestCase):
         fake_source = unittest.mock.Mock()
         with patch("guiju.cli.lookup.resolve", return_value=fake_target), \
              patch("guiju.sources.registry", return_value={"mohurd": fake_source}), \
-             tempfile.TemporaryDirectory() as tmp:
-                os.environ["GUIJU_HOME"] = tmp
+             tempfile.TemporaryDirectory() as tmp, \
+             patch.dict(os.environ, {"GUIJU_HOME": tmp}):
                 try:
                     result = server._announcement({"ref": "https://some.unknown.gov.cn/notice/1"})
                 finally:
@@ -173,17 +173,17 @@ class TestSharedAnnouncementStore(unittest.TestCase):
             def close(self):
                 self.closed += 1
 
-        with tempfile.TemporaryDirectory() as tmp:
-            os.environ["GUIJU_HOME"] = tmp
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.dict(os.environ, {"GUIJU_HOME": tmp}), \
+             patch("guiju.store.sqlite.Store", _FakeStore):
             # _ann_store 做的是局部 import，patch 的是 store.sqlite 里的名字
-            with patch("guiju.store.sqlite.Store", _FakeStore):
-                server = McpServer(_FakeBackend())
-                self._call(server)
-                self._call(server)
-                self.assertEqual(len(created), 1)
-                self.assertEqual(created[0].get("cross_thread"), True)
-                server.close()
-                self.assertEqual(instances[0].closed, 1)
+            server = McpServer(_FakeBackend())
+            self._call(server)
+            self._call(server)
+            self.assertEqual(len(created), 1)
+            self.assertEqual(created[0].get("cross_thread"), True)
+            server.close()
+            self.assertEqual(instances[0].closed, 1)
 
     def test_cross_thread_store_usable_from_other_thread(self):
         # cross_thread=True 的连接在线程间用不再触发 sqlite3.ProgrammingError

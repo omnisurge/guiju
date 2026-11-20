@@ -10,7 +10,8 @@ from pathlib import Path
 from unittest import mock
 
 from guiju.cli import main
-from guiju.errors import GuijuError, NeedsHuman
+from guiju.cli.commands import sync as sync_mod
+from guiju.errors import GuijuError, NeedsHuman, SourceUnreachable
 from guiju.store.sqlite import Store
 
 
@@ -44,6 +45,42 @@ class CorruptStoreTest(unittest.TestCase):
             Store(blocked / "catalog.db")
         with self.assertRaises(NeedsHuman):
             Store(Path(self.tmp.name))
+
+    def test_transient_lock_maps_to_retryable_20(self):
+        with mock.patch(
+            "guiju.store.sqlite.sqlite3.connect",
+            side_effect=sqlite3.OperationalError("database is locked"),
+        ), self.assertRaises(SourceUnreachable) as ctx:
+            Store(self.path)
+        self.assertEqual(ctx.exception.exit, 20)
+
+    def test_existing_readonly_v2_db_can_be_read(self):
+        db_path = Path(self.tmp.name) / "readonly.db"
+        writer = Store(db_path)
+        writer.upsert_announcement("https://x/1", "2026-01-01", "标题", "名称", "other")
+        writer.commit()
+        writer.close()
+        db_path.chmod(0o444)
+        self.addCleanup(db_path.chmod, 0o644)
+        reader = Store(db_path)
+        self.addCleanup(reader.close)
+        self.assertEqual(reader.count_announcements(), 1)
+
+    def test_readonly_write_maps_to_json_50_not_internal(self):
+        db_path = Path(self.tmp.name) / "readonly-write.db"
+        Store(db_path).close()
+        db_path.chmod(0o444)
+        self.addCleanup(db_path.chmod, 0o644)
+        out = io.StringIO()
+        with mock.patch.object(
+            sync_mod, "crawl",
+            side_effect=sqlite3.OperationalError("attempt to write a readonly database"),
+        ), contextlib.redirect_stdout(out):
+            code = main(["--json", "--db", str(db_path), "sync"])
+        self.assertEqual(code, 50)
+        payload = json.loads(out.getvalue())
+        self.assertEqual(payload["exit"], 50)
+        self.assertEqual(payload["reason"], "needs_human")
 
     def test_future_schema_closes_connection(self):
         future = Path(self.tmp.name) / "future.db"

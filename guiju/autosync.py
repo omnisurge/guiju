@@ -56,6 +56,10 @@ def _try_lock(store: Store):
         fh.close()
 
 
+# 显式 sync 与进程内 autosync 共用同一把文件锁；保留 _try_lock 旧名供旧测试/调用。
+safe_sync = _try_lock
+
+
 def _cooldown_left(store: Store) -> int:
     raw = store.get_meta("auto_sync_failed_at")
     if not raw:

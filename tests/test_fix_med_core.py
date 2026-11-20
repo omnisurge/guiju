@@ -146,6 +146,8 @@ class AnnouncementReadOnlyTest(unittest.TestCase):
             def attachments(self, html):
                 return []
 
+        server = self._server()
+        self.addCleanup(server.close)
         with tempfile.TemporaryDirectory() as home, mock.patch.dict(
             "os.environ", {"GUIJU_HOME": home}
         ), mock.patch(
@@ -153,7 +155,7 @@ class AnnouncementReadOnlyTest(unittest.TestCase):
         ) as resolve_mock, mock.patch(
             "guiju.sources.registry", return_value={"mohurd": FakeSource()}
         ):
-            resp = self._server().handle({
+            resp = server.handle({
                 "jsonrpc": "2.0", "id": 1, "method": "tools/call",
                 "params": {"name": "announcement", "arguments": {"ref": "GB 55001-2021"}},
             })

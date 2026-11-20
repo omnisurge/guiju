@@ -29,7 +29,7 @@
 | 编号解析 | ✅ 实测覆盖 61%（其余公告正文确实无编号） |
 | 正文下载 | ✅ 单条与批量均实测可用（含 2000 年的早期公告） |
 | 编号定位 | ✅ 只认「发布该编号的公告」+ 正文编号核实；同名多公告交人决断 |
-| 单测 / 端到端 | 781 项单测（离线、零依赖）/ 4 项端到端断言（`scripts/e2e.py`） |
+| 单测 / 端到端 | 786 项单测（离线、零依赖）/ 4 项离线端到端断言（`scripts/e2e.py`） |
 | 目录保鲜 | 进程内自刷新：目录为空或 >7 天时，在该次命令里顺手增量同步（无 cron / 无常驻进程） |
 | 多源 | ✅ 住建部（国标/行标公告）+ 上海（地标，`--source shzjw`）；其余源未接 |
 | MCP | ✅ `guiju mcp`（stdio / HTTP；https://guiju.守夜人.中国/mcp，Bearer 认证；query/verify/batch/announcement） |
@@ -194,10 +194,10 @@ scripts/ci.sh               # 本地 CI：ruff + 单测 + 离线冒烟 + 入口�
 scripts/ci.sh               # 全绿才提交/推送；SKIP_CI=1 git push 可强制跳过（不建议）
 ```
 
-**本地 CI 是权威门，GitHub CI 只是旁证。** 联网的 36 项端到端验收不在 push 上跑
+**本地 CI 是权威门，GitHub CI 只是旁证。** 联网端到端验收不在 push 上跑
 （不拿政府站点当压测对象），发版前手动触发：
 ```bash
-python3 scripts/e2e.py                     # 本地跑（有时效服务 → 38 项；没有就跳 1 组）
+python3 scripts/e2e.py                     # 本地跑（有时效服务跑全量，没有就跳 1 组）
 gh workflow run e2e-live.yml               # 或在 GitHub 上手动跑并留档
 ```
 

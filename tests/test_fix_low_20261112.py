@@ -20,6 +20,7 @@ python -m unittest discover，游离 def test_ 函数不会被 discover 收编�
 from __future__ import annotations
 
 import argparse
+import os
 import tempfile
 import unittest
 import urllib.error
@@ -137,10 +138,18 @@ def _store() -> object:
 
 
 class AutosyncNotifyTest(unittest.TestCase):
+    def setUp(self) -> None:
+        # 与 AutoSyncTest 同因：父 shell 的 GUIJU_NO_AUTO_SYNC 不能改变单测分支。
+        self._env_guard = mock.patch.dict(os.environ, {}, clear=False)
+        self._env_guard.start()
+        self.addCleanup(self._env_guard.stop)
+        os.environ.pop("GUIJU_NO_AUTO_SYNC", None)
+
     def test_autosync_notify_uses_fresh_empty(self) -> None:
         from guiju import autosync
 
         store = _store()
+        self.addCleanup(store.close)
         # 锁外判定时空目录；锁内复查已被"别的进程"补满 → 提示应为增量而非首次同步
         counts = iter([0, 5, 5, 5, 5])
         msgs: list[str] = []

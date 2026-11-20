@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..domain.codes import Codes, Confidence, Role, _code_stem
-from ..errors import GuijuError, NeedsHuman
+from ..errors import GuijuError, NeedsHuman, SourceUnreachable
 
 SCHEMA_VERSION = 2
 _SCHEMA_FILE = Path(__file__).with_name("schema.sql")
@@ -27,6 +27,11 @@ def now() -> str:
 
 def default_home() -> Path:
     return Path(os.environ.get("GUIJU_HOME") or (Path.home() / ".guiju"))
+
+
+def _is_locked(exc: sqlite3.OperationalError) -> bool:
+    text = str(exc).lower()
+    return "locked" in text or "busy" in text
 
 
 class Store:
@@ -46,10 +51,22 @@ class Store:
             self.db = sqlite3.connect(
                 self.path, check_same_thread=not cross_thread)
             self.db.row_factory = sqlite3.Row
-            self.db.execute("PRAGMA foreign_keys = ON")
+            self._configure_connection()
             self._migrate()
             self._ensure_additions()
             ok = True
+        except sqlite3.OperationalError as exc:
+            # 初始化/迁移期的瞬时锁是可重试的 20，不是“数据库损坏”的 50；
+            # 只读父目录等永久写失败仍归 50 交人处理。
+            if _is_locked(exc):
+                raise SourceUnreachable(
+                    f"数据库正被其他进程占用：{self.path}（{exc}）",
+                    hint="稍后重试一次；若持续出现，检查是否有另一个 guiju 进程在长期写库",
+                ) from exc
+            raise NeedsHuman(
+                f"数据库无法打开或已损坏：{self.path}（{type(exc).__name__}: {exc}）",
+                hint="先备份该文件，再把它移走让 guiju 重建目录；原始文件保留用于排查",
+            ) from exc
         except (sqlite3.DatabaseError, OSError) as exc:
             # 打开/建库/迁移阶段的损坏库、权限、只读父目录、锁：不能让 CLI
             # 以裸 traceback 结束，也不能假装"目录为空"继续查。给出可操作的 50。
@@ -67,6 +84,15 @@ class Store:
                         db.close()
 
     # ---------------------------------------------------------------- schema
+    def _configure_connection(self) -> None:
+        """连接级设置：busy_timeout 让并发写等待而不是立刻 InternalError；
+        WAL 提升读写并发。只读旧库上 WAL 可能被拒绝，读取仍应可用。"""
+        self.db.execute("PRAGMA foreign_keys = ON")
+        self.db.execute("PRAGMA busy_timeout = 5000")
+        # 只读库不允许切换 journal mode；其余读取路径不依赖 WAL。
+        with contextlib.suppress(sqlite3.OperationalError):
+            self.db.execute("PRAGMA journal_mode = WAL")
+
     def _migrate(self) -> None:
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         if version == SCHEMA_VERSION:
@@ -80,7 +106,7 @@ class Store:
             self.db = sqlite3.connect(
                 self.path, check_same_thread=not self._cross_thread)
             self.db.row_factory = sqlite3.Row
-            self.db.execute("PRAGMA foreign_keys = ON")
+            self._configure_connection()
         elif version not in (0, SCHEMA_VERSION):
             raise GuijuError(f"数据库 schema 版本 {version} 超出本程序认知（{SCHEMA_VERSION}）")
         self.db.executescript(_SCHEMA_FILE.read_text(encoding="utf-8"))
@@ -93,6 +119,12 @@ class Store:
         为什么不上提 schema 版本：缓存表是完全可丢弃的派生数据，
         把它算进版本迁移会让"版本对了但少张表"变成一类新故障。
         """
+        exists = self.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='currency_cache'"
+        ).fetchone()
+        if exists is not None:
+            # 不重复执行 DDL：只读的既有 v2 库不应因为每次构造都写 schema 而失败。
+            return
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS currency_cache ("
             "code_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at TEXT NOT NULL)"

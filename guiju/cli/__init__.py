@@ -9,10 +9,11 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 
 from .. import autosync
-from ..errors import EXIT_OK, EXIT_TABLE, GuijuError
+from ..errors import EXIT_OK, EXIT_TABLE, GuijuError, NeedsHuman, SourceUnreachable
 from ..store.sqlite import Store
 from . import render
 from .commands import (
@@ -110,6 +111,19 @@ def main(argv: list[str] | None = None) -> int:
         return int(args.func(store, args))
     except GuijuError as exc:
         return _fail(exc)
+    except sqlite3.OperationalError as exc:
+        # 写路径（set_meta/cache/commit）在只读库或锁等待超时时抛的是
+        # sqlite3.OperationalError；不能穿透成 exit 1“程序缺陷”。
+        text = str(exc).lower()
+        if "locked" in text or "busy" in text:
+            return _fail(SourceUnreachable(
+                f"数据库正被其他进程占用：{type(exc).__name__}: {exc}",
+                hint="稍后重试一次；若持续出现，检查是否有另一个 guiju 进程在长期写库",
+            ))
+        return _fail(NeedsHuman(
+            f"数据库写入失败：{type(exc).__name__}: {exc}",
+            hint="备份数据库并检查磁盘/目录权限；只读库请移走或改到可写 GUIJU_HOME",
+        ))
     except KeyboardInterrupt:
         render.warn("已中断")
         return 130

@@ -18,10 +18,11 @@ echo "本地 CI · Python: $($PY -V 2>&1)"
 echo "== 1/4 静态检查 (ruff) =="
 if command -v ruff >/dev/null 2>&1; then
   ruff check .
-elif command -v uv >/dev/null 2>&1; then
-  uv tool run ruff check .
+elif command -v uv >/dev/null 2>&1 && uv tool run --offline ruff --version >/dev/null 2>&1; then
+  # --offline 避免本地 CI 因 uv 自动联网下载 ruff 而卡住/污染离线环境。
+  uv tool run --offline ruff check .
 else
-  echo "  · 跳过：未安装 ruff（GitHub CI 仍会跑）。安装：uv tool install ruff"
+  echo "  · 跳过：未安装且无本地缓存的 ruff（GitHub CI 仍会跑）。安装：uv tool install ruff"
 fi
 
 echo "== 2/4 单元测试 =="

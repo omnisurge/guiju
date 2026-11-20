@@ -89,7 +89,8 @@ def main() -> int:
             return _summary()
 
         code, p, _ = guiju("sync", home=home, timeout=900)
-        check("sync 落库 3254 条", p.get("total_in_db") == 3254,
+        # 不写死上游当前条数（公告会正常增减）；只要求落库非空且与源报告总数一致。
+        check("sync 落库非空", code == 0 and (p.get("total_in_db") or 0) > 0,
               detail_of(code, p) or str(p.get("total_in_db")))
         check("sync 与上游对账", p.get("total_in_db") == p.get("total_reported"),
               f"db={p.get('total_in_db')} 上游={p.get('total_reported')}")

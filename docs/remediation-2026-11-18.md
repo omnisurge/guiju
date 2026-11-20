@@ -412,7 +412,7 @@ systemd 降权按计划留到 B4。
 
 A1 复审终态（2026-11-18）：reviewer-net/store/cli/domain-mcp/tests 对 5770432 全部 PASS；
 642 单测，无 P1/P2 阻塞；P3 残余（只读已有 v2 库写失败、init 瞬时锁、MCP `cache` 死参数）
-转 B3/B4。
+已于 2026-11-20 B1 非阻塞清理中修复。
 
 A1 独立复审（2026-11-18，5 名 reviewer：net/store/cli/domain-mcp/tests）：首轮发现 1 个 P1
 （混合批次先 20/50/1 后 40 时顶层返回首个 severe 而非 40）、1 个 P2（206 分支缺测试、
@@ -431,9 +431,14 @@ A1 独立复审（2026-11-18，5 名 reviewer：net/store/cli/domain-mcp/tests�
 - [x] P2-11/P2-19 confidence/批准
 
 B1 实施记录（2026-11-19）：分支 `refactor/root-cause`；W2/W4 `fb2f196`、W3 `ea9c006`、
-W6 `3721f4a`，复审修复 `c00a7a9`/`9457d5b`/`1275294`。测试 642→781；
+W6 `3721f4a`，复审修复 `c00a7a9`/`9457d5b`/`1275294`。测试 642→786；
 `scripts/ci.sh`、Python 3.10 全量单测通过。独立复审 net/store/cli/currency/domain-mcp/tests
-全部 PASS（a367253）；P3 残余按计划转 B3/B4，不阻塞 B1。
+全部 PASS（a367253）；B1 非阻塞残余已于 2026-11-20 清理（见下）。
+
+B1 非阻塞残余清理（2026-11-20）：显式 sync 与 autosync 共用 flock（锁失败返回 refreshing）；
+Store 增加 WAL/busy_timeout，初始化瞬时锁映射 20、只读库写失败映射 50；MCP 移除未实现的
+`cache` 参数；测试隔离 `GUIJU_HOME`/`GUIJU_NO_AUTO_SYNC`，关闭 MCP 共享 Store，ResourceWarning 清零；
+`test_guard` 补有效断言；e2e 去掉硬编码 3254。全量 786 单测、Python 3.10、CI 通过。
 
 ### B2-B5
 

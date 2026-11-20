@@ -52,6 +52,23 @@ class SourceStatusTest(unittest.TestCase):
             sync_mod.run(self.store, args)
         self.assertEqual(crawl.call_count, 1)
 
+    def test_sync_lock_held_reports_refreshing_without_crawling(self):
+        args = Namespace(if_stale=None, source="mohurd", page_size=100, pages=0)
+        buf = io.StringIO()
+        render.configure(as_json=True, quiet=True)
+        with mock.patch.object(sync_mod, "safe_sync") as fake_lock, \
+                mock.patch.object(sync_mod, "crawl") as crawl, \
+                redirect_stdout(buf):
+            fake_lock.return_value.__enter__.return_value = False
+            rc = sync_mod.run(self.store, args)
+        self.assertEqual(rc, 0)
+        crawl.assert_not_called()
+        payload = json.loads(buf.getvalue())
+        self.assertTrue(payload["skipped"])
+        self.assertEqual(payload["reason"], "refreshing")
+        self.assertEqual(payload["state"], "refreshing")
+        self.assertEqual(payload["retry_after_seconds"], 30)
+
     def test_status_lists_each_source(self):
         self.store.set_meta("sync:mohurd:complete", "1")
         self.store.set_meta("sync:mohurd:total", "3254")

@@ -84,7 +84,6 @@ class BatchNonGuijuErrorTest(unittest.TestCase):
     def test_batch_continues_and_marks_internal(self):
         store = mock.Mock()
         source = mock.Mock()
-        args = argparse.Namespace(list="-", force=False, readable=False, out=None)
         refs = ["GB ok", "GB boom", "GB also-ok"]
 
         def fake_pull(store, args, ref, source, out_dir):
@@ -92,10 +91,10 @@ class BatchNonGuijuErrorTest(unittest.TestCase):
                 raise OSError("disk full")
             return {"ok": True, "exit": EXIT_OK, "code": ref, "path": "/p", "bytes": 1}
 
-        with (
-            mock.patch("guiju.cli.commands.pull._read_refs", return_value=refs),
-            mock.patch("guiju.cli.commands.pull._pull_one", side_effect=fake_pull),
-        ):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch("guiju.cli.commands.pull._read_refs", return_value=refs), \
+                mock.patch("guiju.cli.commands.pull._pull_one", side_effect=fake_pull):
+            args = argparse.Namespace(list="-", force=False, readable=False, out=tmp)
             rc = _batch(store, args, source)
         # 整批跑完 3 条，boom 那条记 internal/exit1 → severe → rc=1
         self.assertEqual(rc, 1)

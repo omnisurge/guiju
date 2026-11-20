@@ -31,7 +31,7 @@ TOOLS = (
         "description": "查询规范现行状态：输入规范号，返回全部命中版本及统一状态。",
         "inputSchema": {
             "type": "object",
-            "properties": {"code": {"type": "string"}, "cache": {"type": "string"}},
+            "properties": {"code": {"type": "string"}},
             "required": ["code"],
         },
     },
@@ -40,7 +40,7 @@ TOOLS = (
         "description": "核验规范状态（jl-docx code_refs 用）：返回 code<TAB>status。",
         "inputSchema": {
             "type": "object",
-            "properties": {"code": {"type": "string"}, "cache": {"type": "string"}},
+            "properties": {"code": {"type": "string"}},
             "required": ["code"],
         },
     },
@@ -49,7 +49,7 @@ TOOLS = (
         "description": "批量盘点规范清单：list/out 都限制在 GUIJU_HOME/mcp 下（相对路径按该根解析），执行批量查询并返回统计。",
         "inputSchema": {
             "type": "object",
-            "properties": {"list": {"type": "string"}, "out": {"type": "string"}, "cache": {"type": "string"}},
+            "properties": {"list": {"type": "string"}, "out": {"type": "string"}},
             "required": ["list"],
         },
     },

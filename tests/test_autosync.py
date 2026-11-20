@@ -14,6 +14,12 @@ from guiju.store.sqlite import Store
 
 class AutoSyncTest(unittest.TestCase):
     def setUp(self):
+        # 测试必须与调用方 shell 的 GUIJU_NO_AUTO_SYNC 隔离；否则整个套件
+        # 在“自动刷新已禁用”的父环境下会把刷新分支全部测成 stale。
+        self._env_guard = mock.patch.dict(os.environ, {}, clear=False)
+        self._env_guard.start()
+        self.addCleanup(self._env_guard.stop)
+        os.environ.pop("GUIJU_NO_AUTO_SYNC", None)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.store = Store(str(Path(self.tmp.name) / "catalog.db"))
