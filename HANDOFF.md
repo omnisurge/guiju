@@ -1,7 +1,7 @@
 # 规矩 guiju — 交接文档
 
 > 一句话：从官方站点取工程建设标准的**目录 + 正文 + 引用串 + 现行状态**，只搬运与校验，不生产内容。
-> 状态：**v1.2.0-alpha 候选**（2026-11-20；修复待独立发版评审）。单测 **797 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39。hk 部署与消费者切换沿用 v1.0.0 验证，本轮未部署。
+> 状态：**v1.2.0-alpha 已发布**（2026-11-20；tag v1.2.0-alpha；hk guiju-mcp 已部署）。单测 **797 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39。hk 部署与消费者切换沿用 v1.0.0 验证，本次已升级 hk guiju-mcp。
 > ADR 0001（index / 时效端口化）**已 100% 收尾**；ADR 0002（合并 spec-currency）**期 2 已完成、期 1 的 M1/M2/M3/M4 已完成；M4 可比基线 32/32，默认 native 已切；guiju mcp 已部署 hk，消费者 profile 已切到 hk（DSH 重启生效），NAS spec-currency 已于 2026-11-01 停用**。默认 native，cmd / mcp / off 可显式覆盖。
 
 ## 文档地图（各司其职，不要互相抄）
@@ -24,7 +24,7 @@
 ```bash
 cd ~/Development/guiju
 GUIJU_CURRENCY=off bash scripts/ci.sh  # 本地离线 CI（ruff → 单测 → 离线 e2e → 入口自检），pre-push 同一套门
-python3 scripts/e2e.py           # 联网验收（39 项，约 3–5 分钟；权威执行只在本机）
+python3 scripts/e2e.py           # 联网验收（39 项，约 6–8 分钟；权威执行只在本机）
 uv tool install --editable .     # 已装：~/.local/bin/guiju 与 gj，任意目录可用
 
 guiju status --json              # 库状态 / 时效适配器 / 实际端点 / 目录新旧

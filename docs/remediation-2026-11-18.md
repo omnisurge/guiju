@@ -155,7 +155,7 @@
 
 **测试**：空页（total=10, page1=2, page2=[]）；99/100 页大小；total=0；两源先后 sync；autosync 冷却写失败；时钟回拨；显式 sync 抢锁。
 
-**验收**：P1-1/P2-1/P2-2 关闭；真实目录 3256 条连续两次增量无缺口；status/catalog 能解释每个源的 complete 原因。
+**验收**：P1-1/P2-1/P2-2 关闭；真实目录 3256 条连续两次增量无缺口（历史值，当前上游 3255）；status/catalog 能解释每个源的 complete 原因。
 
 **回退**：旧全局 meta 仍可读；syncengine 保留旧返回字段；逐步切。
 
@@ -393,7 +393,7 @@ CI 门禁：
 - [x] ADR 0004 批准（2026-11-18 所有者按默认批准）
 - [x] 建 A1 分支 fix/a1-safety-20261118（P2 前再建 refactor/root-cause）
 - [ ] 补 characterization 测试（同步/下载/附件/cite/MCP）
-- [x] 记录当前 3256 条目录 baseline（评审报告 §0）
+- [x] 记录当前 3256 条目录 baseline（评审报告 §0；历史值，当前上游 3255）
 - [x] 建立缺陷→工作流→阶段的跟踪表（本文件第七节）
 
 ### A1（1.1.1）
