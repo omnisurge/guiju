@@ -104,6 +104,20 @@ class CorruptStoreTest(unittest.TestCase):
         self.addCleanup(reader.close)
         self.assertEqual(reader.count_announcements(), 1)
 
+    def test_readonly_dir_with_pending_wal_is_not_silently_read(self):
+        db_dir = Path(self.tmp.name) / "ro-pending-wal"
+        db_dir.mkdir()
+        db_path = db_dir / "catalog.db"
+        Store(db_path).close()
+        db_path.with_name(db_path.name + "-wal").write_bytes(b"not-empty-wal")
+        db_path.chmod(0o444)
+        db_dir.chmod(0o555)
+        self.addCleanup(db_dir.chmod, 0o755)
+        self.addCleanup(db_path.chmod, 0o644)
+        with self.assertRaises(NeedsHuman) as ctx:
+            Store(db_path)
+        self.assertIn("未合并的 WAL", str(ctx.exception))
+
     def test_sync_lock_file_open_failure_maps_50(self):
         db_dir = Path(self.tmp.name) / "ro-lock"
         db_dir.mkdir()

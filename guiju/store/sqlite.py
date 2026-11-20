@@ -54,6 +54,13 @@ class Store:
         self._read_only_dir = self.path.exists() and not os.access(self.path.parent, os.W_OK)
         ok = False
         try:
+            if self._read_only_dir and self._has_pending_wal():
+                # immutable=1 会忽略 -wal；只读目录里若还有未 checkpoint 的 WAL，
+                # 静默读主文件会给出旧快照，必须明确拒绝而不是返回错数据。
+                raise NeedsHuman(
+                    f"只读目录中的数据库仍有未合并的 WAL：{self.path}",
+                    hint="在可写目录把库 checkpoint 后再复制；只读目录无法安全读取未合并 WAL",
+                )
             self.path.parent.mkdir(parents=True, exist_ok=True)
             if self._read_only:
                 uri = self.path.resolve().as_uri() + "?mode=ro"
@@ -98,6 +105,13 @@ class Store:
                 with contextlib.suppress(Exception):
                     if db is not None:
                         db.close()
+
+    def _has_pending_wal(self) -> bool:
+        wal = self.path.with_name(self.path.name + "-wal")
+        try:
+            return wal.exists() and wal.stat().st_size > 0
+        except OSError:
+            return True
 
     # ---------------------------------------------------------------- schema
     def _configure_connection(self) -> None:
