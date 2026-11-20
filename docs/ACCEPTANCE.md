@@ -21,7 +21,7 @@
 | e2e 契约 | 多名称公告按 ID → 33（交人）；单名称公告 ID 正向下载与幂等 |
 | 构建烟测 | wheel/sdist 均为 `guiju-1.2.0a1`；临时 venv 安装 wheel 后 `guiju version --json` 返回 `1.2.0a1` |
 | 发布产物 | GitHub prerelease `v1.2.0-alpha`；wheel `guiju-1.2.0a1-py3-none-any.whl` SHA-256 `564f10b7ca6f3c162c3863f01500c32fe682f4b3b1bb4a005cb1e635d90b8043`；sdist SHA-256 `a31a37541e875c71dbc230251f23fbd8d057f026423200f04bdaca11472374a3` |
-| hk 生产部署 | `guiju-mcp.service` 已升级到 `1.2.0a1`（/opt/guiju，Python 3.11.2），health `{ok:true}`，MCP query `JGJ 147-2004` / `DG/TJ08-2007` / `GB 55037-2022` 均返回；备份 `/opt/guiju/guiju.prev-1.1.0-20261120-122200` 与 unit `.bak-20261120-122200`；未访问 NAS |
+| hk 生产部署 | `guiju-mcp.service` 已升级到 `1.2.0a1`（/opt/guiju，Python 3.11.2），本机 health `{ok:true}`，公网 `https://guiju.守夜人.中国/health`（Bearer）HTTP 200，MCP query `JGJ 147-2004` / `DG/TJ08-2007` / `GB 55037-2022` 均返回；备份 `/opt/guiju/guiju.prev-1.1.0-20261120-122200` 与 unit `.bak-20261120-122200`；未访问 NAS |
 
 ## v1.0.0（2026-11-01，发布）
 
