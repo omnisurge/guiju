@@ -1,6 +1,6 @@
 # 验收记录
 
-> 最新发布验收：**v1.2.0-alpha（2026-11-20，预发布）** —— **797 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与 hk guiju-mcp 部署随后执行。
+> 最新发布验收：**v1.2.0-alpha（2026-11-20，预发布）** —— **797 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与 hk guiju-mcp 部署已完成。
 > 上一发布：**v1.1.0（2026-11-09）**；更早 v1.0.0 的 446 项单测 / hk M4 记录保留作历史对照。
 > 默认时效为 **native**；hk 服务与消费者切换沿用 v1.0.0 验证，NAS spec-currency 已停用（文件保留可回退）。后续各版本记录保留作历史对照。
 >
@@ -12,7 +12,7 @@
 | 项 | 本次实测 |
 |---|---|
 | 代码基线 | `refactor/root-cause` 9c4e165（b80c106 + 发版评审修复；CSRES 组合根、零命中页、e2e 契约、版本/文档） |
-| 版本 | `1.2.0a1`（发布 tag 计划 `v1.2.0-alpha`） |
+| 版本 | `1.2.0a1`（发布 tag `v1.2.0-alpha`，tag 指向发布提交 `10f9787`；代码树同 `9c4e165`） |
 | 完整单测矩阵 | Python 3.13.5、3.10.21 **各 797/797 通过** |
 | 本地 CI | ruff、797 单测、离线 e2e **4/4**、version/status/help 入口自检全绿 |
 | 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39 通过**，exit 0；实现方日志 `/tmp/guiju-fix-e2e-20261120-v2.log`，独立复审日志 `/tmp/guiju-release-review-20261120/fixed-e2e-full.log` |
@@ -20,7 +20,8 @@
 | 零命中页 | csres 未知编号 `pageNum=0` → 权威空结果/31，不再误报结构异常 50 |
 | e2e 契约 | 多名称公告按 ID → 33（交人）；单名称公告 ID 正向下载与幂等 |
 | 构建烟测 | wheel/sdist 均为 `guiju-1.2.0a1`；临时 venv 安装 wheel 后 `guiju version --json` 返回 `1.2.0a1` |
-| 发布执行 | 2026-11-20 tag `v1.2.0-alpha` 指向代码候选 9c4e165；hk `guiju-mcp.service` 升级并验证；未访问 NAS |
+| 发布产物 | GitHub prerelease `v1.2.0-alpha`；wheel `guiju-1.2.0a1-py3-none-any.whl` SHA-256 `564f10b7ca6f3c162c3863f01500c32fe682f4b3b1bb4a005cb1e635d90b8043`；sdist SHA-256 `a31a37541e875c71dbc230251f23fbd8d057f026423200f04bdaca11472374a3` |
+| hk 生产部署 | `guiju-mcp.service` 已升级到 `1.2.0a1`（/opt/guiju，Python 3.11.2），health `{ok:true}`，MCP query `JGJ 147-2004` / `DG/TJ08-2007` / `GB 55037-2022` 均返回；备份 `/opt/guiju/guiju.prev-1.1.0-20261120-122200` 与 unit `.bak-20261120-122200`；未访问 NAS |
 
 ## v1.0.0（2026-11-01，发布）
 
