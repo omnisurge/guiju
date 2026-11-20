@@ -110,7 +110,7 @@ guiju status
 
 - 规范名走本地检索（`domain/search.py` 三层召回），多候选即退出 32 让你选。
 - **编号不需要预先建索引**：本地查不到就问时效服务（native 路由）拿权威名称与现行状态，再按名称定位公告。
-- `cite` 会做权威状态校验：被替代/废止的版本进 `warnings`，`--strict` 直接失败。
+- `cite` 会做权威状态校验：被替代/废止的版本进 `warnings`，`--strict` 直接失败；`--strict` 失败时只返回错误/警告，不返回引用串。
 - `*` 仅 `which`/`cite` 访问时效服务；`--offline` 可完全离线。
 
 全局开关：`--json`（stdout 只有 JSON）、`--quiet`、`--db PATH`。

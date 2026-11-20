@@ -1,5 +1,10 @@
 # 变更记录
 
+## Unreleased
+
+- **P3-7：`cite --strict` 失败体契约收紧**：`GuijuError` 失败载荷不再允许 `cite` 等成功字段，strict 的 20/34/32 失败体只返回错误/诊断字段；成功体与非 strict 时效降级仍含 `cite`，非 strict 解析/用法失败仍为 `ok: false` 且无 `cite`。读取 `ok:false` 的 `cite` 属未定义行为；需要候选请去掉 `--strict` 重跑。无退出码/DB/网络/部署变化。
+- **P3-8a：cite 合同 characterization**：新增真实 `main()`/stdout 的 20/34/32 失败体断言、失败载荷字段边界测试与 AST 同类扫描；`tests/test_fix_b1_cite.py` 的 4 处旧断言从“失败体带 cite”改为“失败体不含 cite”。
+
 ## 1.2.0a1 — 2026-11-20（1.2.0-alpha 预发布）
 
 - **版本汇总（v1.1.0 → 1.2.0-alpha）**：本次发布包含 v1.1.0 之后的 37 个历史提交与

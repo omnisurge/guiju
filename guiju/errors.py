@@ -19,6 +19,11 @@ EXIT_NO_CURRENCY_RECORD = 34
 EXIT_COMPLIANCE = 40
 EXIT_NEEDS_HUMAN = 50
 
+#: 失败载荷的基础字段；extra 不得覆盖（否则错误分类本身可被伪造）
+FAILURE_RESERVED_FIELDS = frozenset({"ok", "exit", "reason", "error", "hint"})
+#: 成功结果专属的顶层字段；失败体（ok=false）绝不携带（P3-7）
+SUCCESS_ONLY_FIELDS = frozenset({"cite"})
+
 #: 给 agent 的决策表，同时被 README / AGENTS.md / --help 引用，保持单一来源
 EXIT_TABLE = {
     EXIT_OK: ("成功", "继续"),
@@ -50,10 +55,14 @@ class GuijuError(Exception):
         self.extra = extra
 
     def payload(self) -> dict:
+        """失败体固定形状：基础字段不可被 extra 覆盖；成功字段（如 cite）绝不出现。"""
         data = {"ok": False, "exit": self.exit, "reason": self.reason, "error": self.message}
         if self.hint:
             data["hint"] = self.hint
-        data.update(self.extra)
+        for key, value in self.extra.items():
+            if key in FAILURE_RESERVED_FIELDS or key in SUCCESS_ONLY_FIELDS:
+                continue
+            data[key] = value
         return data
 
 

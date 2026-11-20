@@ -367,7 +367,7 @@ guiju sources [--probe]                          # 新增：适配器健康与�
 | 40 | 命中合规护栏 | **停止，不重试** |
 | 50 | 页面结构变更，需人介入改适配器 | 上报 |
 
-`--json` 失败体统一：`{"ok":false,"exit":N,"error":"中文原因","hint":"下一步","candidates":[...]}`。
+`--json` 失败体统一：`{"ok":false,"exit":N,"error":"中文原因","hint":"下一步","candidates":[...]}`。失败体不含成功字段：`cite` 只在 `ok:true` 成功体出现；`warnings`/`currency_check` 是诊断字段，不是可引用文本。读取 `ok:false` 的 `cite` 属未定义行为。
 
 ---
 

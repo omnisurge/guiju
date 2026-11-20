@@ -146,8 +146,9 @@ class CiteUnreachableTest(_CiteCase):
         with self.assertRaises(SourceUnreachable) as cm:
             self._run(_UnreachableCurrency, strict=True)
         self.assertEqual(cm.exception.exit, 20)
-        # 失败也要带上已生成好的引用串，便于人工复核后使用
-        self.assertEqual(cm.exception.extra["cite"], "《某标准》GB 1-2020 第5.2.1条")
+        # P3-7：strict 失败体不输出候选串；人工复核请去掉 --strict
+        self.assertNotIn("cite", cm.exception.extra)
+        self.assertNotIn("cite", cm.exception.payload())
         self.assertIn("--offline", cm.exception.hint)
 
 
@@ -210,7 +211,8 @@ class CiteNoCurrencyRecordTest(_CiteCase):
         with self.assertRaises(NoCurrencyRecord) as cm:
             self._run(_UnsupportedCurrency, strict=True)
         self.assertEqual(cm.exception.exit, 34)
-        self.assertEqual(cm.exception.extra["cite"], "《某标准》GB 1-2020 第5.2.1条")
+        self.assertNotIn("cite", cm.exception.extra)
+        self.assertNotIn("cite", cm.exception.payload())
 
     def test_empty_records_is_no_record_not_verified(self):
         rc, emitted = self._run(_EmptyCurrency)
@@ -246,7 +248,8 @@ class CiteStatusWarningsTest(_CiteCase):
         with self.assertRaises(AmbiguousCode) as cm:
             self._run(_SupersededCurrency, strict=True)
         self.assertEqual(cm.exception.exit, 32)
-        self.assertEqual(cm.exception.extra["cite"], "《某标准》GB 1-2020 第5.2.1条")
+        self.assertNotIn("cite", cm.exception.extra)
+        self.assertNotIn("cite", cm.exception.payload())
 
 
 class CiteCompletenessTest(_CiteCase):
@@ -266,7 +269,8 @@ class CiteCompletenessTest(_CiteCase):
         with self.assertRaises(AmbiguousCode) as cm:
             self._run(_IncompleteCurrency, strict=True)
         self.assertEqual(cm.exception.exit, 32)
-        self.assertEqual(cm.exception.extra["cite"], "《某标准》GB 1-2020 第5.2.1条")
+        self.assertNotIn("cite", cm.exception.extra)
+        self.assertNotIn("cite", cm.exception.payload())
 
     def test_incomplete_empty_result_is_not_authoritative_no_record(self):
         # P1-4 的核心：不完整的空结果不能当"服务说没有"（那会变成 34 + 假阴性）

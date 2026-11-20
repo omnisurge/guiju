@@ -101,6 +101,25 @@ class IndexCommandRemovedTest(unittest.TestCase):
         self.assertEqual(offenders, [], f"仍有文案在推荐 guiju index：{offenders}")
 
 
+class ErrorPayloadConstraintTest(unittest.TestCase):
+    """P3-7 的同类扫描：GuijuError 的 raise 不得传 cite= 成功字段。"""
+
+    def test_no_error_raise_passes_cite_keyword(self):
+        import ast
+
+        root = ROOT / "guiju"
+        offenders = []
+        for path in sorted(root.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Raise) or not isinstance(node.exc, ast.Call):
+                    continue
+                for keyword in node.exc.keywords:
+                    if keyword.arg == "cite":
+                        offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+        self.assertEqual(offenders, [], f"错误 raise 不应携带 cite=：{offenders}")
+
+
 class CommandWiringTest(unittest.TestCase):
     """每个子命令都必须绑好 func —— 否则 main() 会在运行时才炸（sync 曾漏过一次）。"""
 

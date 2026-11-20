@@ -270,18 +270,18 @@ def run(store: Store, args: argparse.Namespace) -> int:
         warnings.append(check_warning)
 
     if args.strict:
+        # P3-7：--strict 的失败体不携带候选引用串；需要看候选请去掉 --strict，
+        # 由非 strict 输出带 warning 的 cite。
         if check.state is CurrencyState.UNREACHABLE:
             raise SourceUnreachable(
                 check.message or "时效服务不可达",
                 hint="稍后重试；或加 --offline / 去掉 --strict，接受一份带 warning 的引用串",
-                cite=text,
                 currency_check=check.as_payload(),
             )
         if check.state in (CurrencyState.UNSUPPORTED, CurrencyState.NO_RECORD):
             raise NoCurrencyRecord(
                 check.message or "时效侧没有该编号的记录",
                 hint="时效路由未覆盖该编号体系；去掉 --strict 可输出引用串 + warning，或加 --offline",
-                cite=text,
                 currency_check=check.as_payload(),
             )
         if warnings:
@@ -289,7 +289,6 @@ def run(store: Store, args: argparse.Namespace) -> int:
                 "引用串存在未核实项，--strict 下拒绝输出",
                 hint="人工确认编号后去掉 --strict",
                 warnings=warnings,
-                cite=text,
             )
 
     payload = {

@@ -177,6 +177,8 @@ JSON 的 `codes[].role` 会告诉你身份：
  "coverage":{"full_text_since_year":2014,"in_window":1777,"pre_window":1477,"statement":"…"}}
 ```
 
+失败体没有 `cite`：`--strict` 失败时不要从错误体找候选串；需要候选请去掉 `--strict` 重跑，会得到带 `warnings` 的 `cite`。读取 `ok:false` 的 `cite` 属未定义行为。
+
 ---
 
 ## 七、最小心智模型
