@@ -9,6 +9,7 @@ from unittest import mock
 
 from guiju import autosync
 from guiju.cli import render
+from guiju.errors import NeedsHuman
 from guiju.store.sqlite import Store
 
 
@@ -55,6 +56,25 @@ class AutoSyncTest(unittest.TestCase):
             }
 
         return crawl
+
+    def test_lock_open_failure_non_strict_degrades_to_none(self):
+        with mock.patch("builtins.open", side_effect=PermissionError(13, "denied")), \
+                autosync._try_lock(self.store) as locked:
+            self.assertIsNone(locked)
+
+    def test_safe_sync_open_failure_raises_needs_human(self):
+        with mock.patch("builtins.open", side_effect=PermissionError(13, "denied")), \
+                self.assertRaises(NeedsHuman) as ctx, autosync.safe_sync(self.store):
+            pass
+        self.assertEqual(ctx.exception.exit, 50)
+
+    def test_lock_open_failure_reports_refresh_failed(self):
+        self._seed()
+        with mock.patch("builtins.open", side_effect=PermissionError(13, "denied")), \
+                mock.patch("guiju.syncengine.crawl", side_effect=AssertionError("不该联网")):
+            snap = autosync.evaluate(self.store, command="search")
+        self.assertEqual(snap["state"], "refresh_failed")
+        self.assertIn("同步锁文件", snap["message"])
 
     # ---- 不刷新的情形 ----
 

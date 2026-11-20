@@ -14,11 +14,13 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import fcntl
 import os
 from collections.abc import Callable
 from datetime import datetime
 
+from .errors import NeedsHuman
 from .store.sqlite import Store, now
 
 MAX_AGE_DAYS = 7
@@ -32,19 +34,34 @@ Notify = Callable[[str], None]
 
 
 @contextlib.contextmanager
-def _try_lock(store: Store):
-    """非阻塞抢占同步锁；被别的进程占用时 yield False。"""
+def _try_lock(store: Store, *, strict: bool = False):
+    """非阻塞抢占同步锁；被别的进程占用时 yield False。
+
+    strict=True（显式 sync）把“锁文件无法创建”升级为 needs_human(50)，不再
+    冒充“另一个进程正在刷新”；进程内 autosync 默认降级为 False，避免阻断查询。
+    """
     path = str(store.path) + ".lock"
     try:
         # 锁文件必须跨 yield 存活，不能用 with 打开（SIM115 在此处是误报）
         fh = open(path, "a+")  # noqa: SIM115
-    except OSError:
-        yield False
+    except OSError as exc:
+        if strict:
+            raise NeedsHuman(
+                f"无法创建同步锁文件：{path}（{type(exc).__name__}: {exc}）",
+                hint="检查 GUIJU_HOME 或数据库所在目录是否可写；只读目录无法执行 sync",
+            ) from exc
+        # None 区分“锁文件无法创建”（权限/只读）与 False（已被占用）。
+        yield None
         return
     try:
         try:
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
+        except OSError as exc:
+            if strict and exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+                raise NeedsHuman(
+                    f"无法锁定同步锁文件：{path}（{exc}）",
+                    hint="检查锁文件权限；锁被其他进程占用时会返回 refreshing",
+                ) from exc
             yield False
             return
         try:
@@ -56,8 +73,9 @@ def _try_lock(store: Store):
         fh.close()
 
 
-# 显式 sync 与进程内 autosync 共用同一把文件锁；保留 _try_lock 旧名供旧测试/调用。
-safe_sync = _try_lock
+# 显式 sync 与进程内 autosync 共用同一把文件锁；strict 让只读目录得到 50。
+def safe_sync(store: Store):
+    return _try_lock(store, strict=True)
 
 
 def _cooldown_left(store: Store) -> int:
@@ -162,6 +180,14 @@ def evaluate(
         )
 
     with _try_lock(store) as locked:
+        if locked is None:
+            return _snap(
+                store,
+                state="refresh_failed",
+                message="无法创建同步锁文件；本次结果基于现有目录",
+                retry_after_seconds=RETRY_AFTER_SECONDS,
+                source=source,
+            )
         if not locked:
             return _snap(
                 store,

@@ -45,11 +45,27 @@ class Store:
         self.path = Path(path)
         self.legacy_backup: Path | None = None
         self._cross_thread = cross_thread
+        # 文件或父目录不可写时，用 SQLite 的 mode=ro 打开；否则 WAL 的连接
+        # 初始化会尝试写 -wal/-shm，只读目录下连 SELECT 都打不开。
+        self._read_only = self.path.exists() and (
+            not os.access(self.path, os.W_OK)
+            or not os.access(self.path.parent, os.W_OK)
+        )
+        self._read_only_dir = self.path.exists() and not os.access(self.path.parent, os.W_OK)
         ok = False
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.db = sqlite3.connect(
-                self.path, check_same_thread=not cross_thread)
+            if self._read_only:
+                uri = self.path.resolve().as_uri() + "?mode=ro"
+                if self._read_only_dir:
+                    # 只读目录里没有可写 -shm/-wal；immutable 跳过 SQLite 的
+                    # 共享内存/锁文件初始化，读已 checkpoint 的库才是安全的。
+                    uri += "&immutable=1"
+                self.db = sqlite3.connect(
+                    uri, uri=True, check_same_thread=not cross_thread)
+            else:
+                self.db = sqlite3.connect(
+                    self.path, check_same_thread=not cross_thread)
             self.db.row_factory = sqlite3.Row
             self._configure_connection()
             self._migrate()
@@ -89,15 +105,22 @@ class Store:
         WAL 提升读写并发。只读旧库上 WAL 可能被拒绝，读取仍应可用。"""
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.execute("PRAGMA busy_timeout = 5000")
-        # 只读库不允许切换 journal mode；其余读取路径不依赖 WAL。
-        with contextlib.suppress(sqlite3.OperationalError):
-            self.db.execute("PRAGMA journal_mode = WAL")
+        if not self._read_only:
+            # 只读库/只读目录不切换 journal mode，否则 SQLite 会在连接初始化时
+            # 尝试写 -wal/-shm，连只读 SELECT 都被拖成 50。
+            with contextlib.suppress(sqlite3.OperationalError):
+                self.db.execute("PRAGMA journal_mode = WAL")
 
     def _migrate(self) -> None:
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         if version == SCHEMA_VERSION:
             return
         if version == 0 and self._has_tables():
+            if self._read_only:
+                raise NeedsHuman(
+                    f"只读旧库无法迁移到当前 schema：{self.path}",
+                    hint="把数据库复制到可写目录后重新打开，或让 guiju 在可写 GUIJU_HOME 重建",
+                )
             backup = self.path.with_name(f"{self.path.name}.legacy-{now().replace(':', '').replace(' ', '-')}")
             self.db.close()
             shutil.copy2(self.path, backup)
@@ -119,6 +142,10 @@ class Store:
         为什么不上提 schema 版本：缓存表是完全可丢弃的派生数据，
         把它算进版本迁移会让"版本对了但少张表"变成一类新故障。
         """
+        if self._read_only:
+            # 只读旧库即使缺 cache 表也不能补 DDL；读命令继续可用，写缓存时
+            # 由调用方得到明确的只读写失败（CLI 映射 50）。
+            return
         exists = self.db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='currency_cache'"
         ).fetchone()

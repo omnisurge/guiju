@@ -66,6 +66,61 @@ class CorruptStoreTest(unittest.TestCase):
         self.addCleanup(reader.close)
         self.assertEqual(reader.count_announcements(), 1)
 
+    def test_readonly_directory_v2_db_can_be_read(self):
+        db_dir = Path(self.tmp.name) / "ro-dir"
+        db_dir.mkdir()
+        db_path = db_dir / "catalog.db"
+        writer = Store(db_path)
+        writer.upsert_announcement("https://x/1", "2026-01-01", "标题", "名称", "other")
+        writer.commit()
+        writer.close()
+        db_path.chmod(0o444)
+        db_dir.chmod(0o555)
+        self.addCleanup(db_dir.chmod, 0o755)
+        self.addCleanup(db_path.chmod, 0o644)
+        reader = Store(db_path)
+        self.addCleanup(reader.close)
+        self.assertEqual(reader.count_announcements(), 1)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = main(["--json", "--db", str(db_path), "status"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out.getvalue())["announcements"], 1)
+
+    def test_readonly_v2_without_cache_table_can_be_read(self):
+        db_dir = Path(self.tmp.name) / "ro-no-cache"
+        db_dir.mkdir()
+        db_path = db_dir / "catalog.db"
+        writer = Store(db_path)
+        writer.upsert_announcement("https://x/1", "2026-01-01", "标题", "名称", "other")
+        writer.db.execute("DROP TABLE currency_cache")
+        writer.commit()
+        writer.close()
+        db_path.chmod(0o444)
+        db_dir.chmod(0o555)
+        self.addCleanup(db_dir.chmod, 0o755)
+        self.addCleanup(db_path.chmod, 0o644)
+        reader = Store(db_path)
+        self.addCleanup(reader.close)
+        self.assertEqual(reader.count_announcements(), 1)
+
+    def test_sync_lock_file_open_failure_maps_50(self):
+        db_dir = Path(self.tmp.name) / "ro-lock"
+        db_dir.mkdir()
+        db_path = db_dir / "catalog.db"
+        Store(db_path).close()
+        db_path.chmod(0o444)
+        db_dir.chmod(0o555)
+        self.addCleanup(db_dir.chmod, 0o755)
+        self.addCleanup(db_path.chmod, 0o644)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = main(["--json", "--db", str(db_path), "sync"])
+        self.assertEqual(code, 50)
+        payload = json.loads(out.getvalue())
+        self.assertEqual(payload["exit"], 50)
+        self.assertIn("同步锁文件", payload["error"])
+
     def test_readonly_write_maps_to_json_50_not_internal(self):
         db_path = Path(self.tmp.name) / "readonly-write.db"
         Store(db_path).close()
