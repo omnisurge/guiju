@@ -86,7 +86,7 @@
 
 ```jsonc
 "catalog": {"state":"fresh","age_days":0.01,"synced_at":"2026-10-31 10:10:27",
-            "announcements":3254,"new":null,"retry_after_seconds":null,"message":""}
+            "announcements":3255,"new":null,"retry_after_seconds":null,"message":""}
 ```
 
 | state | 含义 | 你做什么 |
@@ -173,7 +173,7 @@ JSON 的 `codes[].role` 会告诉你身份：
  "candidates":[{"label":"…","url":"…"}]}
 
 // status
-{"ok":true,"announcements":3254,"editions":N,"mentions":M,"synced_at":"…",
+{"ok":true,"announcements":3255,"editions":N,"mentions":M,"synced_at":"…",
  "coverage":{"full_text_since_year":2014,"in_window":1777,"pre_window":1477,"statement":"…"}}
 ```
 
@@ -182,7 +182,7 @@ JSON 的 `codes[].role` 会告诉你身份：
 ## 七、最小心智模型
 
 ```
-公告（政府网页，3254 条）
+公告（政府网页，3255 条）
    └─ 可能包含 1..N 个标准编号（39% 没有）
          └─ 每个编号是一个版本（有 role：新 / 旧 / 修订后）
                └─ 可能有 1 份正文（PDF，文件名带 sha256 指纹）

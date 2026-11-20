@@ -1,12 +1,25 @@
 # 变更记录
 
-## Unreleased
+## 1.2.0a1 — 2026-11-20（1.2.0-alpha 候选）
+
+- **版本汇总（v1.1.0 → 1.2.0-alpha）**：本次候选包含 v1.1.0 之后的 37 个历史提交与
+  本次发版评审修复，覆盖
+  2026-11-12 的 5 个高危 / 18 个 Medium / 20+ Low 批次、A1 安全热修与 B1 契约修复，
+  新增 exit 34 `no_currency_record`、ccsn `HasNextPage` 分页、form_post 注册表路由、
+  pull confidence/批内兜底，并退役 spec-currency（`GUIJU_CURRENCY` 只认 native/off，
+  旧 `cmd:`/`mcp:` 与 `GUIJU_CURRENCY_URL`/`TOKEN` 不再生效）。更多 32/33/50 是安全
+  fail-closed 行为，不是静默降级；升级前请读本节与 `docs/adr/0004-contract-first-hardening.md`。
 
 - **B1 契约修复（2026-11-19）**：同步完成判定改为按源证据（空页/99 条/total=0 不再误报完整）；
   时效适配器统一 fail-closed 与完整性契约，空编号行/末页缺少/重复页不再伪装成权威空结果或写负缓存；
   多名称公告按所选名称选附件、编号与引用书名（按名称/编号/ID/URL 一致），多 target 与跨主体编号返回 32/33；
   cite strict 正确分流 20/34/32，confidence 从 primary mention 推导；存储层保持 announcement/mention 事实一致。
   测试 642→793，`scripts/ci.sh` 与 Python 3.10 全量单测通过。
+
+- **发版评审修复（2026-11-20）**：CSRES 默认注册表在组合根显式启用明文回退
+  （站点无 HTTPS 监听；保留 RuntimeWarning、complete=False、不写缓存）；csres 对
+  “0 条命中”返回的 pageNum=0 不再误报结构异常 50；e2e 多名称公告按 ID 断言 33，
+  单名称公告 ID 走正向下载/幂等路径。测试 793→797；版本与验收文档同步。
 
 - **A1 安全热修（2026-11-18）**：正文下载校验 Content-Length/Content-Range，截断响应不再当成功；
   currency 元数据出口的限速补上读-睡-写锁；批量 pull 命中 40 立即停止；MCP batch 的

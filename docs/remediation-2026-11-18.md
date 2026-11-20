@@ -442,6 +442,20 @@ B1 非阻塞残余清理（2026-11-20）：显式 sync 与 autosync 共用 flock
 补有效断言；e2e 去掉硬编码 3254。只读目录存在未合并 WAL 时 fail-closed，不返回旧快照。
 全量 793 单测、Python 3.10、CI 通过。
 
+### 发版评审修复（2026-11-20）
+
+- [x] CSRES 默认路由根因：`CsresCurrency` 保持默认 HTTPS-only；默认注册表在组合根显式
+  `plaintext_fallback=True`（站点无 443），保留 `RuntimeWarning`、`complete=False`、
+  不写缓存；新增默认注册表回归测试。
+- [x] csres 零命中页：站点返回 `pageNum=0` 时按“无结果页”处理，不能误报结构异常 50；
+  新增真实页面形态回归测试。
+- [x] e2e 修正：多名称公告按 ID 显式断言 33（交人），单名称公告 ID 走正向下载与幂等；
+  修复旧断言与 B1 D4 契约漂移。
+- [x] 版本/文档：`_version.py` → `1.2.0a1`，CHANGELOG 顶部新增 `1.2.0a1` 条目，
+  README/INSTALL/HANDOFF/ARCHITECTURE 同步；`test_hygiene` 改为检查最新 CHANGELOG 条目，
+  不再被任意旧版本条目蒙混。
+- [x] 全量 797 单测、Python 3.10、ruff、CI、完整联网 e2e 39/39（详见 `docs/ACCEPTANCE.md`）。
+
 ### B2-B5
 
 - [ ] W1 net 收口

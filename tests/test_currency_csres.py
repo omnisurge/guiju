@@ -10,8 +10,9 @@ from unittest import mock
 
 from guiju import currency
 from guiju.currency.codes import code_key, filter_by_code, same_family
-from guiju.currency.csres import CsresCurrency, extract_title_field, parse_csres
+from guiju.currency.csres import CsresCurrency, extract_title_field, parse_csres, parse_csres_page
 from guiju.currency.model import Record
+from guiju.currency.registry import default_registry
 from guiju.errors import NeedsHuman, SourceUnreachable
 
 FIXTURES = Path(__file__).parent / "fixtures" / "currency"
@@ -204,6 +205,64 @@ class CodeFamilyTest(unittest.TestCase):
     def test_filter_does_not_rewrite_codes_or_sort(self):
         rows = [Record(code, "current") for code in ("JGJ 203-2010", "JGJ 3-2002", "JGJ/T 3-2010")]
         self.assertEqual(filter_by_code(rows, "JGJ3"), rows[1:])
+
+
+class CsresEmptyPageTest(unittest.TestCase):
+    def test_zero_hit_response_page_zero_is_authoritative_empty(self):
+        # 真实站点对未知编号返回“共找到 0 条”、pageNum=0、pageSize=25；
+        # 0 是“无结果页”的站点标记，不是页号错位，更不能报 50。
+        raw = (
+            '<html><body><form><input name="pageNum" value="0">'
+            '<input name="pageSize" value="25"></form>'
+            '<div>共找到 0 条</div></body></html>'
+        ).encode("gbk")
+        page = parse_csres_page(raw)
+        self.assertEqual(page.records, [])
+        self.assertEqual(page.total, 0)
+        self.assertIsNone(page.page)
+        client = mock.Mock()
+        client.get.return_value = raw
+        self.assertEqual(CsresCurrency(client).lookup("GB99999-2099"), [])
+
+
+class CsresDefaultRegistryTest(unittest.TestCase):
+    def test_default_registry_explicitly_allows_plaintext_metadata_fallback(self):
+        # 站点没有 443；组合根必须显式 opt-in，不能在默认路径上静默失去主源。
+        client = mock.Mock()
+        registry = default_registry(client)
+        for code in ("GB 50011-2010", "JGJ 147-2004", "JTG B01-2014", "DB 11/T 1-2020"):
+            with self.subTest(code=code):
+                adapter = registry.match(code)
+                self.assertIsNotNone(adapter)
+                self.assertIsInstance(adapter.primary, CsresCurrency)
+                self.assertTrue(adapter.primary.plaintext_fallback)
+
+    def test_default_registry_survives_https_failure_and_marks_plaintext(self):
+        # 不只检查构造参数：默认注册表实际 lookup 时，HTTPS 失败必须能回退 HTTP，
+        # 且把风险传播到 FallbackCurrency（complete=False），不能伪装成权威结果。
+        raw = (FIXTURES / "csres_gb50011.gbk").read_bytes()
+        client = mock.Mock()
+        client.get.side_effect = [SourceUnreachable("https blocked"), raw]
+        adapter = default_registry(client).match("GB 50011-2001")
+        self.assertIsNotNone(adapter)
+        rows = adapter.lookup("GB 50011-2001")
+        self.assertTrue(rows)
+        self.assertTrue(adapter.primary.plaintext)
+        self.assertFalse(adapter.complete)
+        self.assertIn("明文", adapter.incomplete_reason)
+        self.assertEqual(client.get.call_count, 2)
+        self.assertIn("https://", client.get.call_args_list[0].args[0])
+        self.assertIn("http://", client.get.call_args_list[1].args[0])
+
+    def test_plaintext_fallback_is_recorded_and_not_authoritative(self):
+        client = mock.Mock()
+        client.get.side_effect = [SourceUnreachable("https blocked"), b"<html></html>"]
+        adapter = CsresCurrency(client, plaintext_fallback=True)
+        with self.assertWarns(RuntimeWarning):
+            self.assertEqual(adapter.lookup("GB1"), [])
+        self.assertTrue(adapter.plaintext)
+        self.assertFalse(adapter.complete)
+        self.assertIn("正文", adapter.incomplete_reason)
 
 
 class CurrencyPackageCompatibilityTest(unittest.TestCase):

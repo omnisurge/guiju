@@ -101,12 +101,19 @@ def default_registry(client: HttpClient | None = None, *, cancelled: Callable[[]
     from .stdsamr import StdSamrCurrency
 
     registry = Registry()
+    # 工标网没有 HTTPS 监听（2026-11-20 发版 e2e 实测 443 拒绝连接），但它是
+    # GB/JGJ/CJJ/JTG/DB 的默认主源。这里在**组合根**显式声明明文回退：
+    # CsresCurrency 自身仍默认只走 https（安全默认），只有默认注册表知道
+    # 这个站点的传输限制；回退仍会记录 plaintext_risk、complete=False 且不写缓存。
+    def csres() -> CsresCurrency:
+        return CsresCurrency(client, plaintext_fallback=True)
+
     registry.register(Route("csres", ("GB", "JGJ", "CJJ"), lambda: FallbackCurrency(
-        "csres", CsresCurrency(client), CcsnCurrency(client), StdSamrCurrency(client), cancelled=cancelled, admit=admit)))
+        "csres", csres(), CcsnCurrency(client), StdSamrCurrency(client), cancelled=cancelled, admit=admit)))
     registry.register(Route("csres", ("JTG",), lambda: FallbackCurrency(
-        "csres", CsresCurrency(client), JtstCurrency(client), cancelled=cancelled, admit=admit)))
+        "csres", csres(), JtstCurrency(client), cancelled=cancelled, admit=admit)))
     registry.register(Route("csres", ("DB",), lambda: FallbackCurrency(
-        "csres", CsresCurrency(client), DbbaCurrency(client), cancelled=cancelled, admit=admit),
+        "csres", csres(), DbbaCurrency(client), cancelled=cancelled, admit=admit),
         code_filter=lambda code: not owns_shanghai_namespace(code)))
     # "DB31" 单独列前缀：裸 DB31（不带 /T）也走上海路由，由 is_shanghai_code 细判；
     # 不并入 SHANGHAI_PREFIXES，避免改变该常量在 owns_shanghai_namespace 处的语义。

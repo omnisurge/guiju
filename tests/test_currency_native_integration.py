@@ -47,7 +47,9 @@ class NativeDiskIntegrationTest(unittest.TestCase):
         return FakeResponse(self.ccsn, url=CCSN, headers={"Content-Type": "application/json"})
 
     def test_fallback_golden_disk_restart_fresh_stale_and_40(self):
-        self.client._opener.open.side_effect = [down(), down(), down(), self.fallback_response()]
+        # 默认 csres 组合根显式开启明文回退：HTTPS 3 次重试 + HTTP 3 次重试
+        # 后才轮到 ccsn 的 POST（这是 CSRES 无 443 的已知传输事实）。
+        self.client._opener.open.side_effect = [down() for _ in range(6)] + [self.fallback_response()]
         first = self.native.query(CODE)
         self.assertEqual(first.source, "csres")
         self.assertEqual(first.fallback_source, "ccsn")
@@ -56,9 +58,9 @@ class NativeDiskIntegrationTest(unittest.TestCase):
         self.assertEqual(first.results[0].implement_date, "2024-08-01")
         self.assertEqual(first.results[0].publish_date, "2024-04-24")
         self.assertTrue(all(row.source == "ccsn" and row.fallback == "ccsn" for row in first.results))
-        self.assertEqual(self.client._opener.open.call_count, 4)
+        self.assertEqual(self.client._opener.open.call_count, 7)
         self.assertEqual([call.args[0].get_method() for call in self.client._opener.open.call_args_list],
-                         ["GET", "GET", "GET", "POST"])
+                         ["GET"] * 6 + ["POST"])
         paths = list(self.directory.iterdir())
         self.assertEqual(len(paths), 1)
         self.assertEqual(paths[0].suffix, ".json")
@@ -73,7 +75,7 @@ class NativeDiskIntegrationTest(unittest.TestCase):
         self.assertEqual(fresh.fallback_source, "ccsn")
         # 三个上游都失败，原始备源风险与陈旧风险必须同时可见。
         self.now += 3 * 86400
-        self.client._opener.open.side_effect = [down() for _ in range(9)]
+        self.client._opener.open.side_effect = [down() for _ in range(12)]
         stale = self.native.query(CODE)
         self.assertTrue(stale.stale)
         self.assertEqual(stale.results, first.results)
@@ -107,10 +109,10 @@ class NativeDiskIntegrationTest(unittest.TestCase):
         self.assertFalse(self.directory.exists(), "不完整的空结果不得落盘")
 
     def test_too_old_disk_result_cannot_hide_whole_chain_failure(self):
-        self.client._opener.open.side_effect = [down(), down(), down(), self.fallback_response()]
+        self.client._opener.open.side_effect = [down() for _ in range(6)] + [self.fallback_response()]
         self.native.query(CODE)
         self.now += DEFAULT_STALE_LIMIT + 1
-        self.client._opener.open.side_effect = [down() for _ in range(9)]
+        self.client._opener.open.side_effect = [down() for _ in range(12)]
         with self.assertRaises(SourceUnreachable):
             self.native.query(CODE)
         self.assertIsNone(self.native.last_outcome)

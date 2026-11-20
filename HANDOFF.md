@@ -1,7 +1,7 @@
 # 规矩 guiju — 交接文档
 
 > 一句话：从官方站点取工程建设标准的**目录 + 正文 + 引用串 + 现行状态**，只搬运与校验，不生产内容。
-> 状态：**v1.0.0 发布版**（2026-11-01；已提交/推送）。单测 **446 项**、Python 3.10/3.12/3.13 与本地离线 CI 全绿；hk 部署与消费者切换已验证。
+> 状态：**v1.2.0-alpha 候选**（2026-11-20；修复待独立发版评审）。单测 **797 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39。hk 部署与消费者切换沿用 v1.0.0 验证，本轮未部署。
 > ADR 0001（index / 时效端口化）**已 100% 收尾**；ADR 0002（合并 spec-currency）**期 2 已完成、期 1 的 M1/M2/M3/M4 已完成；M4 可比基线 32/32，默认 native 已切；guiju mcp 已部署 hk，消费者 profile 已切到 hk（DSH 重启生效），NAS spec-currency 已于 2026-11-01 停用**。默认 native，cmd / mcp / off 可显式覆盖。
 
 ## 文档地图（各司其职，不要互相抄）
@@ -16,7 +16,7 @@
 | `docs/adr/0002-merge-into-one-product.md` | **下一步**：合并 spec-currency、`guiju mcp`、部署形态 | 接手人 |
 | `docs/adr/0003-catalog-self-refresh.md` | 目录自保鲜（无 cron/launchd）与 `catalog` 反馈契约 | 维护者 |
 | `docs/ACCEPTANCE.md` | 验收记录（可复跑 `scripts/e2e.py`） | 所有人 |
-| `CHANGELOG.md` | 版本变更（v1.0.0 及历史） | 所有人 |
+| `CHANGELOG.md` | 版本变更（1.2.0-alpha 及历史） | 所有人 |
 | 本文件 | 交接状态与"已验证/别重犯"的事实清单 | 接手人 |
 
 ## 一、现在怎么跑
@@ -24,7 +24,7 @@
 ```bash
 cd ~/Development/guiju
 GUIJU_CURRENCY=off bash scripts/ci.sh  # 本地离线 CI（ruff → 单测 → 离线 e2e → 入口自检），pre-push 同一套门
-python3 scripts/e2e.py           # 联网验收（42 项，约 3 分钟；权威执行只在本机）
+python3 scripts/e2e.py           # 联网验收（39 项，约 3–5 分钟；权威执行只在本机）
 uv tool install --editable .     # 已装：~/.local/bin/guiju 与 gj，任意目录可用
 
 guiju status --json              # 库状态 / 时效适配器 / 实际端点 / 目录新旧
@@ -57,7 +57,7 @@ guiju cite GB55037-2022 5.2.1    # → 《建筑防火通用规范》GB 55037-20
 ### 住建部侧（一期踩出来的）
 
 1. **诚实 UA 完全可用**：`guiju/<版本> (compliance-aware; official code fetcher)`。**不要伪装浏览器**。
-2. **目录全量 = 3254 条 / 33 页**（`pageSize=100`）；单页渲染上限 99 条**不丢数据**。
+2. **目录全量 = 3255 条 / 33 页**（`pageSize=100`）；单页渲染上限 99 条**不丢数据**。
 3. **列表接口**：`queryData` 必须正好六项，多传 `editType` 返回空；`pageNo` 要放进 `paramJson`。
 4. **条目日期在链接之后**（`<span class="date-info">`），不是 `<li>` 属性。
 5. **UA 必须纯 ASCII**（HTTP 头 latin-1）。
@@ -78,7 +78,7 @@ guiju cite GB55037-2022 5.2.1    # → 《建筑防火通用规范》GB 55037-20
 
 15. **`std.samr.gov.cn` 只能按名称查**：`searchText=55037` / `GB 55037` 全 0 条，`stdCode` 参数被忽略；字段里没有任何文件链接。
 16. **`openstd.samr.gov.cn` 对普通 GET 一律 0 条结果**（标题就写着"全文阅读"，在线阅读不算下载）。
-17. **多源仲裁暂无战场**：两源标准体系互斥（上海 942 条全是地方标准前缀；住建部 3254 条公告无备案/地方标准字样）。真正存在的是"同名不同编号"（19 条完全同名）——版本迭代走自动定版，跨体系同名仍 `exit 32`。
+17. **多源仲裁暂无战场**：两源标准体系互斥（上海 942 条全是地方标准前缀；住建部 3255 条公告无备案/地方标准字样）。真正存在的是"同名不同编号"（19 条完全同名）——版本迭代走自动定版，跨体系同名仍 `exit 32`。
 
 ### 时效与配置（0.12–0.14）
 
@@ -146,8 +146,8 @@ JTG             → Fallback( csres → jtst )
 
 | 项 | 值 |
 |---|---|
-| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（v1.0.0） |
-| 数据 | `~/.guiju/catalog.db`（3254 条公告）+ `library/`（内容寻址 PDF） |
+| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（v1.2.0-alpha 候选） |
+| 数据 | `~/.guiju/catalog.db`（3255 条公告）+ `library/`（内容寻址 PDF） |
 | 时效服务 | native 路由直连各部委站（GUIJU_CURRENCY 默认即 native；旧 NAS `…:18083/mcp` 的 spec-currency 已退役，2026-11-13） |
 | spec-currency 源码 | `~/Development/spec-currency`（Go 1.26），**已退役归档**；guiju 内不再消费 |
 | 合并后部署 | 香港服务器 `hk`（38.76.165.16），供外网使用；本机不再常驻服务 |

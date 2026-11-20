@@ -167,11 +167,17 @@ def parse_csres_page(raw: bytes) -> CsresPage:
     total = _int_or_none(_TOTAL, text)
     if total is None:
         total = _int_or_none(_FOUND, text)
+    page = _int_or_none(_PAGE_NO, text)
+    # csres 对“0 条命中”返回 pageNum=0 且 pageSize=25；0 不是第 0 页，
+    # 而是站点表示“没有结果页”。把它投影成 None，不能让 lookup 误判为
+    # “请求第 1 页、服务端返回第 0 页”的结构异常（真实未知编号会因此 50）。
+    if page == 0 and not records:
+        page = None
     return CsresPage(
         records=records,
         total=total,
         pages=_int_or_none(_PAGES, text),
-        page=_int_or_none(_PAGE_NO, text),
+        page=page,
         page_size=_int_or_none(_PAGE_SIZE, text),
     )
 

@@ -3,9 +3,9 @@
 > 定稿：2026-10-30。取代 `docs/建筑规范CLI-蓝图.md` 的第三～七节。
 > 文件裁定见 `docs/audit-2026-10-30.md`。
 >
-> **修订中（2026-11-18）**：本文第四节描述的分层（application/ports/adapters/migrations）
-> 与当前目录不一致，实际编排集中在 `cli/lookup.py`，出站有两套栈。ADR 0004（提议）决定
-> 收口为 `net/` + `application/` 两层；实施期间以 ADR 0004 与
+> **修订中（2026-11-20）**：本文第四节描述的分层（application/ports/adapters/migrations）
+> 与当前目录不一致，实际编排集中在 `cli/lookup.py`，出站有两套栈。ADR 0004（已批准，2026-11-18）
+> 决定收口为 `net/` + `application/` 两层；实施期间以 ADR 0004 与
 > `docs/remediation-2026-11-18.md` 为准，第四节随 1.2.0 重写。
 
 > **修订（2026-11-09）**：归档责任划给 kb-system 后，本地不再有正文注册表：

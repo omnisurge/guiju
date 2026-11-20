@@ -167,26 +167,41 @@ def main() -> int:
         check("上海地标幂等返回 10", code == 10 and p2.get("already") is True, str(code))
 
         # ---- 本地路径：按公告ID取正文（不依赖时效服务） ----
+        # 多名称公告按 ID 不能唯一映射到一本规范：B1 D4 的契约是 33（交人），
+        # 不能为了下载而自行挑第一个。这里显式断言这个安全行为。
         code, p, _ = guiju("search", "城市给水工程项目建设标准", home=home)
-        ann_id = str((p.get("results") or [{}])[0].get("id", "") or "")
-        if not ann_id:
+        multi_id = str((p.get("results") or [{}])[0].get("id", "") or "")
+        if not multi_id:
             for nm in (
-                "pull 按公告ID（无编号亦可下载）", "pull 幂等（公告ID路径）",
-                "cite 按公告ID（自解析编号）",
+                "多名称公告按ID → 33（不自行挑选）", "pull 按公告ID（单名称）",
+                "pull 幂等（公告ID路径）", "cite 按公告ID（自解析编号）",
             ):
                 skip(nm, "目录为空：sync 未成功，跳过后继本地路径断言")
             return _summary_outputs(home)
 
-        code, p, _ = guiju("pull", ann_id, home=home, timeout=600)
-        check("pull 按公告ID（无编号亦可下载）", code == 0 and p.get("magic") == "pdf",
+        code, p, _ = guiju("pull", multi_id, home=home, timeout=600)
+        check("多名称公告按ID → 33（不自行挑选）",
+              code == 33 and p.get("reason") == "ambiguous_attachment",
+              detail_of(code, p))
+
+        # 单名称公告的 ID 路径仍必须能下载并且幂等；不要用多名称公告
+        # 伪造“按 ID 成功”，否则会把 B1 D4 的安全歧义重新变成隐式猜测。
+        code, p, _ = guiju("search", "建筑防火通用规范", home=home)
+        fire_id = str((p.get("results") or [{}])[0].get("id", "") or "")
+        if not fire_id:
+            skip("pull 按公告ID（单名称）", "目录为空：sync 未成功，跳过")
+            skip("pull 幂等（公告ID路径）", "目录为空：sync 未成功，跳过")
+            skip("cite 按公告ID（自解析编号）", "目录为空：sync 未成功，跳过")
+            return _summary_outputs(home)
+
+        code, p, _ = guiju("pull", fire_id, home=home, timeout=600)
+        check("pull 按公告ID（单名称）", code == 0 and p.get("magic") == "pdf",
               detail_of(code, p) or f"{p.get('bytes')}B code={p.get('code')}")
 
-        code, p, _ = guiju("pull", ann_id, home=home, timeout=600)
+        code, p, _ = guiju("pull", fire_id, home=home, timeout=600)
         check("pull 幂等（公告ID路径）", code == 10 and p.get("already") is True)
 
         # ---- 引用串：按公告ID自解析编号（不需要时效服务） ----
-        code, p, _ = guiju("search", "建筑防火通用规范", home=home)
-        fire_id = str((p.get("results") or [{}])[0].get("id", ""))
         code, p, _ = guiju("cite", fire_id, "5.2.1", home=home, timeout=240)
         check("cite 按公告ID（自解析编号）", code == 0 and "第5.2.1条" in (p.get("cite") or ""),
               (p.get("cite") or "")[:44])

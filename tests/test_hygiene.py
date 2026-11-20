@@ -57,10 +57,18 @@ class IgnoreConstraintTest(unittest.TestCase):
 
 class DocConstraintTest(unittest.TestCase):
     def test_version_single_source(self):
-        """版本号只有一处来源，CHANGELOG 顶部必须同版本。"""
-        version = re.search(r'__version__\s*=\s*"([0-9.]+)"', _read("guiju/_version.py")).group(1)
+        """版本号只有一处来源；CHANGELOG 最新版本条目必须与它一致。
+
+        不能只检查“任意旧版本出现过”：1.1.0 时仍保留旧 ## 1.1.0 会掩盖
+        候选版本未 bump 的漂移（发版评审 2026-11-20 发现）。
+        """
+        version = re.search(r'__version__\s*=\s*"([^"]+)"', _read("guiju/_version.py")).group(1)
         changelog = _read("CHANGELOG.md")
-        self.assertIn(f"## {version}", changelog, f"CHANGELOG 缺少 {version} 条目")
+        headings = re.findall(r"^##\s+(\S+)", changelog, flags=re.MULTILINE)
+        released = [heading for heading in headings if heading != "Unreleased"]
+        self.assertTrue(released, "CHANGELOG 没有任何版本条目")
+        self.assertEqual(released[0], version,
+                         f"CHANGELOG 最新版本是 {released[0]}，与 _version.py 的 {version} 不一致")
 
 
 class IndexCommandRemovedTest(unittest.TestCase):
