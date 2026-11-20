@@ -1,4 +1,4 @@
-# guiju v1.2.0-alpha 安装与自部署
+# guiju v1.2.0-alpha.2 安装与自部署
 
 适用：Linux / macOS；Python 3.10+；运行时零第三方依赖。
 
@@ -13,19 +13,19 @@
 
 从发布页下载 wheel：
 
-    https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha
+    https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.2
 
 安装到独立虚拟环境：
 
     python3 -m venv /opt/guiju-venv
-    curl -L -o /tmp/guiju-1.2.0a1-py3-none-any.whl \
-      https://github.com/omnisurge/guiju/releases/download/v1.2.0-alpha/guiju-1.2.0a1-py3-none-any.whl
-    /opt/guiju-venv/bin/python -m pip install /tmp/guiju-1.2.0a1-py3-none-any.whl
+    curl -L -o /tmp/guiju-1.2.0a2-py3-none-any.whl \
+      https://github.com/omnisurge/guiju/releases/download/v1.2.0-alpha.2/guiju-1.2.0a2-py3-none-any.whl
+    /opt/guiju-venv/bin/python -m pip install /tmp/guiju-1.2.0a2-py3-none-any.whl
     /opt/guiju-venv/bin/guiju --version
 
 如果使用 uv：
 
-    uv tool install /tmp/guiju-1.2.0a1-py3-none-any.whl
+    uv tool install /tmp/guiju-1.2.0a2-py3-none-any.whl
     guiju --version
 
 ## 3. 源码安装

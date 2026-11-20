@@ -1,13 +1,27 @@
 # 验收记录
 
-> 最新发布验收：**v1.2.0-alpha（2026-11-20，预发布）** —— **797 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与 hk guiju-mcp 部署已完成。
+> 最新发布验收：**v1.2.0-alpha.2（2026-11-20，预发布）** —— **810 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与 hk guiju-mcp 部署已完成。
 > 上一发布：**v1.1.0（2026-11-09）**；更早 v1.0.0 的 446 项单测 / hk M4 记录保留作历史对照。
 > 默认时效为 **native**；hk 服务与消费者切换沿用 v1.0.0 验证，NAS spec-currency 已停用（文件保留可回退）。后续各版本记录保留作历史对照。
 >
-> **阅读说明（2026-11-20）**：本文件按版本保留验收记录；v1.2.0-alpha 之前的 NAS/cmd/mcp 描述是历史事实，不代表当前架构。当前运行形态见 [docs/README.md](README.md) 与 [deploy/README.md](../deploy/README.md)。
+> **阅读说明（2026-11-20）**：本文件按版本保留验收记录；v1.2.0-alpha.2 之前的 NAS/cmd/mcp 描述是历史事实，不代表当前架构。当前运行形态见 [docs/README.md](README.md) 与 [deploy/README.md](../deploy/README.md)。
 >
 > **按语（2026-11-09）**：本地归档注册表已撤销（artifact 表、`verify`/`provenance` 命令删除），
 > 正文归档归 kb-system，幂等靠文件名 sha256 指纹。下文中 verify/provenance 相关行属历史验收记录，不再适用。
+
+## v1.2.0-alpha.2（2026-11-20，预发布）
+
+| 项 | 本次实测 |
+|---|---|
+| 代码基线 | `refactor/root-cause` 530a9c7（e5978cb + P3-7/P3-8a；发布 tag 指向本次发布提交） |
+| 版本 | `1.2.0a2`（发布 tag `v1.2.0-alpha.2`；代码内容为 530a9c7） |
+| 完整单测矩阵 | Python 3.13.5、3.10.21 **各 810/810 通过** |
+| 本地 CI | ruff、810 单测、离线 e2e **4/4**、version/status/help 入口自检全绿 |
+| 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39 通过**，exit 0；日志 `/tmp/guiju-alpha2-e2e.log` |
+| P3-7 契约 | `cite --strict` 的 20/34/32 失败体不再返回 `cite`；成功体与非 strict 时效降级不变；新增真实 main/stdout 合同测试 |
+| 构建烟测 | wheel/sdist 均为 `guiju-1.2.0a2`；临时 venv 安装 wheel 后 `guiju version --json` 返回 `1.2.0a2` |
+| 发布产物 | `guiju-1.2.0a2-py3-none-any.whl` / `guiju-1.2.0a2.tar.gz`；最终 SHA-256 由发布提交后的构建记录补记 |
+| hk 生产部署 | 待本次发布提交创建后部署并复核 |
 
 ## v1.2.0-alpha（2026-11-20，预发布）
 

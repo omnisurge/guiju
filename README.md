@@ -24,12 +24,12 @@
 
 | 项 | 状态 |
 |---|---|
-| 版本 | `1.2.0-alpha`（schema v2） |
+| 版本 | `1.2.0-alpha.2`（schema v2） |
 | 目录同步 | ✅ 实测全量 **3255 条 / 33 页**，本次 e2e 与上游对账一致 |
 | 编号解析 | ✅ 实测覆盖 61%（其余公告正文确实无编号） |
 | 正文下载 | ✅ 单条与批量均实测可用（含 2000 年的早期公告） |
 | 编号定位 | ✅ 只认「发布该编号的公告」+ 正文编号核实；同名多公告交人决断 |
-| 单测 / 端到端 | 797 项单测（离线、零依赖）/ 4 项离线端到端断言（`scripts/e2e.py`） |
+| 单测 / 端到端 | 810 项单测（离线、零依赖）/ 4 项离线端到端断言（`scripts/e2e.py`） |
 | 目录保鲜 | 进程内自刷新：目录为空或 >7 天时，在该次命令里顺手增量同步（无 cron / 无常驻进程） |
 | 多源 | ✅ 住建部（国标/行标公告）+ 上海（地标，`--source shzjw`）；其余源未接 |
 | MCP | ✅ `guiju mcp`（stdio / HTTP；https://guiju.守夜人.中国/mcp，Bearer 认证；query/verify/batch/announcement） |
@@ -50,7 +50,7 @@ guiju --version
 gj --version                     # 等价别名
 ```
 
-> v1.2.0-alpha 发布包与完整自部署步骤：[INSTALL.md](INSTALL.md)
+> v1.2.0-alpha.2 发布包与完整自部署步骤：[INSTALL.md](INSTALL.md)
 
 数据默认放 `~/.guiju/`（目录库 `catalog.db` + 下载目录 `library/`，只是文件缓存不是档案库）。用 `GUIJU_HOME` 或 `--db` 覆盖。
 
