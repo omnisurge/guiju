@@ -1,6 +1,6 @@
 # hk 部署
 
-目标：hk 上运行合并后的 guiju MCP 服务；NAS 的 spec-currency 已在切换确认后退役。
+目标：hk 上运行合并后的 guiju MCP 服务；本项目不依赖 NAS，NAS 的 spec-currency 已在切换确认后退役（历史事实）。
 
 ## 当前服务形态
 
@@ -32,7 +32,7 @@
 
 ## 边界
 
-- 服务只读规范元数据/正文索引，不把 NAS 当依赖；NAS spec-currency 已于 2026-11-01 所有者授权后停用（cron 自启动移除，文件保留可回退）。
+- 服务只读规范元数据/正文索引，本项目不把 NAS 当依赖；NAS spec-currency 已于 2026-11-01 所有者授权后停用（历史事实；cron 自启动移除，文件保留可回退）。任何 NAS 操作须遵守 kb-system 的 ADR0048 外部冻结约束。
 - 18083 已仅绑定 127.0.0.1；公网只暴露 Caddy 的 80/443，MCP 路径要求 `Authorization: Bearer <token>`。
 - 消费者已于 2026-11-01 切换：desktop/web 的 guiju MCP URL 指向 https://guiju.守夜人.中国/mcp，并带 Bearer header；desktop 的 MCP id/serverName 已改为 mcp-guiju/guiju。
 - 切换后已做 hk health + GB/JGJ/CJJ/JTG/DB 冒烟；重启 DSH 后以 hk 端点生效。

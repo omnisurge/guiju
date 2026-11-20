@@ -2,7 +2,8 @@
 
 > 一句话：从官方站点取工程建设标准的**目录 + 正文 + 引用串 + 现行状态**，只搬运与校验，不生产内容。
 > 状态：**v1.2.0-alpha 已发布**（2026-11-20；tag v1.2.0-alpha；hk guiju-mcp 已部署）。单测 **797 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39。hk 部署与消费者切换沿用 v1.0.0 验证，本次已升级 hk guiju-mcp。
-> ADR 0001（index / 时效端口化）**已 100% 收尾**；ADR 0002（合并 spec-currency）**期 2 已完成、期 1 的 M1/M2/M3/M4 已完成；M4 可比基线 32/32，默认 native 已切；guiju mcp 已部署 hk，消费者 profile 已切到 hk（DSH 重启生效），NAS spec-currency 已于 2026-11-01 停用**。默认 native，cmd / mcp / off 可显式覆盖。
+> 本文件包含版本历史记录；历史行中的 cmd/mcp、NAS spec-currency 是当时事实，不代表当前运行形态。当前形态见 [docs/README.md](docs/README.md)。
+> ADR 0001 / ADR 0002 均已关闭（历史决策，见 [docs/adr/README.md](docs/adr/README.md)）；当前时效只使用 **native**，`GUIJU_CURRENCY` 只认 `native[:off|dir]` / `off`；hk `guiju-mcp` 已部署，NAS spec-currency 已于 2026-11-01 停用（历史事实，本项目不依赖 NAS）。
 
 ## 文档地图（各司其职，不要互相抄）
 
@@ -10,10 +11,11 @@
 |---|---|---|
 | `README.md` | 用户手册：安装、命令、退出码、合规与不做的事 | 人 |
 | `AGENTS.md` | agent 操作契约：命令选择、退出码动作、必知事实 | agent |
+| [docs/README.md](docs/README.md) | 文档索引：当前文档 / 历史证据 / ADR0048 跨项目边界 | 维护者 |
 | `docs/sources.md` | 四个数据源的现状与边界（含"为什么某些源不接"）+ 多源仲裁实测结论 | 维护者 |
 | `docs/ARCHITECTURE.md` | 架构决策：分层、数据模型、里程碑 | 维护者 |
 | `docs/adr/0001-currency-and-scope.md` | 废止 index、时效端口化（**已关闭**，含「后续变化」） | 维护者 |
-| `docs/adr/0002-merge-into-one-product.md` | **下一步**：合并 spec-currency、`guiju mcp`、部署形态 | 接手人 |
+| `docs/adr/0002-merge-into-one-product.md` | 已关闭（历史决策记录；不再作为施工依据） | 维护者 |
 | `docs/adr/0003-catalog-self-refresh.md` | 目录自保鲜（无 cron/launchd）与 `catalog` 反馈契约 | 维护者 |
 | `docs/ACCEPTANCE.md` | 验收记录（可复跑 `scripts/e2e.py`） | 所有人 |
 | `CHANGELOG.md` | 版本变更（1.2.0-alpha 及历史） | 所有人 |
@@ -50,7 +52,7 @@ guiju cite GB55037-2022 5.2.1    # → 《建筑防火通用规范》GB 55037-20
 | 0.14.0 | **同名多版本按时效自动定版**（版本迭代不是歧义）；结果带 `versions` |
 | 0.14.1 / 0.14.2 | 时效适配器显式配置：`cmd` 缺二进制如实报错（不再静默退 mcp）、`GUIJU_CURRENCY_URL` 不再被丢弃；新增 `currency_endpoint` |
 | 0.14.3 | `cmd` 适配器**本机实测**（build `spec-currency`，与 mcp 逐字段一致） |
-| 0.14.4 | 部署形态定案：合并后落**香港服务器**；澄清 NAS"冻结"是变更冻结、不是故障 |
+| 0.14.4 | 部署形态定案：合并后落**香港服务器**；NAS“冻结”是 kb-system 的外部变更冻结（ADR0048），不是本项目依赖或故障 |
 
 ## 三、已验证的事实（别重复试，也别推翻）
 
@@ -129,7 +131,7 @@ JTG             → Fallback( csres → jtst )
 - `csres` 是主源：`GET http://www.csres.com/s.jsp?keyword=<号>`，**GBK 编码 HTML**，首次 TTFB 1–8s（靠重试+备源）。
 - 元数据适配器**禁止**调用 `compliance.get`、**禁止**落文件（ADR 0002 决策 5，要用测试钉住）——`csres.com` 不是 `*.gov.cn`。
 - 之后：期 3 `guiju mcp` 服务面（已上线）→ 期 4 归档 spec-currency（已于 2026-11-13 完成：适配器与 cmd:/mcp: 覆盖删除，native 为唯一上游）。
-- **不要修改或构建 `spec-currency` 仓**：M1/M2 只读参考其源码与 golden，M3 未操作旧仓，离线回归现在不依赖旧仓；也不要往 guiju 里再塞一份地标解析器（会产生双份实现）。
+- **不要修改或构建 `spec-currency` 仓**（历史：已归档，不再涉及）：M1/M2 只读参考其源码与 golden，M3 未操作旧仓，离线回归现在不依赖旧仓；也不要往 guiju 里再塞一份地标解析器（会产生双份实现）。
 
 **已否决、不要再提**：特种作业/特种设备证书查询产品。三个官方站（应急部 `cx.mem.gov.cn` 瑞数反爬 412、住建部 `zlaq` 接口 400+验证码、市场监管总局 `cnse` 滑块+查询码）全部挡住自动化，且身份证号属敏感个人信息（PIPL 28–29）——已与所有者确认放弃。
 
