@@ -20,8 +20,9 @@
 | 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39 通过**，exit 0；日志 `/tmp/guiju-alpha2-e2e.log` |
 | P3-7 契约 | `cite --strict` 的 20/34/32 失败体不再返回 `cite`；成功体与非 strict 时效降级不变；新增真实 main/stdout 合同测试 |
 | 构建烟测 | wheel/sdist 均为 `guiju-1.2.0a2`；临时 venv 安装 wheel 后 `guiju version --json` 返回 `1.2.0a2` |
-| 发布产物 | `guiju-1.2.0a2-py3-none-any.whl` / `guiju-1.2.0a2.tar.gz`；最终 SHA-256 由发布提交后的构建记录补记 |
-| hk 生产部署 | 待本次发布提交创建后部署并复核 |
+| 发布产物 | GitHub prerelease `v1.2.0-alpha.2`；wheel `guiju-1.2.0a2-py3-none-any.whl` SHA-256 `1bd821da475a54b5bce040b002018e4ef9b104dc99b1164416c3dbebc39a9f1a`；sdist `guiju-1.2.0a2.tar.gz` SHA-256 `cc687186d062f1c6603dc2937ef1a03b32a89cb37723e9e55adceafe5b4940bb` |
+| 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.2 |
+| hk 生产部署 | `guiju-mcp.service` 已升级到 `1.2.0a2`（/opt/guiju，Python 3.11.2），本机 health `{"ok":true}`；公网 `https://guiju.守夜人.中国/health`（Bearer）HTTP 200，MCP query `GB 55037-2022` 返回 current；备份 `/opt/guiju/guiju.prev-1.2.0a1-20261120-221057` 与 unit `.bak-alpha2-20261120-221057`；未访问 NAS |
 
 ## v1.2.0-alpha（2026-11-20，预发布）
 
