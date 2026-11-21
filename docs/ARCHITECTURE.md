@@ -5,10 +5,9 @@
 >
 > **文档状态（2026-11-20）**：本文是当前架构说明；历史 ADR 0001/0002 与 `docs/audit/*` 只作背景，不代表当前实现。
 >
-> **修订中（2026-11-20）**：本文第四节描述的分层（application/ports/adapters/migrations）
-> 与当前目录不一致，实际编排集中在 `cli/lookup.py`，出站有两套栈。ADR 0004（已批准，2026-11-18）
-> 决定收口为 `net/` + `application/` 两层；实施期间以 ADR 0004 与
-> `docs/remediation-2026-11-18.md` 为准，第四节随 1.2.0 重写。
+> **修订状态（2026-11-21）**：B2/W1 已完成 `guiju/net/` 出站收口（见 `docs/audit/net-layer-b2-w1-20261121.md`）；
+> 本文第四节的 application/ports/adapters 完整分层重写仍待 B4，届时随 1.2.0 一并重写。ADR 0004（已批准，2026-11-18）
+> 仍是后续实施依据，`docs/remediation-2026-11-18.md` 跟踪 B2-B5。
 
 > **修订（2026-11-09）**：归档责任划给 kb-system 后，本地不再有正文注册表：
 > `artifact` 表、`verify`/`provenance` 命令已删除，幂等改由文件名里的

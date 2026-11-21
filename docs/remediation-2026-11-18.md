@@ -460,7 +460,7 @@ B1 非阻塞残余清理（2026-11-20）：显式 sync 与 autosync 共用 flock
 
 ### B2-B5
 
-- [ ] W1 net 收口
+- [x] W1 net 收口（v1.2.0-alpha.3，2026-11-21；证据 `docs/audit/net-layer-b2-w1-20261121.md`）
 - [ ] W2/W3/W4 状态/空值/存储收口
 - [ ] W5 application/MCP 收口
 - [ ] W6 领域收口
