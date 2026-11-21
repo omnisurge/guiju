@@ -12,10 +12,17 @@ from .redirect import RedirectGuard
 from .request import ProbeInfo
 
 
+class _NoProxyHandler(urllib.request.ProxyHandler):
+    """Explicit empty proxy handler that also stays visible in opener.handlers."""
+
+    def http_request(self, req):
+        return req
+
+
 def build_opener(policy, throttle, detector: BlockDetector | None = None) -> urllib.request.OpenerDirector:
     """Build an opener that never reads system/environment proxy settings."""
     return urllib.request.build_opener(
-        urllib.request.ProxyHandler({}),
+        _NoProxyHandler({}),
         urllib.request.HTTPSHandler(context=ssl.create_default_context()),
         RedirectGuard(policy, throttle, detector),
     )
@@ -26,7 +33,7 @@ class Transport:
         self.policy = policy
         self.throttle = throttle
         self.detector = detector or BlockDetector()
-        self.proxy_handler = urllib.request.ProxyHandler({})
+        self.proxy_handler = _NoProxyHandler({})
         self.opener = urllib.request.build_opener(
             self.proxy_handler,
             urllib.request.HTTPSHandler(context=ssl.create_default_context()),

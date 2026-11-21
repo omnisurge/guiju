@@ -48,9 +48,8 @@ class BodyPolicy:
             raise ComplianceDenied(f"非法 host，拒绝访问：{parts.hostname or '(空)'}")
         if not (host == "gov.cn" or host.endswith(self.ALLOWED_SUFFIX)):
             raise ComplianceDenied(f"非政府域名，拒绝访问：{host or '(空)'}")
-        if parts.fragment:
-            return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, ""))
-        return url
+        netloc = host if port is None else f"{host}:{port}"
+        return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
 
     def check_redirect(self, req, target: str) -> str:
         self.check_url(target)

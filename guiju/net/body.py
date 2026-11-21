@@ -263,10 +263,10 @@ class BodyClient:
                             sent_etag, sent_lm = _validator(resp.headers)
                             expected_etag = sidecar.get("etag", "")
                             expected_lm = sidecar.get("last_modified", "")
-                            matches = bool(
-                                (expected_etag and sent_etag and sent_etag == expected_etag)
-                                or (expected_lm and sent_lm and sent_lm == expected_lm)
-                            )
+                            if _strong(expected_etag):
+                                matches = _strong(sent_etag) and sent_etag == expected_etag
+                            else:
+                                matches = _strong(sent_lm) and sent_lm == expected_lm
                             if not matches:
                                 part.unlink(missing_ok=True)
                                 _unlink_meta(part)
@@ -295,11 +295,13 @@ class BodyClient:
                             raise SourceUnreachable(f"416 但本地没有可验证的 .part：{url}")
                         probe = self.transport.probe(url, timeout=min(float(timeout), 20.0)) or ProbeInfo()
                         probe_etag, probe_lm = probe.etag, probe.last_modified
-                        valid = (
-                            probe.content_length == part_size
-                            and ((_strong(probe_etag) and _strong(sidecar.get("etag", "")) and probe_etag == sidecar.get("etag"))
-                                 or (_strong(probe_lm) and _strong(sidecar.get("last_modified", "")) and probe_lm == sidecar.get("last_modified")))
-                        )
+                        expected_etag = sidecar.get("etag", "")
+                        expected_lm = sidecar.get("last_modified", "")
+                        if _strong(expected_etag):
+                            validator_ok = _strong(probe_etag) and probe_etag == expected_etag
+                        else:
+                            validator_ok = _strong(probe_lm) and probe_lm == expected_lm
+                        valid = probe.content_length == part_size and validator_ok
                         if valid:
                             _unlink_meta(part)
                             result = DownloadResult(url=url, bytes=part_size, resumed_from=part_size, status=416,
@@ -320,12 +322,13 @@ class BodyClient:
                 if exc.code == 416:
                     if resume and part_size > 0:
                         probe = self.transport.probe(url, timeout=min(float(timeout), 20.0)) or ProbeInfo()
-                        valid = (
-                            probe.content_length == part_size
-                            and ((_strong(probe.etag) and _strong(sidecar.get("etag", "")) and probe.etag == sidecar.get("etag"))
-                                 or (_strong(probe.last_modified) and _strong(sidecar.get("last_modified", ""))
-                                     and probe.last_modified == sidecar.get("last_modified")))
-                        )
+                        expected_etag = sidecar.get("etag", "")
+                        expected_lm = sidecar.get("last_modified", "")
+                        if _strong(expected_etag):
+                            validator_ok = _strong(probe.etag) and probe.etag == expected_etag
+                        else:
+                            validator_ok = _strong(probe.last_modified) and probe.last_modified == expected_lm
+                        valid = probe.content_length == part_size and validator_ok
                         if valid:
                             _unlink_meta(part)
                             result = DownloadResult(url=url, bytes=part_size, resumed_from=part_size, status=416,
