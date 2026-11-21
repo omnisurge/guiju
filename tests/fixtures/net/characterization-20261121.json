@@ -1,0 +1,2622 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "2a7be88",
+  "recorded_at": "2026-11-21",
+  "case_count": 76,
+  "cases": {
+    "CHAR-200-01": {
+      "id": "CHAR-200-01",
+      "group": "A",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 29,
+        "part_size": 29,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 29,
+        "part_size": 29,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-200-02": {
+      "id": "CHAR-200-02",
+      "group": "A",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 5,
+        "part_size": 5,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-200-03": {
+      "id": "CHAR-200-03",
+      "group": "A",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 29,
+        "part_size": 29,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-200-04": {
+      "id": "CHAR-200-04",
+      "group": "A",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 29,
+        "part_size": 29,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 29,
+        "part_size": 29,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-200-05": {
+      "id": "CHAR-200-05",
+      "group": "A",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-200-06": {
+      "id": "CHAR-200-06",
+      "group": "A",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 27,
+        "part_size": 27,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 27,
+        "part_size": 27,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-200-07": {
+      "id": "CHAR-200-07",
+      "group": "A",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-07",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 29,
+        "part_size": 29,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-200-07",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-01": {
+      "id": "CHAR-206-01",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1009,
+        "part_size": 1009,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1009,
+        "part_size": 1009,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-02": {
+      "id": "CHAR-206-02",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-03": {
+      "id": "CHAR-206-03",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-04": {
+      "id": "CHAR-206-04",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-05": {
+      "id": "CHAR-206-05",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 1007,
+        "part_size": 1007,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-06": {
+      "id": "CHAR-206-06",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 1011,
+        "part_size": 1011,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-07": {
+      "id": "CHAR-206-07",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-07",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1009,
+        "part_size": 1009,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-07",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1009,
+        "part_size": 1009,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-08": {
+      "id": "CHAR-206-08",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-08",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1009,
+        "part_size": 1009,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-08",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1009,
+        "part_size": 1009,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-09": {
+      "id": "CHAR-206-09",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-09",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1009,
+        "part_size": 1009,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-09",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-206-10": {
+      "id": "CHAR-206-10",
+      "group": "B",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-10",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 1008,
+        "part_size": 1008,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-206-10",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-416-01": {
+      "id": "CHAR-416-01",
+      "group": "C",
+      "expected": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      }
+    },
+    "CHAR-416-02": {
+      "id": "CHAR-416-02",
+      "group": "C",
+      "expected": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 3,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      }
+    },
+    "CHAR-416-03": {
+      "id": "CHAR-416-03",
+      "group": "C",
+      "expected": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      }
+    },
+    "CHAR-416-04": {
+      "id": "CHAR-416-04",
+      "group": "C",
+      "expected": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-416-05": {
+      "id": "CHAR-416-05",
+      "group": "C",
+      "expected": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "http_416",
+        "url_shape": "/CHAR-416-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=500-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 500,
+        "part_size": 500,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      }
+    },
+    "CHAR-IFR-01": {
+      "id": "CHAR-IFR-01",
+      "group": "D",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-IFR-02": {
+      "id": "CHAR-IFR-02",
+      "group": "D",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-",
+          "if-range": "Wed, 01 Jan 2025 00:00:00 GMT"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-IFR-03": {
+      "id": "CHAR-IFR-03",
+      "group": "D",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-IFR-04": {
+      "id": "CHAR-IFR-04",
+      "group": "D",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-IFR-05": {
+      "id": "CHAR-IFR-05",
+      "group": "D",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-IFR-06": {
+      "id": "CHAR-IFR-06",
+      "group": "D",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-IFR-07": {
+      "id": "CHAR-IFR-07",
+      "group": "D",
+      "expected": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-07",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server",
+        "url_shape": "/CHAR-IFR-07",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-RED-01": {
+      "id": "CHAR-RED-01",
+      "group": "E",
+      "expected": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 4,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 4,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      }
+    },
+    "CHAR-RED-02": {
+      "id": "CHAR-RED-02",
+      "group": "E",
+      "expected": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 4,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 4,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      }
+    },
+    "CHAR-RED-03": {
+      "id": "CHAR-RED-03",
+      "group": "E",
+      "expected": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 5,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 5,
+        "sleeps": []
+      }
+    },
+    "CHAR-RED-04": {
+      "id": "CHAR-RED-04",
+      "group": "E",
+      "expected": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 5,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 5,
+        "sleeps": []
+      }
+    },
+    "CHAR-RED-05": {
+      "id": "CHAR-RED-05",
+      "group": "E",
+      "expected": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 5,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 5,
+        "sleeps": []
+      }
+    },
+    "CHAR-RED-06": {
+      "id": "CHAR-RED-06",
+      "group": "E",
+      "expected": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 5,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 5,
+        "sleeps": []
+      }
+    },
+    "CHAR-RED-07": {
+      "id": "CHAR-RED-07",
+      "group": "E",
+      "expected": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-07",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 4,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-07",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 4,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-RED-08": {
+      "id": "CHAR-RED-08",
+      "group": "E",
+      "expected": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-08",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 4,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_redirect",
+        "url_shape": "/CHAR-RED-08",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 4,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 2,
+        "sleeps": []
+      }
+    },
+    "CHAR-IDN-01": {
+      "id": "CHAR-IDN-01",
+      "group": "F",
+      "expected": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-01",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-01",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-IDN-02": {
+      "id": "CHAR-IDN-02",
+      "group": "F",
+      "expected": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-02",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-02",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-IDN-03": {
+      "id": "CHAR-IDN-03",
+      "group": "F",
+      "expected": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-03",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-03",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-IDN-04": {
+      "id": "CHAR-IDN-04",
+      "group": "F",
+      "expected": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-04",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-04",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-IDN-05": {
+      "id": "CHAR-IDN-05",
+      "group": "F",
+      "expected": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-05",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "policy",
+        "url_shape": "/CHAR-IDN-05",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-CAP-01": {
+      "id": "CHAR-CAP-01",
+      "group": "G",
+      "expected": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 9437184,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "needs_human",
+        "exit": 50,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-CAP-02": {
+      "id": "CHAR-CAP-02",
+      "group": "G",
+      "expected": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 5,
+        "part_size": 5,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "needs_human",
+        "exit": 50,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-CAP-03": {
+      "id": "CHAR-CAP-03",
+      "group": "G",
+      "expected": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1028,
+        "part_size": 1028,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1028,
+        "part_size": 1028,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-CAP-04": {
+      "id": "CHAR-CAP-04",
+      "group": "G",
+      "expected": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-CAP-05": {
+      "id": "CHAR-CAP-05",
+      "group": "G",
+      "expected": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1004,
+        "part_size": 1004,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-05",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity",
+          "range": "bytes=5-",
+          "if-range": "\"v1\""
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-CAP-06": {
+      "id": "CHAR-CAP-06",
+      "group": "G",
+      "expected": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 9437193,
+        "part_size": 9437193,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_large",
+        "url_shape": "/CHAR-CAP-06",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 9437193,
+        "part_size": 9437193,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-01": {
+      "id": "CHAR-BLK-01",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-01",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-01",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-02": {
+      "id": "CHAR-BLK-02",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-02",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-02",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-03": {
+      "id": "CHAR-BLK-03",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-03",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-03",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-04": {
+      "id": "CHAR-BLK-04",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-04",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-04",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-05": {
+      "id": "CHAR-BLK-05",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-05",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-05",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-06": {
+      "id": "CHAR-BLK-06",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-06",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-06",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-07": {
+      "id": "CHAR-BLK-07",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-07",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-07",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-08": {
+      "id": "CHAR-BLK-08",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-08",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-08",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-09": {
+      "id": "CHAR-BLK-09",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-09",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-09",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-10": {
+      "id": "CHAR-BLK-10",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-10",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-10",
+        "request_headers": {},
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-11": {
+      "id": "CHAR-BLK-11",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-11",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-11",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-BLK-12": {
+      "id": "CHAR-BLK-12",
+      "group": "H",
+      "expected": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-12",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "block",
+        "url_shape": "/CHAR-BLK-12",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-403-01": {
+      "id": "CHAR-403-01",
+      "group": "I",
+      "expected": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-403-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-403-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-403-02": {
+      "id": "CHAR-403-02",
+      "group": "I",
+      "expected": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-403-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-403-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "compliance_denied",
+        "exit": 40,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-429-01": {
+      "id": "CHAR-429-01",
+      "group": "I",
+      "expected": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-429-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-429-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-429-02": {
+      "id": "CHAR-429-02",
+      "group": "I",
+      "expected": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-429-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-429-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-429-03": {
+      "id": "CHAR-429-03",
+      "group": "I",
+      "expected": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-429-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-429-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-429-04": {
+      "id": "CHAR-429-04",
+      "group": "I",
+      "expected": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-429-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "local_server_error",
+        "url_shape": "/CHAR-429-04",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-THR-01": {
+      "id": "CHAR-THR-01",
+      "group": "J",
+      "expected": {
+        "mode": "throttle",
+        "url_shape": "/CHAR-THR-01",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": [
+          1.2,
+          1.2
+        ]
+      },
+      "target": {
+        "mode": "throttle",
+        "url_shape": "/CHAR-THR-01",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": [
+          1.2
+        ]
+      }
+    },
+    "CHAR-THR-02": {
+      "id": "CHAR-THR-02",
+      "group": "J",
+      "expected": {
+        "mode": "throttle",
+        "url_shape": "/CHAR-THR-02",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": [
+          1.2
+        ]
+      },
+      "target": {
+        "mode": "throttle",
+        "url_shape": "/CHAR-THR-02",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-THR-03": {
+      "id": "CHAR-THR-03",
+      "group": "J",
+      "expected": {
+        "mode": "throttle",
+        "url_shape": "/CHAR-THR-03",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": [
+          1.2,
+          1.2
+        ]
+      },
+      "target": {
+        "mode": "throttle",
+        "url_shape": "/CHAR-THR-03",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": [
+          1.2
+        ]
+      }
+    },
+    "CHAR-THR-04": {
+      "id": "CHAR-THR-04",
+      "group": "J",
+      "expected": {
+        "mode": "throttle",
+        "url_shape": "/CHAR-THR-04",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": [
+          1.2
+        ]
+      },
+      "target": {
+        "mode": "throttle",
+        "url_shape": "/CHAR-THR-04",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-PRB-01": {
+      "id": "CHAR-PRB-01",
+      "group": "K",
+      "expected": {
+        "mode": "probe",
+        "url_shape": "/CHAR-PRB-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 9,
+        "part_size": 9,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "probe",
+        "url_shape": "/CHAR-PRB-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 9,
+        "part_size": 9,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-PRB-02": {
+      "id": "CHAR-PRB-02",
+      "group": "K",
+      "expected": {
+        "mode": "probe",
+        "url_shape": "/CHAR-PRB-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 5,
+        "part_size": 5,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "probe",
+        "url_shape": "/CHAR-PRB-02",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
+          "accept-encoding": "identity"
+        },
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 5,
+        "part_size": 5,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-PRB-03": {
+      "id": "CHAR-PRB-03",
+      "group": "K",
+      "expected": {
+        "mode": "probe",
+        "url_shape": "/CHAR-PRB-03",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "probe",
+        "url_shape": "/CHAR-PRB-03",
+        "request_headers": {
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-HEAD-01": {
+      "id": "CHAR-HEAD-01",
+      "group": "K",
+      "expected": {
+        "mode": "probe",
+        "url_shape": "/CHAR-HEAD-01",
+        "request_headers": {
+          "user-agent": "guiju/1.2.0a2 (compliance-aware; official code fetcher)",
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "probe",
+        "url_shape": "/CHAR-HEAD-01",
+        "request_headers": {
+          "accept-encoding": "identity"
+        },
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 1,
+        "sleeps": []
+      }
+    },
+    "CHAR-PROXY-01": {
+      "id": "CHAR-PROXY-01",
+      "group": "K",
+      "expected": {
+        "mode": "probe",
+        "url_shape": "/CHAR-PROXY-01",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "probe",
+        "url_shape": "/CHAR-PROXY-01",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    },
+    "CHAR-FIN-01": {
+      "id": "CHAR-FIN-01",
+      "group": "K",
+      "expected": {
+        "mode": "probe",
+        "url_shape": "/CHAR-FIN-01",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      },
+      "target": {
+        "mode": "probe",
+        "url_shape": "/CHAR-FIN-01",
+        "request_headers": {},
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 0,
+        "part_size": 0,
+        "final_exists": false,
+        "request_count": 0,
+        "sleeps": []
+      }
+    }
+  }
+}
