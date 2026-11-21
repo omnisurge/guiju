@@ -1,24 +1,23 @@
-"""Single outbound layer for guiju.
-
-C1 exports only symbols that exist in C1. BodyClient/DownloadResult are added
-when C2 creates body.py.
-"""
+"""Single outbound layer for guiju."""
 
 from .block import BLOCK_MARKERS, BlockDetector
+from .body import BodyClient, finalize
 from .endpoints import DEFAULT_METADATA_ENDPOINTS
 from .headers import canonical_host, header_int, parse_content_range
 from .metadata import MetadataClient
 from .policy import BodyPolicy, MetadataPolicy, normalize_path
 from .redirect import RedirectGuard
-from .request import ProbeInfo, ProbeRecord, Request, Response
+from .request import DownloadResult, ProbeInfo, ProbeRecord, Request, Response
 from .throttle import Throttle, default_throttle
 from .transport import Transport, build_opener
 
 __all__ = [
     "BLOCK_MARKERS",
-    "BlockDetector",
-    "BodyPolicy",
     "DEFAULT_METADATA_ENDPOINTS",
+    "BlockDetector",
+    "BodyClient",
+    "BodyPolicy",
+    "DownloadResult",
     "MetadataClient",
     "MetadataPolicy",
     "ProbeInfo",
@@ -31,6 +30,7 @@ __all__ = [
     "build_opener",
     "canonical_host",
     "default_throttle",
+    "finalize",
     "header_int",
     "normalize_path",
     "parse_content_range",
