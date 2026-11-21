@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import glob
 import hashlib
-import os
 from pathlib import Path
 
 
@@ -58,12 +57,3 @@ def find_cached(
             return path, digest
     return None
 
-
-def write_atomic(path: str | Path, data: bytes) -> Path:
-    """先写临时文件再改名：中途失败不会留下半个 PDF 让你误判成功。"""
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(target.name + ".part")
-    tmp.write_bytes(data)
-    os.replace(tmp, target)
-    return target
