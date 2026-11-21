@@ -219,6 +219,43 @@ class SidecarE2ETest(unittest.TestCase):
         self.assertEqual(self.part.read_bytes(), body)
         self.assertFalse(Path(str(self.part) + ".meta").exists())
 
+    def _failing_open(self, error_at: str):
+        import builtins
+        real_open = builtins.open
+        part = self.part
+
+        class BadWriter:
+            def __init__(self, fh):
+                self.fh = fh
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                self.fh.close()
+                return False
+
+            def write(self, data):
+                if error_at == "write":
+                    raise OSError("disk full (write)")
+                return self.fh.write(data)
+
+            def flush(self):
+                if error_at == "flush":
+                    raise OSError("disk full (flush)")
+                return self.fh.flush()
+
+            def __getattr__(self, name):
+                return getattr(self.fh, name)
+
+        def fake_open(path, mode="r", *args, **kwargs):
+            fh = real_open(path, mode, *args, **kwargs)
+            if Path(path) == part and "b" in mode and ("a" in mode or "w" in mode):
+                return BadWriter(fh)
+            return fh
+
+        return mock.patch("guiju.net.body.open", side_effect=fake_open)
+
     def test_stream_write_oserror_retains_part_and_meta(self):
         body = b"%PDF-12345"
         with LocalServer("range_ok", body=body, headers={"ETag": '"v1"'}) as server:
@@ -226,10 +263,25 @@ class SidecarE2ETest(unittest.TestCase):
             Path(str(self.part) + ".meta").write_text(json.dumps({
                 "etag": '"v1"', "last_modified": "", "total": 10, "size": 5,
             }), encoding="utf-8")
-            with mock.patch("guiju.net.body.open", side_effect=OSError("disk full")):
+            with self._failing_open("write"):
                 with self.assertRaises(SourceUnreachable):
                     _client().download(server.url + "/a", self.part, attempts=1)
         self.assertEqual(self.part.read_bytes(), body[:5])
+        meta = json.loads(Path(str(self.part) + ".meta").read_text("utf-8"))
+        self.assertEqual(meta.get("size"), 5)
+        self.assertFalse(any(self.part.parent.glob("*.meta.tmp")))
+
+    def test_stream_flush_oserror_retains_part_and_meta(self):
+        body = b"%PDF-12345"
+        with LocalServer("range_ok", body=body, headers={"ETag": '"v1"'}) as server:
+            self.part.write_bytes(body[:5])
+            Path(str(self.part) + ".meta").write_text(json.dumps({
+                "etag": '"v1"', "last_modified": "", "total": 10, "size": 5,
+            }), encoding="utf-8")
+            with self._failing_open("flush"):
+                with self.assertRaises(SourceUnreachable):
+                    _client().download(server.url + "/a", self.part, attempts=1)
+        self.assertEqual(self.part.read_bytes(), body)
         meta = json.loads(Path(str(self.part) + ".meta").read_text("utf-8"))
         self.assertEqual(meta.get("size"), 5)
         self.assertFalse(any(self.part.parent.glob("*.meta.tmp")))

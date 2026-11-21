@@ -90,6 +90,7 @@ class IfRangeTest(unittest.TestCase):
         t = FakeTransport([FakeResponse(b"", status=416)], probe_info=ProbeInfo(content_length=5, etag='"v1"'))
         result = body_client(t).download("https://x.gov.cn/a.pdf", self.part)
         self.assertEqual(result.bytes, 5)
+        self.assertFalse(Path(str(self.part) + ".meta").exists())
 
     def test_416_without_validator_restarts(self):
         self.part.write_bytes(b"12345")
