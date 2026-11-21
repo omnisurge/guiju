@@ -32,9 +32,9 @@ if [ "${CI_C0_BASELINE:-0}" = "1" ]; then
     exit 2
   fi
   if [ "${GUIJU_C0_NO_GIT:-0}" = "1" ] || [ "${CI_C0_NO_GIT:-0}" = "1" ]; then
-    scripts/ci-c0-baseline.sh --no-git "$GUIJU_C0_TREE"
+    PYTHON="$PY" scripts/ci-c0-baseline.sh --no-git "$GUIJU_C0_TREE"
   else
-    scripts/ci-c0-baseline.sh "$GUIJU_C0_TREE"
+    PYTHON="$PY" scripts/ci-c0-baseline.sh "$GUIJU_C0_TREE"
   fi
 fi
 

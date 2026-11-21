@@ -5,11 +5,14 @@
 #   scripts/ci-c0-baseline.sh <worktree>
 #   GUIJU_C0_COMMIT=<c0-commit> scripts/ci-c0-baseline.sh <worktree>
 #   GUIJU_C0_COMMIT=2a7be88 scripts/ci-c0-baseline.sh --no-git <archive-tree>
+#   PYTHON=python3.10 scripts/ci-c0-baseline.sh <worktree>
 #
 # The no-git mode exists for git archive output on 2a7be88, which has no .git.
 # It is deliberately explicit; a normal worktree without a matching HEAD is
 # rejected rather than silently skipped.
 set -euo pipefail
+
+PY="${PYTHON:-python3}"
 
 no_git=0
 if [ "${1:-}" = "--no-git" ]; then
@@ -51,4 +54,4 @@ export no_proxy="127.0.0.1,localhost"
 cd "$tree"
 log="/tmp/guiju-c0-baseline-${head:-archive}.log"
 echo "C0 gate log: $log"
-python3 -m unittest -v tests.char_baseline_20261121 2>&1 | tee "$log"
+"$PY" -m unittest -v tests.char_baseline_20261121 2>&1 | tee "$log"
