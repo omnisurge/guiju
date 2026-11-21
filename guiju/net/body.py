@@ -206,6 +206,7 @@ class BodyClient:
                     chunked = "chunked" in resp.headers.get("Transfer-Encoding", "").lower()
                     if status == 200:
                         self._last_content_type = ctype
+                        resume = False
                         if content_length is not None and content_length > max_bytes:
                             raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
                         if content_length is None and not chunked:
@@ -217,6 +218,7 @@ class BodyClient:
                         _write_meta(part, etag=resp.headers.get("ETag", ""),
                                     last_modified=resp.headers.get("Last-Modified", ""),
                                     total=written, size=written)
+                        _unlink_meta(part)
                         return DownloadResult(url=url, bytes=written, resumed_from=0, status=200,
                                                etag=resp.headers.get("ETag", ""),
                                                last_modified=resp.headers.get("Last-Modified", ""))
@@ -258,6 +260,7 @@ class BodyClient:
                         _write_meta(part, etag=resp.headers.get("ETag", ""),
                                     last_modified=resp.headers.get("Last-Modified", ""),
                                     total=total, size=written)
+                        _unlink_meta(part)
                         return DownloadResult(url=url, bytes=written, resumed_from=part_size if resume else 0,
                                                status=206, etag=resp.headers.get("ETag", ""),
                                                last_modified=resp.headers.get("Last-Modified", ""))
@@ -332,13 +335,28 @@ class BodyClient:
         mode = "ab" if resume else "wb"
         start_size = part.stat().st_size if resume and part.exists() else 0
         written = start_size
-        first = True
+        pending = b""
+        if not resume:
+            # Check the first chunk before truncating an existing .part: a block
+            # page must never destroy a previously valid partial body.
+            pending = resp.read(1 << 16)
+            if pending:
+                self.detector.check(pending[:65536], resp.headers.get("Content-Type", ""))
         with open(part, mode) as fp:
+            if pending:
+                written += len(pending)
+                if written > max_bytes:
+                    fp.close()
+                    part.unlink(missing_ok=True)
+                    _unlink_meta(part)
+                    raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
+                fp.write(pending)
+            first = True
             while True:
                 chunk = resp.read(1 << 16)
                 if not chunk:
                     break
-                if first:
+                if first and resume:
                     self.detector.check(chunk[:65536], resp.headers.get("Content-Type", ""))
                     first = False
                 written += len(chunk)

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
+from guiju.sources import mohurd
 from guiju.sources.mohurd import attachments, magic_of
 
 
@@ -24,6 +26,16 @@ class MohurdAttachmentTest(unittest.TestCase):
     def test_doc_magic_uses_real_bytes(self):
         self.assertEqual(magic_of(bytes.fromhex("d0cf11e0a1b2")), "doc")
         self.assertEqual(magic_of(b"D0CF11E0"), "unknown")
+
+    def test_download_uses_download_bytes_not_get_page(self):
+        big = b"%PDF-1.7\n" + b"0" * (9 * 1024 * 1024)
+        with mock.patch.object(mohurd.compliance, "download_bytes", return_value=(big, "application/pdf")) as dl, \
+             mock.patch.object(mohurd.compliance, "get") as get:
+            body, magic = mohurd.download("https://x.gov.cn/a.pdf", "https://x.gov.cn/")
+        self.assertEqual(magic, "pdf")
+        self.assertEqual(len(body), len(big))
+        dl.assert_called_once()
+        get.assert_not_called()
 
 
 if __name__ == "__main__":

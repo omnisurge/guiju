@@ -22,12 +22,16 @@ class Throttle:
         self.min_interval = float(min_interval)
         self._clock = clock or (lambda: time.monotonic())
         self._sleep = sleep or (lambda seconds: time.sleep(seconds))
-        self._lock = threading.Lock()
+        self._guard = threading.Lock()
+        self._lock = self._guard  # compatibility for existing tests/inspection
+        self._host_locks: dict[str, threading.Lock] = {}
         self._last: dict[str, float] = {}
 
     def wait(self, host: str) -> float:
         host = canonical_host(host)
-        with self._lock:
+        with self._guard:
+            lock = self._host_locks.setdefault(host, threading.Lock())
+        with lock:
             now = self._clock()
             last = self._last.get(host)
             waited = 0.0
