@@ -17,7 +17,7 @@ from ..errors import NeedsHuman, SourceUnreachable
 from .block import BlockDetector
 from .headers import header_int, parse_content_range
 from .policy import BodyPolicy
-from .request import DownloadResult, Response
+from .request import DownloadResult, ProbeInfo, ProbeRecord, Response
 from .throttle import Throttle, default_throttle
 from .transport import Transport
 
@@ -261,7 +261,7 @@ class BodyClient:
                     if status == 416:
                         if not resume or part_size <= 0:
                             raise SourceUnreachable(f"416 但本地没有可验证的 .part：{url}")
-                        probe = self.transport.probe(url, timeout=min(float(timeout), 20.0))
+                        probe = self.transport.probe(url, timeout=min(float(timeout), 20.0)) or ProbeInfo()
                         probe_etag, probe_lm = probe.etag, probe.last_modified
                         valid = (
                             probe.content_length == part_size
@@ -284,7 +284,7 @@ class BodyClient:
             except urllib.error.HTTPError as exc:
                 if exc.code == 416:
                     if resume and part_size > 0:
-                        probe = self.transport.probe(url, timeout=min(float(timeout), 20.0))
+                        probe = self.transport.probe(url, timeout=min(float(timeout), 20.0)) or ProbeInfo()
                         valid = (
                             probe.content_length == part_size
                             and ((_strong(probe.etag) and _strong(sidecar.get("etag", "")) and probe.etag == sidecar.get("etag"))
