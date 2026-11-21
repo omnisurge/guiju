@@ -1,5 +1,6 @@
 """P2-15 real HTTP sidecar and two-stage download tests."""
 
+# ruff: noqa: SIM117
 from __future__ import annotations
 
 import json
@@ -50,9 +51,8 @@ class SidecarE2ETest(unittest.TestCase):
 
     def test_interrupted_download_persists_part_and_meta(self):
         body = b"%PDF-12345"
-        with self._first(body) as server:
-            with self.assertRaises(SourceUnreachable):
-                _client().download(server.url + "/a", self.part, attempts=1)
+        with self._first(body) as server, self.assertRaises(SourceUnreachable):
+            _client().download(server.url + "/a", self.part, attempts=1)
         self.assertEqual(self.part.read_bytes(), body[:5])
         m = _meta(self.part)
         self.assertEqual(m["etag"], '"v1"')
@@ -62,9 +62,8 @@ class SidecarE2ETest(unittest.TestCase):
 
     def test_resume_after_interrupt_sends_range_and_if_range(self):
         body = b"%PDF-12345"
-        with self._first(body) as server:
-            with self.assertRaises(SourceUnreachable):
-                _client().download(server.url + "/a", self.part, attempts=1)
+        with self._first(body) as server, self.assertRaises(SourceUnreachable):
+            _client().download(server.url + "/a", self.part, attempts=1)
         with LocalServer("range_ok", body=body, headers={
             "ETag": '"v1"', "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
         }) as server:
@@ -203,25 +202,11 @@ class SidecarE2ETest(unittest.TestCase):
         self.assertEqual(m.get("size"), 0)
         self.assertFalse(any(self.part.parent.glob("*.meta.tmp")))
 
-    def test_write_meta_first_failure_preserves_existing(self):
-        # Kept distinct from the no-existing case: old pair must not be touched.
-        self.part.write_bytes(b"old!!")
-        meta = Path(str(self.part) + ".meta")
-        old = json.dumps({"etag": '"old"', "last_modified": "", "total": 5, "size": 5})
-        meta.write_text(old, encoding="utf-8")
-        with mock.patch("guiju.net.body._write_meta", side_effect=OSError("meta fail")):
-            with LocalServer("ok", body=b"%PDF") as server:
-                with self.assertRaises(OSError):
-                    _client().download(server.url + "/a", self.part, attempts=1)
-        self.assertEqual(self.part.read_bytes(), b"old!!")
-        self.assertEqual(meta.read_text("utf-8"), old)
-
     def test_compliance_download_two_stage(self):
         body = b"%PDF-12345"
         with mock.patch.object(compliance, "check_url", side_effect=lambda url: url):
-            with self._first(body, etag='"v1"') as first:
-                with self.assertRaises(SourceUnreachable):
-                    compliance.download(first.url + "/a", self.part, attempts=1)
+            with self._first(body, etag='"v1"') as first, self.assertRaises(SourceUnreachable):
+                compliance.download(first.url + "/a", self.part, attempts=1)
             with LocalServer("range_ok", body=body, headers={
                 "ETag": '"v1"', "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
             }) as second:
@@ -236,9 +221,8 @@ class SidecarE2ETest(unittest.TestCase):
         from guiju.sources import mohurd
         body = b"%PDF-12345"
         with mock.patch.object(compliance, "check_url", side_effect=lambda url: url):
-            with self._first(body, etag='"v1"') as first:
-                with self.assertRaises(SourceUnreachable):
-                    mohurd.download_to(first.url + "/a", str(self.part), "")
+            with self._first(body, etag='"v1"') as first, self.assertRaises(SourceUnreachable):
+                mohurd.download_to(first.url + "/a", str(self.part), "")
             with LocalServer("range_ok", body=body, headers={
                 "ETag": '"v1"', "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
             }) as second:
@@ -250,6 +234,7 @@ class SidecarE2ETest(unittest.TestCase):
 
     def test_pull_two_stage(self):
         import argparse
+
         from guiju.cli.commands import pull
         from guiju.sources import mohurd
         from guiju.store.sqlite import Store

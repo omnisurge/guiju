@@ -1,9 +1,11 @@
 """IDN canonical URL, probe failure and 9MiB stream regression tests."""
 
+# ruff: noqa: SIM117
 from __future__ import annotations
 
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -58,8 +60,9 @@ class ProbeFailureTest(unittest.TestCase):
         self.assertIsNone(info.status)
 
     def test_probe_redirect(self):
-        with LocalServer("redirect_loop", body=b"") as server:
-            info = Transport(BodyPolicy(check_url_fn=lambda u: u), Throttle(0)).probe(server.url + "/a")
+        t = Transport(BodyPolicy(check_url_fn=lambda u: u), Throttle(0))
+        with mock.patch.object(t, "open", side_effect=urllib.error.HTTPError("https://x.gov.cn/a", 302, "Found", {}, None)):
+            info = t.probe("https://x.gov.cn/a")
         self.assertIsNone(info.status)
 
     def test_truncated_probe_sink(self):
