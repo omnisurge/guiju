@@ -62,6 +62,15 @@ def file_id_of(url: str) -> str:
     return fid
 
 
+def _signed_download_url(file_url: str, *, now_ms: int | None = None) -> str:
+    """The one place that adds the site's timestamp/receivedToken to a file URL."""
+    fid = file_id_of(file_url)
+    ts = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    return f"{BASE}api/files/webDownload?" + urllib.parse.urlencode(
+        {"fileId": fid, "timestamp": ts, "receivedToken": _token(fid, ts)}
+    )
+
+
 def _fetch(query: dict) -> dict:
     """内容源仍走原合规传输；无效 JSON 不再漏成 internal 或空命中。"""
     try:
@@ -93,11 +102,7 @@ def find(ref: str) -> list[dict]:
 
 def download_to(file_url: str, part_path: str, referer: str = REFERER) -> tuple[int, str, int]:
     """流式下载（支持断点续传）。令牌按当前时间现算，所以归档的 URL 不会带过期令牌。"""
-    fid = file_id_of(file_url)
-    ts = int(time.time() * 1000)
-    signed = f"{BASE}api/files/webDownload?" + urllib.parse.urlencode(
-        {"fileId": fid, "timestamp": ts, "receivedToken": _token(fid, ts)}
-    )
+    signed = _signed_download_url(file_url)
     info = compliance.download(signed, part_path, referer=referer, timeout=180)
     with open(part_path, "rb") as fp:
         head = fp.read(64)
@@ -109,7 +114,8 @@ def download_to(file_url: str, part_path: str, referer: str = REFERER) -> tuple[
 
 
 def download(file_url: str, referer: str = REFERER) -> tuple[bytes, str]:
-    body, _content_type = compliance.download_bytes(file_url, referer=referer, timeout=180)
+    signed = _signed_download_url(file_url)
+    body, _content_type = compliance.download_bytes(signed, referer=referer, timeout=180)
     magic = magic_of(body)
     if magic != MAGIC_PDF:
         raise BadAttachment("上海标准接口返回的不是 PDF（可能是错误页或文件已撤下）")
