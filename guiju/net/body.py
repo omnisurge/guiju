@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import os
@@ -13,7 +14,7 @@ import urllib.request
 from pathlib import Path
 
 from .._version import __version__
-from ..errors import NeedsHuman, SourceUnreachable
+from ..errors import ComplianceDenied, NeedsHuman, SourceUnreachable
 from .block import BlockDetector
 from .headers import header_int, parse_content_range
 from .policy import BodyPolicy
@@ -25,7 +26,9 @@ UA = f"guiju/{__version__} (compliance-aware; official code fetcher)"
 
 
 def _strong(value: str) -> bool:
-    return bool(value) and not value.strip().startswith(("W/", "w/"))
+    if not value or value.strip().startswith(("W/", "w/")):
+        return False
+    return all(32 <= ord(ch) < 127 for ch in value)
 
 
 def _validator(headers) -> tuple[str, str]:
@@ -144,11 +147,11 @@ class BodyClient:
                         content_type=resp.headers.get("Content-Type", "").split(";", 1)[0].strip().lower(),
                         status=status,
                         headers=dict(resp.headers.items()) if hasattr(resp.headers, "items") else {},
+                        probe=ProbeRecord(url=url, status=status, bytes=len(body), outcome="ok"),
                     )
             except urllib.error.HTTPError as exc:
-                if exc.code == 429 or 500 <= exc.code <= 599:
-                    if attempt + 1 >= attempts:
-                        raise SourceUnreachable(f"源返回 HTTP {exc.code}：{url}") from exc
+                self._check_error_body(exc, url)
+                if 500 <= exc.code <= 599 and attempt + 1 < attempts:
                     continue
                 raise SourceUnreachable(f"源返回 HTTP {exc.code}：{url}") from exc
             except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
@@ -282,6 +285,7 @@ class BodyClient:
                         raise SourceUnreachable(f"416 验证器或长度不匹配：{url}")
                     raise SourceUnreachable(f"下载返回 HTTP {status}：{url}")
             except urllib.error.HTTPError as exc:
+                self._check_error_body(exc, url)
                 if exc.code == 416:
                     if resume and part_size > 0:
                         probe = self.transport.probe(url, timeout=min(float(timeout), 20.0)) or ProbeInfo()
@@ -303,13 +307,28 @@ class BodyClient:
                             restarted = True
                             continue
                     raise SourceUnreachable(f"下载返回 HTTP 416：{url}") from exc
-                if (exc.code == 429 or 500 <= exc.code <= 599) and attempt < attempts:
+                if 500 <= exc.code <= 599 and attempt < attempts:
                     continue
                 raise SourceUnreachable(f"下载返回 HTTP {exc.code}：{url}") from exc
             except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
                 if attempt < attempts:
                     continue
                 raise SourceUnreachable(f"下载不可达（{url}）：{type(exc).__name__}：{exc}") from exc
+
+    def _check_error_body(self, exc: urllib.error.HTTPError, url: str) -> None:
+        try:
+            body = exc.read(65536)
+        except (OSError, http.client.HTTPException, ValueError):
+            return
+        finally:
+            with contextlib.suppress(Exception):
+                exc.close()
+        ctype = ""
+        try:
+            ctype = exc.headers.get("Content-Type", "")
+        except Exception:
+            pass
+        self.detector.check(body[:65536], ctype)
 
     def _write_response(self, resp, part: Path, *, resume: bool, max_bytes: int) -> int:
         mode = "ab" if resume else "wb"

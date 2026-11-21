@@ -140,7 +140,7 @@ class MetadataClient:
             except urllib.error.HTTPError as exc:
                 try:
                     if exc.fp is not None and not getattr(exc.fp, "closed", False):
-                        self.detector.check(exc.read(8192), "text/html", reject_binary=True)
+                        self.detector.check(exc.read(65536), "text/html", reject_binary=True)
                 except (OSError, http.client.HTTPException, ValueError):
                     pass
                 finally:
