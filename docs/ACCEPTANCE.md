@@ -1,13 +1,28 @@
 # 验收记录
 
-> 最新发布验收：**v1.2.0-alpha.2（2026-11-20，预发布）** —— **810 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与 hk guiju-mcp 部署已完成。
+> 最新发布验收：**v1.2.0-alpha.3（2026-11-21，预发布）** —— **984 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与 hk guiju-mcp 部署见下。
 > 上一发布：**v1.1.0（2026-11-09）**；更早 v1.0.0 的 446 项单测 / hk M4 记录保留作历史对照。
 > 默认时效为 **native**；hk 服务与消费者切换沿用 v1.0.0 验证，NAS spec-currency 已停用（文件保留可回退）。后续各版本记录保留作历史对照。
 >
-> **阅读说明（2026-11-20）**：本文件按版本保留验收记录；v1.2.0-alpha.2 之前的 NAS/cmd/mcp 描述是历史事实，不代表当前架构。当前运行形态见 [docs/README.md](README.md) 与 [deploy/README.md](../deploy/README.md)。
+> **阅读说明（2026-11-21）**：本文件按版本保留验收记录；v1.2.0-alpha.3 之前的 NAS/cmd/mcp 描述是历史事实，不代表当前架构。当前运行形态见 [docs/README.md](README.md) 与 [deploy/README.md](../deploy/README.md)。
 >
 > **按语（2026-11-09）**：本地归档注册表已撤销（artifact 表、`verify`/`provenance` 命令删除），
 > 正文归档归 kb-system，幂等靠文件名 sha256 指纹。下文中 verify/provenance 相关行属历史验收记录，不再适用。
+
+## v1.2.0-alpha.3（2026-11-21，预发布）
+
+| 项 | 本次实测 |
+|---|---|
+| 代码基线 | `refactor/root-cause` a42cb64（B2/W1 网络层收口 + P0/P1 修复；发布 tag 指向本次发布提交） |
+| 版本 | `1.2.0a3`（发布 tag `v1.2.0-alpha.3`，指向本次发布提交；代码内容为 a42cb64） |
+| 完整单测矩阵 | Python 3.13.5、3.10.21 **各 984/984 通过** |
+| 本地 CI | ruff、984 单测、离线 e2e **4/4**、version/status/help 入口自检全绿 |
+| 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39 通过**，exit 0；日志 `/tmp/guiju-b2-blockfix-e2e-final2-20261121.log`，2781 bytes，SHA-256 `557f5647e699fa44c215d90d9fe0b4532b8900382267c7b5398e714cac958812` |
+| 网络层修复 | P0-1 上海正文 9175 仅对 `bzjg.zjw.sh.gov.cn` 放行；P0-2 共用 `_signed_download_url`；P0-3 有界截断重试与磁盘 part/sidecar 同步；P1-1 probe policy/throttle/UA/Referer 与 `ComplianceDenied` 上抛；P2 sidecar/206 边界/CI `PYTHON` 透传 |
+| 构建烟测 | wheel/sdist 均为 `guiju-1.2.0a3`；临时 venv 安装 wheel 后 `guiju version --json` 返回 `1.2.0a3` |
+| 发布产物 | GitHub prerelease `v1.2.0-alpha.3`；wheel `guiju-1.2.0a3-py3-none-any.whl` SHA-256 `ab74bc17d7a94c282f0bf36e6eb8eefbdd8d21a5dd4563c89fcca925471f5975`；sdist `guiju-1.2.0a3.tar.gz` SHA-256 `c192078fa9c993522aa8cbac6c98f7e4eb8a333cd2cea0268921f3927da6ab69` |
+| 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.3 |
+| hk 生产部署 | 待本次发布提交创建后部署并复核（部署记录补于本表） |
 
 ## v1.2.0-alpha.2（2026-11-20，预发布）
 
