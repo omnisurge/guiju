@@ -100,7 +100,6 @@ class BaselineCharacterizationTest(unittest.TestCase):
 
     def test_fixture_schema(self) -> None:
         self.assertEqual(len(CASES), 76)
-        self.assertEqual(len(CASES), 76)
         allowed_types = {
             "mode": str, "url_shape": str, "request_headers": dict,
             "outcome": str, "exit": int, "body_read_bytes": int,
