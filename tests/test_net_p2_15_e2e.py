@@ -202,6 +202,38 @@ class SidecarE2ETest(unittest.TestCase):
         self.assertEqual(m.get("size"), 0)
         self.assertFalse(any(self.part.parent.glob("*.meta.tmp")))
 
+    def test_interrupted_without_validator_writes_no_resume_meta(self):
+        body = b"%PDF-12345"
+        with LocalServer("two_stage_no_validator", body=body) as server:
+            with self.assertRaises(SourceUnreachable):
+                _client().download(server.url + "/a", self.part, attempts=1)
+            self.assertEqual(self.part.read_bytes(), body[:5])
+            meta = json.loads(Path(str(self.part) + ".meta").read_text("utf-8"))
+            self.assertEqual(meta.get("size"), 5)
+            self.assertEqual(meta.get("etag", ""), "")
+            result = _client().download(server.url + "/a", self.part, attempts=1)
+            req = server.state.requests[1].headers
+        self.assertEqual(result.bytes, 10)
+        self.assertNotIn("range", req)
+        self.assertNotIn("if-range", req)
+        self.assertEqual(self.part.read_bytes(), body)
+        self.assertFalse(Path(str(self.part) + ".meta").exists())
+
+    def test_stream_write_oserror_retains_part_and_meta(self):
+        body = b"%PDF-12345"
+        with LocalServer("range_ok", body=body, headers={"ETag": '"v1"'}) as server:
+            self.part.write_bytes(body[:5])
+            Path(str(self.part) + ".meta").write_text(json.dumps({
+                "etag": '"v1"', "last_modified": "", "total": 10, "size": 5,
+            }), encoding="utf-8")
+            with mock.patch("guiju.net.body.open", side_effect=OSError("disk full")):
+                with self.assertRaises(SourceUnreachable):
+                    _client().download(server.url + "/a", self.part, attempts=1)
+        self.assertEqual(self.part.read_bytes(), body[:5])
+        meta = json.loads(Path(str(self.part) + ".meta").read_text("utf-8"))
+        self.assertEqual(meta.get("size"), 5)
+        self.assertFalse(any(self.part.parent.glob("*.meta.tmp")))
+
     def test_compliance_download_two_stage(self):
         body = b"%PDF-12345"
         with mock.patch.object(compliance, "check_url", side_effect=lambda url: url):
