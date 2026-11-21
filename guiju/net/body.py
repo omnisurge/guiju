@@ -120,6 +120,8 @@ class BodyClient:
                     status = getattr(resp, "status", 200)
                     if status != 200:
                         raise SourceUnreachable(f"源返回 HTTP {status}：{url}")
+                    content_length = header_int(resp.headers.get("Content-Length"))
+                    chunked = "chunked" in resp.headers.get("Transfer-Encoding", "").lower()
                     chunks: list[bytes] = []
                     remaining = limit + 1
                     checked = False
@@ -136,6 +138,8 @@ class BodyClient:
                     body = b"".join(chunks)
                     if len(body) > limit:
                         raise NeedsHuman("页面响应过大，停止解析", hint="检查页面是否被反爬替换")
+                    if chunked and content_length is not None and len(body) != content_length:
+                        raise SourceUnreachable(f"Content-Length 与 chunked 实际长度不一致：{url}")
                     if not checked:
                         self.detector.check(body[:65536], resp.headers.get("Content-Type", ""))
                     missing = getattr(resp, "length", None)
@@ -212,6 +216,10 @@ class BodyClient:
                         if content_length is None and not chunked:
                             raise SourceUnreachable(f"响应既无 Content-Length 也无 chunked：{url}")
                         written = self._write_response(resp, part, resume=False, max_bytes=max_bytes)
+                        if chunked and content_length is not None and written != content_length:
+                            part.unlink(missing_ok=True)
+                            _unlink_meta(part)
+                            raise SourceUnreachable(f"Content-Length 与 chunked 实际长度不一致：{url}")
                         missing = getattr(resp, "length", None)
                         if missing is not None and missing > 0:
                             raise SourceUnreachable(f"响应读取失败（响应截断，尚缺 {missing} 字节）：{url}")

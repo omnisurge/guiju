@@ -50,6 +50,10 @@ class MetadataClient:
         self.detector = detector or BlockDetector()
         self.transport = transport or Transport(self.policy, self.throttle, self.detector)
 
+    def close(self) -> None:
+        """Compatibility hook; MetadataClient owns no persistent connection."""
+        return None
+
     def get(self, url: str, *, accept: str | None = "text/html,application/xhtml+xml") -> bytes:
         return self._request(url, method="GET", accept=accept)
 
