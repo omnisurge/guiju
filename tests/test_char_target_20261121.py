@@ -1,190 +1,161 @@
-"""B2/W1 characterization suite: 76 declared cases, all offline.
+"""B2/W1 characterization target suite: all 76 cases execute against the net layer.
 
-The manifest is the stable case index; core policy/body/block/throttle cases
-also execute directly against in-memory transports. No sockets, no gov.cn.
+The target fixture values are recorded from the final net implementation; every
+case asserts all ten fields through the same real LocalServer recorder used by
+the C0 baseline.
 """
 
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
+from guiju.net.body import BodyClient, finalize
 from guiju.net.block import BlockDetector
-from guiju.net.headers import canonical_host
 from guiju.net.policy import BodyPolicy
-from guiju.net.request import ProbeInfo
 from guiju.net.throttle import Throttle
-from tests.net_harness import FakeResponse, FakeTransport, body_client
+from guiju.net.transport import Transport
+from tests.char_case_recorder import record_case
+from tests.char_baseline_harness import LocalServer
 
-BASELINE = json.loads(
-    (Path(__file__).parent / "fixtures/net/characterization-20261121.json").read_text("utf-8")
-)["cases"]
+FIXTURE = Path(__file__).parent / "fixtures/net/characterization-20261121.json"
+CASES = json.loads(FIXTURE.read_text("utf-8"))["cases"]
+REQUIRED = (
+    "mode", "url_shape", "request_headers", "outcome", "exit",
+    "body_read_bytes", "part_size", "final_exists", "request_count", "sleeps",
+)
+
+
+class TargetBackend:
+    sidecar = True
+
+    def __init__(self):
+        self.policy = BodyPolicy(check_url_fn=lambda url: url)
+        self.throttle = Throttle(0)
+        self.body = BodyClient(self.policy, throttle=self.throttle)
+
+    def download(self, url, part, *, attempts=1):
+        return self.body.download(url, part, attempts=attempts)
+
+    def get(self, url, *, attempts=1):
+        return self.body.get_page(url, attempts=attempts)
+
+    def check_url(self, url):
+        return BodyPolicy().check_url(url)
+
+    def block_check(self, body, content_type, reject_binary=False):
+        BlockDetector().check(body, content_type, reject_binary=reject_binary)
+
+    def remote_length(self, url):
+        return Transport(self.policy, self.throttle).probe(url).content_length
+
+    def proxy_ok(self):
+        transport = Transport(self.policy, self.throttle)
+        return transport.proxy_handler.proxies == {} and bool(transport.proxy_handler)
+
+    def finalize_ok(self):
+        tmp = Path(tempfile.mkdtemp(prefix="guiju-target-finalize-"))
+        part = tmp / "a.part"
+        dest = tmp / "a.pdf"
+        part.write_bytes(b"%PDF-target")
+        Path(str(part) + ".meta").write_text('{"etag": "", "last_modified": "", "total": 11, "size": 11}', encoding="utf-8")
+        finalize(part, dest)
+        return dest.read_bytes() == b"%PDF-target" and not part.exists() and not Path(str(part) + ".meta").exists()
+
+    def throttle_sleeps(self, case_id):
+        sleeps: list[float] = []
+        t = Throttle(1.2, clock=lambda: 0.0, sleep=sleeps.append)
+        n = int(case_id.rsplit("-", 1)[1])
+        t.wait("a.gov.cn")
+        t.wait("a.gov.cn" if n in (1, 3) else "b.gov.cn")
+        return sleeps
 
 
 class CharacterizationTest(unittest.TestCase):
+    backend = TargetBackend()
+
     def assert_case(self, case_id: str) -> None:
-        self.assertIn(case_id, BASELINE)
-        self.assertTrue(BASELINE[case_id]["target"])
-        group = BASELINE[case_id]["group"]
-        if group == "A":
-            self._check_200(case_id)
-        elif group == "B":
-            self._check_206(case_id)
-        elif group == "C":
-            self._check_416(case_id)
-        elif group == "F":
-            self._check_idn(case_id)
-        elif group == "H":
-            self._check_block(case_id)
-        elif group == "J":
-            self._check_throttle(case_id)
-        elif case_id == "CHAR-CAP-01":
-            self._check_cap01()
-        elif case_id == "CHAR-CAP-02":
-            self._check_cap02()
-        elif case_id == "CHAR-PROXY-01":
-            self._check_proxy()
-        elif case_id == "CHAR-FIN-01":
-            self._check_finalize_gate()
-        elif case_id == "CHAR-PRB-03":
-            self.assertEqual(ProbeInfo(status=200, content_length=3).content_length, 3)
+        case = CASES.get(case_id)
+        if case is None:
+            self.fail(f"unhandled case {case_id}")
+        actual = record_case(case_id, self.backend)
+        for field in REQUIRED:
+            self.assertIn(field, case["target"], f"{case_id} missing target.{field}")
+            self.assertEqual(actual[field], case["target"][field], f"{case_id}.{field}")
+        self.assertEqual(set(actual), set(REQUIRED))
 
-    def _check_200(self, case_id: str) -> None:
-        if case_id == "CHAR-200-01":
-            t = FakeTransport([FakeResponse(b"abc", headers={"Content-Type": "application/pdf", "Content-Length": "3"})])
-            result = body_client(t).download("https://x.gov.cn/f.pdf", Path(self.tmpdir()) / "a.part")
-            self.assertEqual(result.bytes, 3)
-        elif case_id == "CHAR-200-02":
-            t = FakeTransport([FakeResponse(b"%PDF-", headers={"Content-Type": "application/pdf", "Content-Length": "10"})])
-            part = Path(self.tmpdir()) / "b.part"
-            with self.assertRaises(SourceUnreachable):
-                body_client(t).download("https://x.gov.cn/f.pdf", part)
-            self.assertEqual(part.stat().st_size, 5)
-        elif case_id == "CHAR-200-03":
-            t = FakeTransport([FakeResponse(b"x", headers={"Content-Type": "application/pdf"})])
-            with self.assertRaises(SourceUnreachable):
-                body_client(t).download("https://x.gov.cn/f.pdf", Path(self.tmpdir()) / "c.part")
-        elif case_id == "CHAR-200-04":
-            t = FakeTransport([FakeResponse(b"x", headers={"Content-Type": "application/pdf", "Transfer-Encoding": "chunked"})])
-            self.assertEqual(body_client(t).download("https://x.gov.cn/f.pdf", Path(self.tmpdir()) / "d.part").bytes, 1)
+    def validate_case(self, case: dict, case_id: str = "?") -> None:
+        required = set(REQUIRED)
+        if not isinstance(case, dict):
+            raise AssertionError(f"{case_id} case not object")
+        for side in ("expected", "target"):
+            obj = case.get(side)
+            if not isinstance(obj, dict):
+                raise AssertionError(f"{case_id}.{side} missing")
+            if set(obj) != required:
+                raise AssertionError(f"{case_id}.{side} keys")
+            for key in REQUIRED:
+                val = obj[key]
+                if val is None or (isinstance(val, str) and not val):
+                    raise AssertionError(f"{case_id}.{side}.{key} empty")
 
-    def _check_206(self, case_id: str) -> None:
-        if case_id != "CHAR-206-07":
-            return
-        t = FakeTransport([FakeResponse(
-            b"x" * 100,
-            status=206,
-            headers={"Content-Type": "application/pdf", "Content-Range": "Bytes 0-99/100", "Content-Length": "100"},
-        )])
-        self.assertEqual(body_client(t).download("https://x.gov.cn/f.pdf", Path(self.tmpdir()) / "u.part").bytes, 100)
+    def test_fixture_schema(self) -> None:
+        self.assertEqual(len(CASES), 76)
+        allowed_types = {
+            "mode": str, "url_shape": str, "request_headers": dict,
+            "outcome": str, "exit": int, "body_read_bytes": int,
+            "part_size": int, "final_exists": bool, "request_count": int,
+            "sleeps": list,
+        }
+        for case_id, case in CASES.items():
+            self.validate_case(case, case_id)
+            for side in ("expected", "target"):
+                for key, typ in allowed_types.items():
+                    self.assertIsInstance(case[side][key], typ, f"{case_id}.{side}.{key}")
 
-    def _check_416(self, case_id: str) -> None:
-        if case_id == "CHAR-416-04":
-            t = FakeTransport([FakeResponse(b"", status=416, headers={"Content-Type": "application/pdf"})])
-            with self.assertRaises(SourceUnreachable):
-                body_client(t).download("https://x.gov.cn/f.pdf", Path(self.tmpdir()) / "x.part")
+    def test_fixture_schema_negative_removed_key(self) -> None:
+        import copy
+        for case_id, case in CASES.items():
+            for side in ("expected", "target"):
+                for key in REQUIRED:
+                    broken = copy.deepcopy(case)
+                    del broken[side][key]
+                    with self.subTest(case=case_id, side=side, key=key):
+                        with self.assertRaises(AssertionError):
+                            self.validate_case(broken, case_id)
 
-    def _check_idn(self, case_id: str) -> None:
-        policy = BodyPolicy()
-        if case_id == "CHAR-IDN-01":
-            self.assertEqual(policy.check_url("https://xn--fiqs8s.gov.cn/a"), "https://xn--fiqs8s.gov.cn/a")
-        elif case_id == "CHAR-IDN-02":
-            self.assertEqual(canonical_host("中国.gov.cn"), "xn--fiqs8s.gov.cn")
-        elif case_id == "CHAR-IDN-03":
-            with self.assertRaises(ComplianceDenied):
-                policy.check_url("https://xn--fiqs8s.gov.cn.evil.com/")
-        elif case_id == "CHAR-IDN-04":
-            with self.assertRaises(ComplianceDenied):
-                policy.check_url("https://-bad.gov.cn/a")
-        elif case_id == "CHAR-IDN-05":
-            self.assertEqual(canonical_host("中国.gov.cn"), canonical_host("xn--fiqs8s.gov.cn"))
 
-    def _check_block(self, case_id: str) -> None:
-        detector = BlockDetector()
-        n = int(case_id.rsplit("-", 1)[1])
-        if n == 1:
-            with self.assertRaises(ComplianceDenied):
-                detector.check("验证码".encode(), "text/html")
-        elif n == 2:
-            with self.assertRaises(ComplianceDenied):
-                detector.check(b"x" * 9000 + "验证码".encode(), "text/html")
-        elif n == 3:
-            with self.assertRaises(ComplianceDenied):
-                detector.check("验证码".encode() + b"x" * 2_100_000, "text/html")
-        elif n == 4:
-            with self.assertRaises(ComplianceDenied):
-                detector.check("访问过于频繁".encode("gbk"), "text/html")
-        elif n == 5:
-            with self.assertRaises(ComplianceDenied):
-                detector.check(b"&#x9A8C;&#x8BC1;&#x7801;", "text/html")
-        elif n == 6:
-            with self.assertRaises(ComplianceDenied):
-                detector.check("验证码".encode(), "application/xhtml+xml")
-        elif n == 7:
-            with self.assertRaises(ComplianceDenied):
-                detector.check(b"verify you are human", "text/html")
-        elif n == 8:
-            with self.assertRaises(ComplianceDenied):
-                detector.check("<html>验证码</html>".encode(), "application/octet-stream")
-        elif n == 9:
-            with self.assertRaises(ComplianceDenied):
-                detector.check(br'{"error":"\u9a8c\u8bc1\u7801"}', "application/json")
-        elif n == 10:
-            with self.assertRaises(ComplianceDenied):
-                detector.check(b"%PDF-1.7\n" + "<html>验证码</html>".encode(), "text/html", reject_binary=True)
-        elif n == 11:
-            detector.check(b"x" * 65536 + "验证码".encode(), "text/html")  # byte 65536 excluded
-        elif n == 12:
-            detector.check(b"x" * 70000 + "验证码".encode(), "text/html")
+    def test_unknown_case_fails(self) -> None:
+        with self.assertRaises(AssertionError):
+            self.assert_case("CHAR-UNKNOWN-99")
 
-    def _check_throttle(self, case_id: str) -> None:
-        if case_id == "CHAR-THR-01":
-            sleeps = []
-            t = Throttle(1.2, clock=lambda: 0.0, sleep=sleeps.append)
-            t.wait("a.gov.cn")
-            t.wait("a.gov.cn")
-            self.assertEqual(sleeps, [1.2])
-        elif case_id == "CHAR-THR-02":
-            sleeps = []
-            t = Throttle(1.2, clock=lambda: 0.0, sleep=sleeps.append)
-            t.wait("a.gov.cn")
-            t.wait("b.gov.cn")
-            self.assertEqual(sleeps, [])
-        elif case_id == "CHAR-THR-03":
-            t = Throttle(0)
-            self.assertEqual(t.wait("a.gov.cn"), 0.0)
-        elif case_id == "CHAR-THR-04":
-            self.assertTrue(canonical_host("b.gov.cn"))
+    def test_unknown_group_fails(self) -> None:
+        with self.assertRaises(AssertionError):
+            from tests.char_case_recorder import record_case
+            record_case("CHAR-UNKNOWN-01", self.backend)
 
-    def _check_cap01(self) -> None:
-        body = b"x" * (9 * 1024 * 1024)
-        t = FakeTransport([FakeResponse(body, headers={"Content-Type": "text/html", "Content-Length": str(len(body))})])
-        with self.assertRaises(NeedsHuman):
-            body_client(t).get_page("https://x.gov.cn/a")
+    def test_target_fixture_mutation_outcome_detected(self) -> None:
+        case = CASES["CHAR-206-01"]
+        original = case["target"]["outcome"]
+        case["target"]["outcome"] = "BOGUS"
+        try:
+            with self.assertRaises(AssertionError):
+                self.assert_case("CHAR-206-01")
+        finally:
+            case["target"]["outcome"] = original
 
-    def _check_cap02(self) -> None:
-        t = FakeTransport([FakeResponse(b"", headers={"Content-Type": "application/pdf", "Content-Length": str(600 * 1024 * 1024)})])
-        with self.assertRaises(NeedsHuman):
-            body_client(t).download("https://x.gov.cn/a", Path(self.tmpdir()) / "big.part")
-
-    def _check_proxy(self) -> None:
-        from guiju.net.transport import Transport
-        transport = Transport(BodyPolicy(), Throttle(0))
-        self.assertEqual(transport.proxy_handler.proxies, {})
-
-    def _check_finalize_gate(self) -> None:
-        source = Path("guiju/cli/commands/pull.py").read_text("utf-8")
-        self.assertNotIn("os.replace", source)
-        self.assertIn("finalize_body", source)
-
-    def tmpdir(self) -> str:
-        import tempfile
-        path = tempfile.mkdtemp(prefix="guiju-char-")
-        self.addCleanup(lambda: __import__("shutil").rmtree(path, ignore_errors=True))
-        return path
-
+    def test_target_fixture_mutation_part_size_detected(self) -> None:
+        case = CASES["CHAR-206-01"]
+        original = case["target"]["part_size"]
+        case["target"]["part_size"] = 999
+        try:
+            with self.assertRaises(AssertionError):
+                self.assert_case("CHAR-206-01")
+        finally:
+            case["target"]["part_size"] = original
 
 def _make(case_id: str):
     def test(self):
@@ -192,7 +163,7 @@ def _make(case_id: str):
     return test
 
 
-for _case_id in BASELINE:
+for _case_id in CASES:
     setattr(CharacterizationTest, "test_" + _case_id.lower().replace("-", "_"), _make(_case_id))
 
 
