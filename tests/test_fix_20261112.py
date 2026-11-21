@@ -154,14 +154,14 @@ class CrawlCompleteTest(unittest.TestCase):
 
 class ThrottleTest(unittest.TestCase):
     def setUp(self):
-        self._saved = dict(compliance._last_call)
-        compliance._last_call.clear()
-        self.addCleanup(compliance._last_call.clear)
-        self.addCleanup(compliance._last_call.update, self._saved)
+        self._saved = dict(compliance.default_throttle()._last)
+        compliance.default_throttle()._last.clear()
+        self.addCleanup(compliance.default_throttle()._last.clear)
+        self.addCleanup(compliance.default_throttle()._last.update, self._saved)
 
     def test_throttle_lock_exists(self):
         """节流读-睡-写必须由模块级锁互斥（并发绕过修复的存在性验证）。"""
-        self.assertIsInstance(compliance._throttle_lock, type(threading.Lock()))
+        self.assertIsInstance(compliance.default_throttle()._lock, type(threading.Lock()))
 
     def test_concurrent_throttle_same_host_serializes(self):
         """同 host 并发请求必须串行间隔 >= 阈值，不能齐刷刷同刻通过。"""

@@ -28,24 +28,24 @@ class _SyncDict(dict):
 class CurrencyThrottleTest(unittest.TestCase):
     def setUp(self):
         self.addCleanup(mock.patch.stopall)
-        self.original_last = httpx._last_call
+        self.original_last = httpx.default_throttle()._last
         mock.patch.object(httpx, "MIN_INTERVAL", 0.5).start()
         self.sleeps = []
         mock.patch.object(httpx.time, "sleep", lambda s: self.sleeps.append(round(s, 3))).start()
 
     def tearDown(self):
-        httpx._last_call = self.original_last
-        httpx._last_call.clear()
+        httpx.default_throttle()._last = self.original_last
+        httpx.default_throttle()._last.clear()
 
     def test_serial_calls_wait(self):
-        httpx._last_call.clear()
+        httpx.default_throttle()._last.clear()
         httpx._throttle("www.csres.com")
         httpx._throttle("www.csres.com")
         self.assertEqual(len(self.sleeps), 1)
         self.assertGreaterEqual(self.sleeps[0], 0.4)
 
     def test_concurrent_calls_are_serialized(self):
-        httpx._last_call = _SyncDict()
+        httpx.default_throttle()._last = _SyncDict()
         threads = [threading.Thread(target=httpx._throttle, args=("www.csres.com",)) for _ in range(2)]
         for thread in threads:
             thread.start()

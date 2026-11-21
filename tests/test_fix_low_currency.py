@@ -584,10 +584,10 @@ class R4FormPostRegistryDrivenTest(unittest.TestCase):
 
     def test_registered_form_host_passes_gate_and_posts(self):
         client = HttpClient()
-        with mock.patch.object(client, "_request", return_value=b"{}") as req:
+        with mock.patch.object(client._client, "post_form", return_value=b"{}") as req:
             client.post_form("https://www.ccsn.org.cn/newweb/api/StandardQuery.assx/queryStandard",
                              {"key": "GB 50011"})
-        self.assertEqual(req.call_args.kwargs["method"], "POST")
+        req.assert_called_once()
 
     def test_non_form_host_keeps_original_deny_and_get_unaffected(self):
         client = HttpClient()

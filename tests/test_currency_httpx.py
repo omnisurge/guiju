@@ -20,7 +20,7 @@ def status_error(status, body=b"temporary error"):
 class HttpClientTest(unittest.TestCase):
     def setUp(self):
         self.client = httpx.HttpClient()
-        self.client._opener = mock.Mock()
+        self.client.transport = mock.Mock()
         self.sleep = mock.patch.object(httpx.time, "sleep").start()
         self.throttle = mock.patch.object(httpx, "_throttle").start()
         self.no_socket = mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")).start()
@@ -28,15 +28,15 @@ class HttpClientTest(unittest.TestCase):
 
     def test_200_uses_ascii_versioned_ua_timeout_and_closes_response(self):
         resp = FakeResponse(b"<html>ok</html>")
-        self.client._opener.open.return_value = resp
+        self.client.transport.open.return_value = resp
         self.assertEqual(self.client.get(URL), b"<html>ok</html>")
-        req = self.client._opener.open.call_args.args[0]
+        req = self.client.transport.open.call_args.args[0]
         self.assertEqual(req.get_method(), "GET")
         self.assertEqual(req.get_header("User-agent"), httpx.UA)
         self.assertTrue(httpx.UA.isascii())
         self.assertIn("guiju/" + __version__, httpx.UA)
         self.assertEqual(req.get_header("Accept"), "text/html,application/xhtml+xml")
-        self.assertEqual(self.client._opener.open.call_args.kwargs, {"timeout": 25.0})
+        self.assertEqual(self.client.transport.open.call_args.kwargs, {"timeout": 25.0})
         self.assertEqual(resp.read_sizes, [httpx.MAX_RESPONSE_BYTES + 1, httpx.MAX_RESPONSE_BYTES + 1 - 15])
         self.assertTrue(resp.closed)
         self.sleep.assert_not_called()
@@ -49,59 +49,59 @@ class HttpClientTest(unittest.TestCase):
 
     def test_500_then_200_retries_once(self):
         err = status_error(500)
-        self.client._opener.open.side_effect = [err, FakeResponse()]
+        self.client.transport.open.side_effect = [err, FakeResponse()]
         self.assertEqual(self.client.get(URL), b"<html></html>")
-        self.assertEqual(self.client._opener.open.call_count, 2)
+        self.assertEqual(self.client.transport.open.call_count, 2)
         self.sleep.assert_called_once_with(0.5)
         self.assertTrue(err.closed)
         self.assertEqual(self.throttle.call_count, 2)
 
     def test_502_exhausts_exactly_three_attempts(self):
-        self.client._opener.open.side_effect = [status_error(502) for _ in range(3)]
+        self.client.transport.open.side_effect = [status_error(502) for _ in range(3)]
         with self.assertRaises(SourceUnreachable) as ctx:
             self.client.get(URL)
         self.assertIn("502", str(ctx.exception))
         self.assertEqual(ctx.exception.exit, 20)
-        self.assertEqual(self.client._opener.open.call_count, 3)
+        self.assertEqual(self.client.transport.open.call_count, 3)
         self.assertEqual(self.sleep.call_args_list, [mock.call(0.5), mock.call(1.5)])
 
     def test_429_without_challenge_is_bounded_retry(self):
-        self.client._opener.open.side_effect = [status_error(429), FakeResponse()]
+        self.client.transport.open.side_effect = [status_error(429), FakeResponse()]
         self.assertEqual(self.client.get(URL), b"<html></html>")
-        self.assertEqual(self.client._opener.open.call_count, 2)
+        self.assertEqual(self.client.transport.open.call_count, 2)
 
     def test_other_4xx_does_not_retry_or_become_empty_result(self):
         for status in (400, 401, 403, 404):
-            self.client._opener.open.reset_mock(side_effect=True)
+            self.client.transport.open.reset_mock(side_effect=True)
             self.sleep.reset_mock()
-            self.client._opener.open.side_effect = status_error(status)
+            self.client.transport.open.side_effect = status_error(status)
             with self.subTest(status=status), self.assertRaises(SourceUnreachable):
                 self.client.get(URL)
-            self.client._opener.open.assert_called_once()
+            self.client.transport.open.assert_called_once()
             self.sleep.assert_not_called()
 
     def test_transport_errors_retry_then_recover(self):
-        self.client._opener.open.side_effect = [urllib.error.URLError("reset"), TimeoutError("slow"), FakeResponse()]
+        self.client.transport.open.side_effect = [urllib.error.URLError("reset"), TimeoutError("slow"), FakeResponse()]
         self.assertEqual(self.client.get(URL), b"<html></html>")
-        self.assertEqual(self.client._opener.open.call_count, 3)
-        requests = [call.args[0] for call in self.client._opener.open.call_args_list]
+        self.assertEqual(self.client.transport.open.call_count, 3)
+        requests = [call.args[0] for call in self.client.transport.open.call_args_list]
         self.assertEqual(len({id(req) for req in requests}), 3)
 
     def test_transport_failure_exhaustion_raises_not_empty(self):
-        self.client._opener.open.side_effect = urllib.error.URLError("offline")
+        self.client.transport.open.side_effect = urllib.error.URLError("offline")
         with self.assertRaises(SourceUnreachable) as ctx:
             self.client.get(URL)
         self.assertIn("offline", str(ctx.exception))
-        self.assertEqual(self.client._opener.open.call_count, 3)
+        self.assertEqual(self.client.transport.open.call_count, 3)
 
     def test_200_body_read_failure_does_not_refetch(self):
         resp = FakeResponse()
         resp.read = mock.Mock(side_effect=http.client.IncompleteRead(b"partial", 100))
-        self.client._opener.open.return_value = resp
+        self.client.transport.open.return_value = resp
         with self.assertRaises(SourceUnreachable) as ctx:
             self.client.get(URL)
         self.assertIn("读取失败", str(ctx.exception))
-        self.client._opener.open.assert_called_once()
+        self.client.transport.open.assert_called_once()
         self.sleep.assert_not_called()
         self.assertTrue(resp.closed)
 
@@ -109,12 +109,12 @@ class HttpClientTest(unittest.TestCase):
         from guiju.currency.csres import CsresCurrency
 
         resp = real_response(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 1000\r\n\r\n<html>")
-        self.client._opener.open.return_value = resp
+        self.client.transport.open.return_value = resp
         with self.assertRaises(SourceUnreachable) as ctx:
             CsresCurrency(self.client).lookup("GB50011")
         self.assertEqual(ctx.exception.exit, 20)
         self.assertIn("响应截断", str(ctx.exception))
-        self.client._opener.open.assert_called_once()
+        self.client.transport.open.assert_called_once()
         self.sleep.assert_not_called()
         self.assertTrue(resp.closed)
 
@@ -125,17 +125,17 @@ class HttpClientTest(unittest.TestCase):
              b"4\r\ntest\r\n0\r\n\r\n", b"test"),
         ):
             resp = real_response(wire)
-            self.client._opener.open.return_value = resp
+            self.client.transport.open.return_value = resp
             with self.subTest(wire=wire):
                 self.assertEqual(self.client.get(URL), expected)
                 self.assertTrue(resp.closed)
 
     def test_real_truncated_chunked_body_is_unreachable(self):
         resp = real_response(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\n\r\n10\r\nshort")
-        self.client._opener.open.return_value = resp
+        self.client.transport.open.return_value = resp
         with self.assertRaises(SourceUnreachable):
             self.client.get(URL)
-        self.client._opener.open.assert_called_once()
+        self.client.transport.open.assert_called_once()
         self.assertTrue(resp.closed)
 
     def test_short_reads_are_joined_until_eof_within_size_limit(self):
@@ -143,47 +143,47 @@ class HttpClientTest(unittest.TestCase):
             def read(self, size=-1):
                 return super().read(min(size, 3))
 
-        self.client._opener.open.return_value = ShortResponse(b"<html>complete</html>")
+        self.client.transport.open.return_value = ShortResponse(b"<html>complete</html>")
         self.assertEqual(self.client.get(URL), b"<html>complete</html>")
 
     def test_error_body_read_failure_keeps_http_classification(self):
         err = status_error(403)
         err.read = mock.Mock(side_effect=OSError("cannot read error page"))
-        self.client._opener.open.side_effect = err
+        self.client.transport.open.side_effect = err
         with self.assertRaises(SourceUnreachable) as ctx:
             self.client.get(URL)
         self.assertIn("403", str(ctx.exception))
-        self.client._opener.open.assert_called_once()
+        self.client.transport.open.assert_called_once()
         self.assertTrue(err.closed)
 
     def test_non_200_success_status_is_not_parsed(self):
         for status in (204, 206):
-            self.client._opener.open.reset_mock(side_effect=True)
+            self.client.transport.open.reset_mock(side_effect=True)
             resp = FakeResponse(status=status)
-            self.client._opener.open.return_value = resp
+            self.client.transport.open.return_value = resp
             with self.subTest(status=status), self.assertRaises(SourceUnreachable):
                 self.client.get(URL)
             self.assertEqual(resp.read_sizes, [])
             self.assertTrue(resp.closed)
-            self.client._opener.open.assert_called_once()
+            self.client.transport.open.assert_called_once()
 
     def test_challenge_200_detected_in_both_utf8_and_gbk_without_retry(self):
         for encoding in ("utf-8", "gbk"):
-            self.client._opener.open.reset_mock(side_effect=True)
-            self.client._opener.open.return_value = FakeResponse("<html>请输入验证码</html>".encode(encoding))
+            self.client.transport.open.reset_mock(side_effect=True)
+            self.client.transport.open.return_value = FakeResponse("<html>请输入验证码</html>".encode(encoding))
             with self.subTest(encoding=encoding), self.assertRaises(ComplianceDenied) as ctx:
                 self.client.get(URL)
             self.assertEqual(ctx.exception.exit, 40)
-            self.client._opener.open.assert_called_once()
+            self.client.transport.open.assert_called_once()
             self.sleep.assert_not_called()
 
     def test_challenge_http_error_never_retries_even_429_or_503(self):
         for status in (403, 429, 503):
-            self.client._opener.open.reset_mock(side_effect=True)
-            self.client._opener.open.side_effect = status_error(status, "人机验证".encode("gbk"))
+            self.client.transport.open.reset_mock(side_effect=True)
+            self.client.transport.open.side_effect = status_error(status, "人机验证".encode("gbk"))
             with self.subTest(status=status), self.assertRaises(ComplianceDenied):
                 self.client.get(URL)
-            self.client._opener.open.assert_called_once()
+            self.client.transport.open.assert_called_once()
             self.sleep.assert_not_called()
 
     def test_non_metadata_urls_are_rejected_before_request(self):
@@ -196,7 +196,7 @@ class HttpClientTest(unittest.TestCase):
         ):
             with self.subTest(url=url), self.assertRaises(ComplianceDenied):
                 self.client.get(url)
-        self.client._opener.open.assert_not_called()
+        self.client.transport.open.assert_not_called()
 
     def test_attachment_or_binary_type_is_refused_before_reading(self):
         for headers in (
@@ -204,7 +204,7 @@ class HttpClientTest(unittest.TestCase):
             {"Content-Type": "text/html", "Content-Disposition": 'attachment; filename="code.pdf"'}, {},
         ):
             resp = FakeResponse(b"%PDF-body", headers=headers)
-            self.client._opener.open.return_value = resp
+            self.client.transport.open.return_value = resp
             with self.subTest(headers=headers), self.assertRaises(ComplianceDenied):
                 self.client.get(URL)
             self.assertEqual(resp.read_sizes, [])
@@ -213,25 +213,25 @@ class HttpClientTest(unittest.TestCase):
 
     def test_binary_disguised_as_html_is_refused(self):
         for body in (b" %PDF-1.7", b"PK\x03\x04data", b"\xd0\xcf\x11\xe0data"):
-            self.client._opener.open.return_value = FakeResponse(body)
+            self.client.transport.open.return_value = FakeResponse(body)
             with self.subTest(body=body), self.assertRaises(ComplianceDenied):
                 self.client.get(URL)
         self.sleep.assert_not_called()
 
     def test_response_size_is_bounded_and_not_retried(self):
         resp = FakeResponse(b"x" * (httpx.MAX_RESPONSE_BYTES + 10))
-        self.client._opener.open.return_value = resp
+        self.client.transport.open.return_value = resp
         with self.assertRaises(NeedsHuman):
             self.client.get(URL)
         self.assertEqual(resp.read_sizes, [httpx.MAX_RESPONSE_BYTES + 1])
-        self.client._opener.open.assert_called_once()
+        self.client.transport.open.assert_called_once()
         self.assertTrue(resp.closed)
 
     def test_final_url_cannot_escape_approved_endpoint(self):
-        self.client._opener.open.return_value = FakeResponse(url="https://evil.example/page")
+        self.client.transport.open.return_value = FakeResponse(url="https://evil.example/page")
         with self.assertRaises(ComplianceDenied):
             self.client.get(URL)
-        self.client._opener.open.assert_called_once()
+        self.client.transport.open.assert_called_once()
 
 
 class RedirectAndThrottleTest(unittest.TestCase):
@@ -271,13 +271,13 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     return next(replies)
 
             client = httpx.HttpClient()
-            client._opener = urllib.request.build_opener(
+            client.transport = urllib.request.build_opener(
                 urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
             )
             with self.subTest(status=status), mock.patch.object(httpx, "_throttle"), \
                     mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")):
                 self.assertEqual(client.get(URL), b"test")
-                first.read.assert_called_once_with(8192)
+                first.read.assert_called_once_with(65536)
                 self.assertTrue(first.closed)
 
     def test_real_opener_redirect_attachment_is_denied_without_read_or_follow(self):
@@ -296,7 +296,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                 return first
 
         client = httpx.HttpClient()
-        client._opener = urllib.request.build_opener(
+        client.transport = urllib.request.build_opener(
             urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
         )
         with mock.patch.object(httpx, "_throttle"), \
@@ -322,7 +322,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     return first
 
             client = httpx.HttpClient()
-            client._opener = urllib.request.build_opener(
+            client.transport = urllib.request.build_opener(
                 urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
             )
             with self.subTest(body=body), mock.patch.object(httpx, "_throttle"), \
@@ -330,7 +330,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     self.assertRaises(ComplianceDenied):
                 client.get(URL)
             self.assertEqual(len(calls), 1)
-            first.read.assert_called_once_with(8192)
+            first.read.assert_called_once_with(65536)
             self.assertTrue(first.closed)
 
     def test_real_opener_truncated_redirect_is_unreachable_not_followed(self):
@@ -346,7 +346,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                 return first
 
         client = httpx.HttpClient()
-        client._opener = urllib.request.build_opener(
+        client.transport = urllib.request.build_opener(
             urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
         )
         with mock.patch.object(httpx, "_throttle"), self.assertRaises(SourceUnreachable) as ctx:
@@ -368,7 +368,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
 
         handler = httpx._MetadataRedirect()
         client = httpx.HttpClient()
-        client._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), handler, MemoryTransport())
+        client.transport = urllib.request.build_opener(urllib.request.ProxyHandler({}), handler, MemoryTransport())
         with mock.patch.object(httpx, "_throttle"), self.assertRaises(SourceUnreachable) as ctx:
             client.get(URL)
         self.assertEqual(ctx.exception.exit, 20)
@@ -388,7 +388,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     return first
 
             client = httpx.HttpClient()
-            client._opener = urllib.request.build_opener(
+            client.transport = urllib.request.build_opener(
                 urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
             )
             with self.subTest(location=location), mock.patch.object(httpx, "_throttle"), \
@@ -401,7 +401,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
 
     def test_throttle_never_shortens_host_interval(self):
         with (
-            mock.patch.dict(httpx._last_call, {}, clear=True),
+            mock.patch.dict(httpx.default_throttle()._last, {}, clear=True),
             mock.patch.object(httpx.time, "monotonic", side_effect=[10.0, 10.0, 10.3, 11.2, 20.0, 20.0]),
             mock.patch.object(httpx.time, "sleep") as sleep,
         ):
@@ -420,7 +420,7 @@ class M2HttpClientTest(unittest.TestCase):
 
     def setUp(self):
         self.client = httpx.HttpClient()
-        self.client._opener = mock.Mock()
+        self.client.transport = mock.Mock()
         self.sleep = mock.patch.object(httpx.time, "sleep").start()
         mock.patch.object(httpx, "_throttle").start()
         mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")).start()
@@ -431,9 +431,9 @@ class M2HttpClientTest(unittest.TestCase):
 
     def test_json_get_uses_fixed_metadata_endpoint_and_accept(self):
         url = self.SAMR + "?searchText=GB19001"
-        self.client._opener.open.return_value = self.response(url)
+        self.client.transport.open.return_value = self.response(url)
         self.assertEqual(self.client.get(url, accept="application/json"), b'{"rows":[]}')
-        req = self.client._opener.open.call_args.args[0]
+        req = self.client.transport.open.call_args.args[0]
         self.assertEqual(req.get_header("Accept"), "application/json")
         self.assertEqual(req.get_method(), "GET")
 
@@ -441,9 +441,9 @@ class M2HttpClientTest(unittest.TestCase):
         import urllib.parse
 
         for url, accept in ((self.CCSN, "application/json"), (self.DBBA, None)):
-            self.client._opener.open.return_value = self.response(url)
+            self.client.transport.open.return_value = self.response(url)
             self.client.post_form(url, {"key": "DB31/T 792-2015", "备注": "中文"}, accept=accept)
-            req = self.client._opener.open.call_args.args[0]
+            req = self.client.transport.open.call_args.args[0]
             with self.subTest(url=url):
                 self.assertEqual(req.get_method(), "POST")
                 self.assertEqual(req.get_header("Accept"), accept)
@@ -453,9 +453,9 @@ class M2HttpClientTest(unittest.TestCase):
                 self.assertEqual(req.get_header("User-agent"), httpx.UA)
 
     def test_post_retry_rebuilds_identical_query_body(self):
-        self.client._opener.open.side_effect = [status_error(503), self.response(self.CCSN)]
+        self.client.transport.open.side_effect = [status_error(503), self.response(self.CCSN)]
         self.client.post_form(self.CCSN, {"gjz": "50011", "pageIndex": "1"})
-        requests = [call.args[0] for call in self.client._opener.open.call_args_list]
+        requests = [call.args[0] for call in self.client.transport.open.call_args_list]
         self.assertEqual(len(requests), 2)
         self.assertEqual(requests[0].data, requests[1].data)
         self.assertIsNot(requests[0], requests[1])
@@ -466,19 +466,19 @@ class M2HttpClientTest(unittest.TestCase):
         for url in (URL, "https://www.ccsn.org.cn/download", "https://evil.example/query"):
             with self.subTest(url=url), self.assertRaises(ComplianceDenied):
                 self.client.post_form(url, {"key": "GB1"})
-        self.client._opener.open.assert_not_called()
+        self.client.transport.open.assert_not_called()
 
     def test_escaped_json_or_html_challenge_is_immediate_40(self):
         for body in (rb'{"error":"\u9a8c\u8bc1\u7801"}', b"<html>&#x9A8C;&#x8BC1;&#x7801;</html>"):
-            self.client._opener.open.reset_mock()
-            self.client._opener.open.return_value = self.response(self.DBBA, body)
+            self.client.transport.open.reset_mock()
+            self.client.transport.open.return_value = self.response(self.DBBA, body)
             with self.subTest(body=body), self.assertRaises(ComplianceDenied):
                 self.client.post_form(self.DBBA, {"key": "DB1"}, accept=None)
-            self.client._opener.open.assert_called_once()
+            self.client.transport.open.assert_called_once()
             self.sleep.assert_not_called()
 
     def test_json_headers_do_not_permit_attachments_or_unlisted_hosts(self):
-        self.client._opener.open.return_value = FakeResponse(
+        self.client.transport.open.return_value = FakeResponse(
             b"{}", url=self.SAMR, headers={"Content-Type": "application/json", "Content-Disposition": "attachment"})
         with self.assertRaises(ComplianceDenied):
             self.client.get(self.SAMR, accept="application/json")
@@ -495,7 +495,7 @@ class M2HttpClientTest(unittest.TestCase):
         self.assertTrue(intermediate.closed)
 
     def test_final_response_cannot_claim_another_approved_source(self):
-        self.client._opener.open.return_value = self.response(self.DBBA)
+        self.client.transport.open.return_value = self.response(self.DBBA)
         with self.assertRaises(ComplianceDenied):
             self.client.get(self.SAMR, accept="application/json")
 
@@ -541,7 +541,7 @@ class M2HttpClientTest(unittest.TestCase):
                     return response
 
             client = httpx.HttpClient()
-            client._opener = urllib.request.build_opener(
+            client.transport = urllib.request.build_opener(
                 urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport())
             with self.subTest(status=status):
                 self.assertEqual(client.post_form(self.CCSN, {"gjz": "50011"}), b"{}")
@@ -560,7 +560,7 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
 
     def setUp(self):
         self.client = httpx.HttpClient()
-        self.client._opener = mock.Mock()
+        self.client.transport = mock.Mock()
         mock.patch.object(httpx, "_throttle").start()
         mock.patch.object(httpx.time, "sleep").start()
         mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")).start()
@@ -571,10 +571,10 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
 
         response = FakeResponse(b'{"data":{"list":[],"total":0}}', url=self.URL,
                                 headers={"Content-Type": "application/json; charset=utf-8"})
-        self.client._opener.open.return_value = response
+        self.client.transport.open.return_value = response
         payload = {"condition": "上海地标", "isAbolish": False, "standardType": 0, "pageNum": 1}
         self.client.post_json(self.URL, payload)
-        req = self.client._opener.open.call_args.args[0]
+        req = self.client.transport.open.call_args.args[0]
         self.assertEqual(req.get_method(), "POST")
         self.assertEqual(json.loads(req.data.decode("utf-8")), payload)
         self.assertEqual(req.get_header("Content-type"), "application/json")
@@ -591,20 +591,20 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
                     "https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWeb/pc/", M2HttpClientTest.CCSN):
             with self.subTest(url=url), self.assertRaises(ComplianceDenied):
                 self.client.post_json(url, {})
-        self.client._opener.open.assert_not_called()
+        self.client.transport.open.assert_not_called()
 
     def test_shanghai_json_endpoint_cannot_be_called_as_form_or_get(self):
         with self.assertRaises(ComplianceDenied):
             self.client.post_form(self.URL, {"condition": "DG/TJ08"})
         with self.assertRaises(ComplianceDenied):
             self.client.get(self.URL)
-        self.client._opener.open.assert_not_called()
+        self.client.transport.open.assert_not_called()
 
     def test_json_post_503_retry_replays_identical_body(self):
-        self.client._opener.open.side_effect = [status_error(503), FakeResponse(
+        self.client.transport.open.side_effect = [status_error(503), FakeResponse(
             b"{}", url=self.URL, headers={"Content-Type": "application/json"})]
         self.client.post_json(self.URL, {"condition": "DG/TJ08-2007"})
-        reqs = [call.args[0] for call in self.client._opener.open.call_args_list]
+        reqs = [call.args[0] for call in self.client.transport.open.call_args_list]
         self.assertEqual(len(reqs), 2)
         self.assertEqual(reqs[0].data, reqs[1].data)
         self.assertEqual(reqs[0].get_header("Content-type"), "application/json")
@@ -612,11 +612,11 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
     def test_json_challenge_or_pdf_is_40_without_retry(self):
         for body, ctype in ((rb'{"error":"\u9a8c\u8bc1\u7801"}', "application/json"),
                             (b"%PDF-1.7", "application/json"), (b"binary", "application/pdf")):
-            self.client._opener.open.reset_mock()
-            self.client._opener.open.return_value = FakeResponse(body, url=self.URL, headers={"Content-Type": ctype})
+            self.client.transport.open.reset_mock()
+            self.client.transport.open.return_value = FakeResponse(body, url=self.URL, headers={"Content-Type": ctype})
             with self.subTest(body=body), self.assertRaises(ComplianceDenied):
                 self.client.post_json(self.URL, {})
-            self.client._opener.open.assert_called_once()
+            self.client.transport.open.assert_called_once()
 
     def test_real_redirects_preserve_json_only_for_307_308(self):
         for status in (301, 302, 303, 307, 308):
@@ -634,7 +634,7 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
                     return response
 
             client = httpx.HttpClient()
-            client._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport())
+            client.transport = urllib.request.build_opener(urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport())
             with self.subTest(status=status):
                 if status in (307, 308):
                     self.assertEqual(client.post_json(self.URL, {"condition": "DG/TJ08-2007"}), b"{}")

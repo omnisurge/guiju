@@ -48,8 +48,8 @@ class NativeMetadataBoundaryTest(unittest.TestCase):
     def test_full_lookup_neither_calls_content_guard_nor_writes_files(self):
         raw = (ROOT / "tests/fixtures/currency/csres_gb50011.gbk").read_bytes()
         client = HttpClient()
-        client._opener = mock.Mock()
-        client._opener.open.return_value = FakeResponse(raw)
+        client.transport = mock.Mock()
+        client.transport.open.return_value = FakeResponse(raw)
         cur = CsresCurrency(client)
         fail = AssertionError("元数据链路不得触及正文出口、文件、数据库或真实网络")
         with ExitStack() as stack:
@@ -62,7 +62,7 @@ class NativeMetadataBoundaryTest(unittest.TestCase):
             stack.enter_context(mock.patch("guiju.currency.httpx._throttle"))
             records = cur.lookup("GB50011")
         self.assertEqual([r.status for r in records], ["superseded", "current"])
-        client._opener.open.assert_called_once()
+        client.transport.open.assert_called_once()
 
 
     def test_all_six_adapters_and_native_without_cache_have_no_file_writes(self):
@@ -87,8 +87,8 @@ class NativeMetadataBoundaryTest(unittest.TestCase):
         prepared = [(adapter, code, (fixtures / name).read_bytes(), ctype) for adapter, code, name, ctype in cases]
         for adapter, code, raw, ctype in prepared:
             client = HttpClient()
-            client._opener = mock.Mock()
-            client._opener.open.return_value = FakeResponse(raw, url=adapter.url, headers={"Content-Type": ctype})
+            client.transport = mock.Mock()
+            client.transport.open.return_value = FakeResponse(raw, url=adapter.url, headers={"Content-Type": ctype})
             instance = adapter(client)
             fail = AssertionError("元数据适配器不能访问正文/文件/数据库/真实网络")
             with self.subTest(source=instance.name), ExitStack() as stack:
@@ -102,11 +102,11 @@ class NativeMetadataBoundaryTest(unittest.TestCase):
                 records = instance.lookup(code)
                 self.assertTrue(records)
                 self.assertTrue(all(row.source == instance.name for row in records))
-            client._opener.open.assert_called_once()
+            client.transport.open.assert_called_once()
         # Native 默认不装配磁盘缓存；只注册纯元数据适配器。
         client = HttpClient()
-        client._opener = mock.Mock()
-        client._opener.open.return_value = FakeResponse(prepared[0][2], url=CsresCurrency.url)
+        client.transport = mock.Mock()
+        client.transport.open.return_value = FakeResponse(prepared[0][2], url=CsresCurrency.url)
         native = NativeCurrency(default_registry(client))
         with (
             mock.patch.object(builtins, "open", side_effect=AssertionError("不可落盘")),
@@ -124,8 +124,8 @@ class NativeMetadataBoundaryTest(unittest.TestCase):
         self.assertIs(content._record, core.record)
         raw = (ROOT / "tests/fixtures/currency/shzjw_current_projection.json").read_bytes()
         client = HttpClient()
-        client._opener = mock.Mock()
-        client._opener.open.return_value = FakeResponse(raw, url=ShzjwCurrency.url,
+        client.transport = mock.Mock()
+        client.transport.open.return_value = FakeResponse(raw, url=ShzjwCurrency.url,
                                                        headers={"Content-Type": "application/json"})
         failure = AssertionError("原生上海元数据不得调用正文传输/下载/签名/存储")
         with ExitStack() as stack:
@@ -142,7 +142,7 @@ class NativeMetadataBoundaryTest(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].source, "shzjw")
         parse.assert_called_once()
-        client._opener.open.assert_called_once()
+        client.transport.open.assert_called_once()
 
 
 if __name__ == "__main__":

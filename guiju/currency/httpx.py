@@ -1,26 +1,19 @@
-"""原生时效元数据的 HTTP 出口（不是第三方 httpx，也不是正文下载器）。
-
-仅放行已批准的时效查询端点，逐跳校验；响应仅在内存中，拒绝附件与二进制。
-默认 25s / 最多 3 次 / 0.5s、1.5s 退避，按 host 至少间隔 1.2s。
-不调用 compliance：正文出口与元数据出口的边界由测试分别钉住。
-"""
+"""Native currency metadata HTTP facade (not third-party httpx)."""
 
 from __future__ import annotations
 
-import html
-import http.client
-import io
 import json
 import math
-import re
-import threading
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
+import time  # noqa: F401  # tests patch facade.time.sleep for metadata backoff
 
 from .._version import __version__
-from ..errors import ComplianceDenied, NeedsHuman, SourceUnreachable
+from ..errors import ComplianceDenied
+from ..net.block import BlockDetector
+from ..net.endpoints import DEFAULT_METADATA_ENDPOINTS
+from ..net.metadata import MetadataClient
+from ..net.policy import MetadataPolicy, normalize_path
+from ..net.redirect import RedirectGuard
+from ..net.throttle import default_throttle
 from .contract import json_error as _json_error
 
 DEFAULT_TIMEOUT = 25.0
@@ -30,150 +23,68 @@ MIN_INTERVAL = 1.2
 MAX_RESPONSE_BYTES = 2_000_000
 UA = f"guiju/{__version__} (metadata-only; standards currency)"
 
-# 不是可配置白名单：不提供任意主机 / 路径 / 下载开关。
-_HTML = frozenset({"text/html", "application/xhtml+xml"})
-_JSON = _HTML | {"application/json", "text/json", "text/plain"}
-_ENDPOINTS = {
-    "www.csres.com": {"/s.jsp": _HTML},
-    "www.ccsn.org.cn": {"/newweb/api/StandardQuery.assx/queryStandard": _JSON},
-    "std.samr.gov.cn": {"/gb/search/gbQueryPage": _JSON},
-    "jtst.mot.gov.cn": {"/search/stdPage": _HTML},
-    "dbba.sacinfo.org.cn": {"/stdQueryList": _JSON},
-    "bzjg.zjw.sh.gov.cn": {"/JGBStandardWebApi/external/localStandard/list": _JSON},
-}
-_SHANGHAI_HOST = "bzjg.zjw.sh.gov.cn"
-_SHANGHAI_ORIGIN = "https://bzjg.zjw.sh.gov.cn:9175"
-_SHANGHAI_REFERER = _SHANGHAI_ORIGIN + "/JGBStandardWeb/pc/"
-_BLOCK_MARKERS = (
-    "验证码", "人机验证", "滑动验证", "安全验证", "访问过于频繁", "请求过于频繁",
-    "verify you are human", "cf-chl-",
-)
-_last_call: dict[str, float] = {}
-# H4 同类问题：读-睡-写必须是一个临界区，否则两个线程会同时读到旧的 last，
-# 都判定"不需要等"，限速形同虚设。与 compliance._throttle_lock 保持同一模式。
-_throttle_lock = threading.Lock()
+_ENDPOINTS = DEFAULT_METADATA_ENDPOINTS
 
 
 def _normalize_path(path: str) -> str:
-    """规范化 path 再比对白名单（P2-17）。
-
-    csres 会在 URL 里挂 ;jsessionid=...；重复斜杠也等价。只做等价化，不做通配：
-    /s.jsp 与 /s.jsp/extra 仍然不同。
-    """
-    segments = (segment.split(";", 1)[0] for segment in path.split("/"))
-    return re.sub(r"/{2,}", "/", "/".join(segments)) or "/"
+    return normalize_path(path)
 
 
 def _check_url(url: str) -> str:
-    try:
-        parts = urllib.parse.urlsplit(url)
-        port = parts.port
-    except ValueError as exc:
-        raise ComplianceDenied("元数据 URL 端口无效") from exc
-    host = (parts.hostname or "").lower()
-    if (
-        parts.scheme not in ("http", "https")
-        or host not in _ENDPOINTS
-        or _normalize_path(parts.path) not in _ENDPOINTS[host]
-        or parts.username is not None
-        or parts.password is not None
-        or (host == _SHANGHAI_HOST and (parts.scheme != "https" or port != 9175))
-        or (host != _SHANGHAI_HOST and port not in (None, 80 if parts.scheme == "http" else 443))
-        or parts.fragment
-    ):
-        raise ComplianceDenied(f"非已批准元数据查询端点，拒绝访问：{url}")
-    return host
+    return MetadataPolicy().check_url(url)
 
 
 def _check_redirect_target(req, target: str) -> str:
-    try:
-        host = _check_url(target)
-    except ComplianceDenied as exc:
-        parts = urllib.parse.urlsplit(target)
-        current = urllib.parse.urlsplit(req.full_url)
-        if ((parts.hostname or "").lower() == (current.hostname or "").lower()
-                and _normalize_path(parts.path) == "/error/noright.html"):
-            # csres 用错误页代替 4xx/5xx；这是源故障，应允许 fallback，
-            # 不能伪装成“命中合规护栏”而阻断备源。
-            raise SourceUnreachable(f"元数据源返回错误页，不跟随：{target}") from exc
-        raise
-    if host != urllib.parse.urlsplit(req.full_url).hostname.lower():
-        raise ComplianceDenied("元数据重定向不得跨源，即使目标也是已批准查询端点")
-    return host
+    return MetadataPolicy().check_redirect(req, target)
 
 
 def _throttle(host: str) -> None:
-    # 整个"读 last → 计算/等待 → 写 last"必须在锁内完成；只锁写等于没锁。
-    with _throttle_lock:
-        now = time.monotonic()
-        last = _last_call.get(host)
-        if last is not None and now - last < MIN_INTERVAL:
-            time.sleep(MIN_INTERVAL - (now - last))
-        _last_call[host] = time.monotonic()
+    default_throttle().wait(host)
+
+
+class _CompatThrottle:
+    def wait(self, host: str) -> None:
+        _throttle(host)
 
 
 def _check_headers(headers, url: str, *, redirect: bool = False) -> None:
-    ctype = headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-    disposition = headers.get("Content-Disposition", "").lower()
-    parts = urllib.parse.urlsplit(url)
-    allowed = _ENDPOINTS[parts.hostname.lower()][_normalize_path(parts.path)]
-    if "attachment" in disposition or (ctype not in allowed and not (redirect and not ctype)):
-        raise ComplianceDenied(f"元数据出口拒绝非查询文本或附件响应：{url}")
-
-
-class _MetadataRedirect(urllib.request.HTTPRedirectHandler):
-    max_redirections = 5
-
-    def http_error_302(self, req, fp, code, msg, headers):
-        # urllib 基类会 fp.read() 无界吞掉中间响应。这里只读有界 HTML 头
-        # 检测人机校验/伪装二进制，随后关闭；给基类空流以保留其循环检测。
-        try:
-            target = headers.get("Location") or headers.get("URI")
-            if not target:
-                raise SourceUnreachable(f"元数据重定向未提供目标：{req.full_url}")
-            _check_redirect_target(req, urllib.parse.urljoin(req.full_url, target))
-            _check_headers(headers, req.full_url, redirect=True)
-            try:
-                head = fp.read(8192)
-            except (OSError, http.client.HTTPException) as exc:
-                raise SourceUnreachable(f"元数据重定向响应读取失败：{req.full_url}") from exc
-            _detect_block(head)
-            missing = getattr(fp, "length", None)
-            if len(head) < 8192 and missing is not None and missing > 0:
-                raise SourceUnreachable(f"元数据重定向响应读取失败（响应截断）：{req.full_url}")
-        finally:
-            fp.close()
-        with io.BytesIO() as empty:
-            return super().http_error_302(req, empty, code, msg, headers)
-
-    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        target = urllib.parse.urljoin(req.full_url, newurl)
-        host = _check_redirect_target(req, target)
-        if host == _SHANGHAI_HOST and (req.get_method() != "POST" or code not in (307, 308)):
-            raise ComplianceDenied("上海查询不跟随会丢失 JSON 条件的重定向")
-        _throttle(host)
-        if req.get_method() == "POST" and code in (307, 308):
-            # 查询表单可重放；307/308 不得被 urllib 变成丢失参数的 GET。
-            kept = {k: v for k, v in req.headers.items() if k.lower() != "content-length"}
-            return urllib.request.Request(target, data=req.data, headers=kept, method="POST",
-                                          origin_req_host=req.origin_req_host, unverifiable=True)
-        # Python 3.10 基类未列 308；GET 按同样保留方法的 307 处理。
-        return super().redirect_request(req, fp, 307 if code == 308 else code, msg, headers, target)
+    MetadataPolicy().check_headers(headers, url, redirect=redirect)
 
 
 def _detect_block(body: bytes) -> None:
-    if body.lstrip().startswith((b"%PDF-", b"PK\x03\x04", b"\xd0\xcf\x11\xe0")):
-        raise ComplianceDenied("元数据出口拒绝伪装成 HTML 的正文文件")
-    # 上游 GBK，错误页也可能是 UTF-8；识别任一编码的人机校验便立即放弃。
-    for encoding in ("utf-8", "gbk"):
-        head = body[:8192].decode(encoding, "ignore").lower()
-        # JSON Unicode 转义与 HTML 实体不能把人机校验藏成“无命中”。
-        head = html.unescape(re.sub(r"\\u([0-9a-f]{4})", lambda m: chr(int(m[1], 16)), head))
-        for marker in _BLOCK_MARKERS:
-            if marker in head:
-                raise ComplianceDenied(f"元数据源返回人机校验（命中「{marker}」），停止，不重试")
+    BlockDetector().check(body, "text/html", reject_binary=True)
+
+
+def _MetadataRedirect():
+    """Compatibility factory for tests that compose a raw urllib opener."""
+    return RedirectGuard(MetadataPolicy(), _CompatThrottle())
+
+
+class HttpClient:
+    """Only returns raw metadata bytes; adapters own parsing."""
+
+    def __init__(self, timeout: float = DEFAULT_TIMEOUT) -> None:
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("元数据请求超时必须为正数")
+        self.timeout = timeout
+        self._client = MetadataClient(timeout=timeout, throttle=_CompatThrottle())
+        self.transport = self._client.transport
+
+    def get(self, url: str, *, accept: str | None = "text/html,application/xhtml+xml") -> bytes:
+        self._client.transport = self.transport
+        return self._client.get(url, accept=accept)
+
+    def post_form(self, url: str, fields: dict[str, str], *, accept: str | None = "application/json") -> bytes:
+        self._client.transport = self.transport
+        host = self._client.policy.check_url(url)
+        from .registry import default_registry
+        if not default_registry().form_post_for_host(host):
+            raise ComplianceDenied(f"此元数据端点不接受查询表单：{url}")
+        return self._client.post_form(url, fields, accept=accept)
+
+    def post_json(self, url: str, payload: dict) -> bytes:
+        self._client.transport = self.transport
+        return self._client.post_json(url, payload)
 
 
 def decode_json(source: str, raw: bytes) -> dict:
@@ -220,7 +131,7 @@ def json_int(item: dict, key: str, source: str) -> int:
 
 
 def json_flag(item: dict, key: str, source: str) -> bool | None:
-    """布尔开关（如 ccsn HasNextPage）。null 视为未知；0/1 按 Go 解码口径接受。"""
+    """Boolean flag (e.g. ccsn HasNextPage); null means unknown; 0/1 accepted."""
     value = item.get(key)
     if value is None:
         return None
@@ -229,98 +140,3 @@ def json_flag(item: dict, key: str, source: str) -> bool | None:
     if type(value) is int and value in (0, 1):
         return bool(value)
     raise _json_error(source, f"{key} 必须为布尔值")
-
-
-class HttpClient:
-    """仅返回原始元数据字节；编码与解析错误在适配器层处理，不重发请求。"""
-
-    def __init__(self, timeout: float = DEFAULT_TIMEOUT) -> None:
-        if not math.isfinite(timeout) or timeout <= 0:
-            raise ValueError("元数据请求超时必须为正数")
-        self.timeout = timeout
-        self._opener = urllib.request.build_opener(_MetadataRedirect())
-
-    def get(self, url: str, *, accept: str | None = "text/html,application/xhtml+xml") -> bytes:
-        return self._request(url, method="GET", accept=accept)
-
-    def post_form(self, url: str, fields: dict[str, str], *, accept: str | None = "application/json") -> bytes:
-        host = _check_url(url)
-        # 表单端点白名单由注册表 Route(hosts=…, form_post=True) 驱动；未注册 host 拒发、维持 GET。
-        # 延迟导入避免 registry→httpx 顶层环。
-        from .registry import default_registry
-        if not default_registry().form_post_for_host(host):
-            raise ComplianceDenied(f"此元数据端点不接受查询表单：{url}")
-        data = urllib.parse.urlencode(fields).encode("ascii")
-        return self._request(url, method="POST", data=data, accept=accept)
-
-    def post_json(self, url: str, payload: dict) -> bytes:
-        host = _check_url(url)
-        if host != _SHANGHAI_HOST:
-            raise ComplianceDenied("JSON POST 只允许上海固定元数据查询端点")
-        data = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
-        return self._request(url, method="POST", data=data, accept="application/json", json_body=True)
-
-    def _request(self, url: str, *, method: str, data: bytes | None = None, accept: str | None,
-                 json_body: bool = False) -> bytes:
-        host = _check_url(url)
-        if host == _SHANGHAI_HOST and method != "POST":
-            raise ComplianceDenied("上海元数据查询只接受 POST JSON，不跟随改为 GET 的跳转")
-        if accept not in (None, "application/json", "text/html", "text/html,application/xhtml+xml"):
-            raise ValueError("元数据 Accept 只允许已知查询文本类型")
-        for attempt in range(MAX_ATTEMPTS):
-            if attempt:
-                time.sleep(BACKOFF[attempt - 1])
-            _throttle(host)
-            headers = {"User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9"}
-            if accept is not None:
-                headers["Accept"] = accept
-            if data is not None:
-                headers["Content-Type"] = "application/json" if json_body else "application/x-www-form-urlencoded"
-            if host == _SHANGHAI_HOST:
-                headers["Origin"] = _SHANGHAI_ORIGIN
-                headers["Referer"] = _SHANGHAI_REFERER
-            req = urllib.request.Request(url, data=data, headers=headers, method=method)
-            try:
-                with self._opener.open(req, timeout=self.timeout) as resp:
-                    # urllib 对 204/206 不抛 HTTPError；与 Go 一样只认 200。
-                    status = resp.status
-                    if status != 200:
-                        raise SourceUnreachable(f"元数据源返回 HTTP {status}：{url}")
-                    _check_redirect_target(req, resp.geturl())
-                    _check_headers(resp.headers, url)
-                    try:
-                        # read(amt) 遇 Content-Length 截断不会自动抛 IncompleteRead。
-                        # 有界读到 EOF 后还须检查剩余长度，不能把半页伪装成无命中。
-                        chunks: list[bytes] = []
-                        remaining = MAX_RESPONSE_BYTES + 1
-                        while remaining:
-                            chunk = resp.read(remaining)
-                            if not chunk:
-                                break
-                            chunks.append(chunk)
-                            remaining -= len(chunk)
-                        body = b"".join(chunks)
-                        missing = getattr(resp, "length", None)
-                        if len(body) <= MAX_RESPONSE_BYTES and missing is not None and missing > 0:
-                            raise SourceUnreachable(f"元数据响应读取失败（响应截断，尚缺 {missing} 字节）：{url}")
-                    except (OSError, http.client.HTTPException) as exc:
-                        raise SourceUnreachable(f"元数据响应读取失败：{url}：{exc}") from exc
-                    _detect_block(body)
-                    if len(body) > MAX_RESPONSE_BYTES:
-                        raise NeedsHuman("元数据响应过大，停止解析", hint="检查时效查询端点与响应结构")
-                    return body
-            except urllib.error.HTTPError as exc:
-                try:
-                    if exc.fp is not None and not getattr(exc.fp, "closed", False):
-                        _detect_block(exc.read(8192))
-                except (OSError, http.client.HTTPException, ValueError):
-                    pass  # 错误页读失败/重定向循环的空流已关闭，都不改变 HTTP 状态分类。
-                finally:
-                    exc.close()
-                retryable = 500 <= exc.code <= 599 or exc.code == 429
-                if not retryable or attempt == MAX_ATTEMPTS - 1:
-                    raise SourceUnreachable(f"元数据源返回 HTTP {exc.code}：{url}") from exc
-            except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
-                if attempt == MAX_ATTEMPTS - 1:
-                    raise SourceUnreachable(f"元数据源不可达（{url}）：{type(exc).__name__}：{exc}") from exc
-        raise AssertionError("元数据请求重试循环不应落空")  # pragma: no cover

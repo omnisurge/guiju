@@ -504,9 +504,9 @@ class JsessionIdTest(OfflineTestCase):
 
     def test_session_id_url_passes_client_and_final_url_check(self):
         client = HttpClient()
-        client._opener = mock.Mock()
+        client.transport = mock.Mock()
         final = "https://www.csres.com/s.jsp;jsessionid=ABC"
-        client._opener.open.return_value = FakeResponseFor(b"<html></html>", final)
+        client.transport.open.return_value = FakeResponseFor(b"<html></html>", final)
         with mock.patch("guiju.currency.httpx._throttle"):
             self.assertEqual(client.get(final), b"<html></html>")
 
