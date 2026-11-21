@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 
 from .._version import __version__
-from ..errors import ComplianceDenied, NeedsHuman, SourceUnreachable
+from ..errors import NeedsHuman, SourceUnreachable
 from .block import BlockDetector
 from .headers import header_int, parse_content_range
 from .policy import BodyPolicy
@@ -324,10 +324,8 @@ class BodyClient:
             with contextlib.suppress(Exception):
                 exc.close()
         ctype = ""
-        try:
+        with contextlib.suppress(Exception):
             ctype = exc.headers.get("Content-Type", "")
-        except Exception:
-            pass
         self.detector.check(body[:65536], ctype)
 
     def _write_response(self, resp, part: Path, *, resume: bool, max_bytes: int) -> int:

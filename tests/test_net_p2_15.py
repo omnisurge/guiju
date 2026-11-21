@@ -7,7 +7,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from guiju.errors import SourceUnreachable
 from guiju.net.request import ProbeInfo
 from tests.net_harness import FakeResponse, FakeTransport, body_client
 
@@ -37,8 +36,7 @@ class IfRangeTest(unittest.TestCase):
                 "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
             })
 
-        t = FakeTransport([open_side])
-        # FakeTransport expects responses, use a tiny adapter
+        # FakeTransport with a tiny adapter around the response callable.
         class T(FakeTransport):
             def open(inner, req, timeout=0):
                 return open_side(req, timeout)

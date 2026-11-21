@@ -8,7 +8,6 @@ import time  # noqa: F401  # tests patch facade.time.sleep for metadata backoff
 
 from .._version import __version__
 from ..errors import ComplianceDenied
-from ..net.block import BlockDetector
 from ..net.endpoints import DEFAULT_METADATA_ENDPOINTS
 from ..net.metadata import MetadataClient
 from ..net.policy import MetadataPolicy, normalize_path
