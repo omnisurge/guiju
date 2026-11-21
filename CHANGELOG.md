@@ -1,5 +1,15 @@
 # 变更记录
 
+## 1.2.0a3 — 2026-11-21（1.2.0-alpha.3 预发布）
+
+- **P0-1：上海正文 9175 端口**：`BodyPolicy` 仅对 `bzjg.zjw.sh.gov.cn` 放行 `https:9175`，其他 gov.cn 主机仍沿用 None/80/443 的全局端口策略。
+- **P0-2：上海下载签名共用**：抽出 `_signed_download_url`，`download` 与 `download_to` 统一带 `timestamp`/`receivedToken`，归档 `download_url` 保持无令牌。
+- **P0-3：有界截断重试**：新增 `_ResponseTruncated` 专用异常和单次截断重试；仅长度不完整且可 resume 的 200/206 可重试，非法 Content-Range、验证器不匹配不进入该路径；重试前同步磁盘 `part_size`/sidecar，500B+200B 断流后第二次 `Range=bytes=700-`，最终 1000B 无重复。
+- **P1-1：probe 请求上下文**：`Transport.probe` 统一 `BodyPolicy.check_url`、限速、User-Agent 与 Referer，只吞网络/协议异常，`ComplianceDenied` 原样上抛。
+- **P2：网络层收敛**：sidecar 按首块/每 1MiB/结束写入；`attempts=1` 可完成一次 206/416 协议重启；206 拒绝 `end < start`、`end >= total`；`scripts/ci-c0-baseline.sh` 透传 `PYTHON`。
+- **测试与验收**：全量测试、C0 baseline/target、sidecar、ruff、offline e2e、真实联网 e2e 的结果以最终验收记录为准。
+- **边界**：无退出码、DB schema、部署、NAS 或第三方依赖变化。
+
 ## 1.2.0a2 — 2026-11-20（1.2.0-alpha.2 预发布）
 
 - **P3-7：`cite --strict` 失败体契约收紧**：`GuijuError` 失败载荷不再允许 `cite` 等成功字段，strict 的 20/34/32 失败体只返回错误/诊断字段；成功体与非 strict 时效降级仍含 `cite`，非 strict 解析/用法失败仍为 `ok: false` 且无 `cite`。读取 `ok:false` 的 `cite` 属未定义行为；需要候选请去掉 `--strict` 重跑。无退出码/DB/网络/部署变化。
