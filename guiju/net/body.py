@@ -421,9 +421,8 @@ class BodyClient:
                 if written + len(pending) > max_bytes:
                     fp.close()
                     if resume:
-                        fp = open(part, "r+b")
-                        fp.truncate(start_size)
-                        fp.close()
+                        with open(part, "r+b") as trunc:
+                            trunc.truncate(start_size)
                     else:
                         part.unlink(missing_ok=True)
                         _unlink_meta(part)
