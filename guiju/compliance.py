@@ -101,21 +101,12 @@ def download_bytes(
 
 
 
-
-def _GuardedRedirect():
-    """Compatibility factory for old tests; production uses net.redirect.RedirectGuard."""
-    from .net.policy import BodyPolicy as _BP
-    from .net.redirect import RedirectGuard
-    return RedirectGuard(_BP(check_url_fn=check_url), _CompatThrottle(), BlockDetector())
-
-
 __all__ = [
     "ALLOWED_SUFFIX",
     "BLOCK_MARKERS",
     "DEFAULT_MIN_INTERVAL",
     "UA",
     "Response",
-    "_GuardedRedirect",
     "_header_int",
     "_parse_content_range",
     "check_url",

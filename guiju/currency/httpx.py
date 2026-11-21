@@ -11,7 +11,6 @@ from ..errors import ComplianceDenied
 from ..net.endpoints import DEFAULT_METADATA_ENDPOINTS
 from ..net.metadata import MetadataClient
 from ..net.policy import MetadataPolicy, normalize_path
-from ..net.redirect import RedirectGuard
 from ..net.throttle import default_throttle
 from .contract import json_error as _json_error
 
@@ -40,11 +39,6 @@ class _CompatThrottle:
 
 
 _check_headers = MetadataPolicy().check_headers
-
-
-def _MetadataRedirect():
-    """Compatibility factory for tests that compose a raw urllib opener."""
-    return RedirectGuard(MetadataPolicy(), _CompatThrottle())
 
 
 class HttpClient:

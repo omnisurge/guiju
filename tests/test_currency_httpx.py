@@ -11,6 +11,7 @@ from guiju._version import __version__
 from guiju.currency import httpx
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
 from tests.currency_helpers import URL, FakeResponse, real_response
+from tests.net_harness import build_metadata_opener, metadata_redirect
 
 
 def status_error(status, body=b"temporary error"):
@@ -236,7 +237,7 @@ class HttpClientTest(unittest.TestCase):
 
 class RedirectAndThrottleTest(unittest.TestCase):
     def test_redirect_checks_every_target_before_following(self):
-        handler = httpx._MetadataRedirect()
+        handler = metadata_redirect()
         req = urllib.request.Request(URL, headers={"User-Agent": httpx.UA})
         with mock.patch.object(httpx, "_throttle") as throttle:
             redirect = handler.redirect_request(req, None, 302, "Found", {}, "/s.jsp?keyword=GB1")
@@ -249,7 +250,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
         self.assertEqual(handler.max_redirections, 5)
 
     def test_csres_error_page_redirect_is_source_unreachable_for_fallback(self):
-        handler = httpx._MetadataRedirect()
+        handler = metadata_redirect()
         req = urllib.request.Request(URL, headers={"User-Agent": httpx.UA})
         for target in ("/error/noright.html", "/error/noright.html;jsessionid=abc.wwwcsres"):
             with self.subTest(target=target), self.assertRaises(SourceUnreachable):
@@ -271,9 +272,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     return next(replies)
 
             client = httpx.HttpClient()
-            client.transport = urllib.request.build_opener(
-                urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
-            )
+            client.transport = build_metadata_opener(MemoryTransport())
             with self.subTest(status=status), mock.patch.object(httpx, "_throttle"), \
                     mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")):
                 self.assertEqual(client.get(URL), b"test")
@@ -296,9 +295,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                 return first
 
         client = httpx.HttpClient()
-        client.transport = urllib.request.build_opener(
-            urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
-        )
+        client.transport = build_metadata_opener(MemoryTransport())
         with mock.patch.object(httpx, "_throttle"), \
                 mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")), \
                 self.assertRaises(ComplianceDenied):
@@ -322,9 +319,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     return first
 
             client = httpx.HttpClient()
-            client.transport = urllib.request.build_opener(
-                urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
-            )
+            client.transport = build_metadata_opener(MemoryTransport())
             with self.subTest(body=body), mock.patch.object(httpx, "_throttle"), \
                     mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")), \
                     self.assertRaises(ComplianceDenied):
@@ -346,9 +341,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                 return first
 
         client = httpx.HttpClient()
-        client.transport = urllib.request.build_opener(
-            urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
-        )
+        client.transport = build_metadata_opener(MemoryTransport())
         with mock.patch.object(httpx, "_throttle"), self.assertRaises(SourceUnreachable) as ctx:
             client.get(URL)
         self.assertIn("响应截断", str(ctx.exception))
@@ -366,9 +359,9 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     b"Content-Type: text/html\r\nContent-Length: 0\r\n\r\n"
                 )
 
-        handler = httpx._MetadataRedirect()
+        handler = metadata_redirect()
         client = httpx.HttpClient()
-        client.transport = urllib.request.build_opener(urllib.request.ProxyHandler({}), handler, MemoryTransport())
+        client.transport = build_metadata_opener(MemoryTransport(), handler=handler)
         with mock.patch.object(httpx, "_throttle"), self.assertRaises(SourceUnreachable) as ctx:
             client.get(URL)
         self.assertEqual(ctx.exception.exit, 20)
@@ -388,9 +381,7 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     return first
 
             client = httpx.HttpClient()
-            client.transport = urllib.request.build_opener(
-                urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport(),
-            )
+            client.transport = build_metadata_opener(MemoryTransport())
             with self.subTest(location=location), mock.patch.object(httpx, "_throttle"), \
                     mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")), \
                     self.assertRaises(error):
@@ -486,7 +477,7 @@ class M2HttpClientTest(unittest.TestCase):
             self.client.get("https://openstd.samr.gov.cn/gb/search/gbQueryPage", accept="application/json")
 
     def test_even_approved_cross_source_redirect_is_denied_before_body_read(self):
-        handler = httpx._MetadataRedirect()
+        handler = metadata_redirect()
         req = urllib.request.Request(URL)
         intermediate = FakeResponse(b"irrelevant")
         with self.assertRaises(ComplianceDenied):
@@ -541,8 +532,7 @@ class M2HttpClientTest(unittest.TestCase):
                     return response
 
             client = httpx.HttpClient()
-            client.transport = urllib.request.build_opener(
-                urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport())
+            client.transport = build_metadata_opener(MemoryTransport())
             with self.subTest(status=status):
                 self.assertEqual(client.post_form(self.CCSN, {"gjz": "50011"}), b"{}")
                 self.assertEqual(len(requests), 2)
@@ -634,7 +624,7 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
                     return response
 
             client = httpx.HttpClient()
-            client.transport = urllib.request.build_opener(urllib.request.ProxyHandler({}), httpx._MetadataRedirect(), MemoryTransport())
+            client.transport = build_metadata_opener(MemoryTransport())
             with self.subTest(status=status):
                 if status in (307, 308):
                     self.assertEqual(client.post_json(self.URL, {"condition": "DG/TJ08-2007"}), b"{}")
@@ -650,7 +640,7 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
                 self.assertTrue(first.closed)
 
     def test_redirects_cannot_go_to_other_source_port_or_download(self):
-        handler = httpx._MetadataRedirect()
+        handler = metadata_redirect()
         req = urllib.request.Request(self.URL, data=b"{}", method="POST")
         for target in (M2HttpClientTest.SAMR, self.URL.replace(":9175", ":443"),
                        self.URL.replace("/external/localStandard/list", "/api/files/webDownload")):

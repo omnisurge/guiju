@@ -5,6 +5,9 @@ import urllib.request
 
 from guiju import compliance
 from guiju.errors import ComplianceDenied
+from guiju.net.block import BlockDetector
+from guiju.net.policy import BodyPolicy
+from guiju.net.redirect import RedirectGuard
 
 
 class WhitelistTest(unittest.TestCase):
@@ -29,13 +32,13 @@ class WhitelistTest(unittest.TestCase):
 
 class RedirectTest(unittest.TestCase):
     def test_redirect_to_foreign_host_is_denied(self):
-        handler = compliance._GuardedRedirect()
+        handler = RedirectGuard(BodyPolicy(check_url_fn=compliance.check_url), compliance._CompatThrottle(), BlockDetector())
         req = urllib.request.Request("https://www.mohurd.gov.cn/old")
         with self.assertRaises(ComplianceDenied):
             handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example.com/x")
 
     def test_redirect_relative_url_resolves_against_origin(self):
-        handler = compliance._GuardedRedirect()
+        handler = RedirectGuard(BodyPolicy(check_url_fn=compliance.check_url), compliance._CompatThrottle(), BlockDetector())
         req = urllib.request.Request("https://www.mohurd.gov.cn/a/b")
         # 相对跳转应被解析为同域；不能只用 except Exception: pass 把回归吞掉。
         result = handler.redirect_request(req, None, 302, "Found", {}, "/c/d")

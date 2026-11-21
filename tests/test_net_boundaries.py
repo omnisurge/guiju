@@ -103,7 +103,7 @@ class NetBoundaryTest(unittest.TestCase):
         self.assertEqual(bad, [])
 
     def test_duplicate_private_implementations_are_gone(self):
-        banned_defs = {"_last_call", "_throttle", "_check_url", "_detect_block"}
+        banned_defs = {"_last_call", "_throttle", "_check_url", "_detect_block", "_GuardedRedirect", "_MetadataRedirect"}
         bad = []
         for path in _files():
             rel = str(path.relative_to(ROOT))
@@ -114,6 +114,31 @@ class NetBoundaryTest(unittest.TestCase):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in banned_defs:
                     bad.append(f"{rel}:{node.lineno}:{node.name}")
         self.assertEqual(bad, [])
+
+    def test_redirect_factories_only_in_net(self):
+        banned = {"_GuardedRedirect", "_MetadataRedirect"}
+        bad = []
+        for path in _files():
+            rel = str(path.relative_to(ROOT))
+            if rel.startswith("guiju/net/"):
+                continue
+            tree = ast.parse(path.read_text("utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in banned:
+                    bad.append(f"{rel}:{node.lineno}:{node.name}")
+                if isinstance(node, ast.Call):
+                    func = node.func
+                    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                    if name == "RedirectGuard":
+                        bad.append(f"{rel}:{node.lineno}:RedirectGuard")
+        self.assertEqual(bad, [])
+
+    def test_compliance_and_currency_redirect_factories_absent(self):
+        from guiju import compliance
+        from guiju.currency import httpx
+        self.assertNotIn("_GuardedRedirect", compliance.__all__)
+        self.assertFalse(hasattr(compliance, "_GuardedRedirect"))
+        self.assertFalse(hasattr(httpx, "_MetadataRedirect"))
 
 
 if __name__ == "__main__":

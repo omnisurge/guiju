@@ -14,6 +14,9 @@ from pathlib import Path
 from unittest import mock
 
 from guiju import compliance, syncengine
+from guiju.net.block import BlockDetector as _BD
+from guiju.net.policy import BodyPolicy as _BP
+from guiju.net.redirect import RedirectGuard
 from guiju.store.sqlite import Store
 
 
@@ -191,7 +194,7 @@ class ThrottleTest(unittest.TestCase):
     def test_redirect_target_host_is_throttled(self):
         """白名单过关后，重定向目标 host 也必须先过 _throttle 再放行。"""
         req = urllib.request.Request("https://a.gov.cn/x")
-        handler = compliance._GuardedRedirect()
+        handler = RedirectGuard(_BP(check_url_fn=compliance.check_url), compliance._CompatThrottle(), _BD())
         with mock.patch.object(compliance, "_throttle") as th:
             handler.redirect_request(
                 req, None, 302, "Found", {}, "https://b.gov.cn/y"
@@ -201,7 +204,7 @@ class ThrottleTest(unittest.TestCase):
     def test_redirect_same_host_is_throttled(self):
         """同 host 重定向照样再计一拍（限速按请求数，不按 host 去重）。"""
         req = urllib.request.Request("https://a.gov.cn/x")
-        handler = compliance._GuardedRedirect()
+        handler = RedirectGuard(_BP(check_url_fn=compliance.check_url), compliance._CompatThrottle(), _BD())
         with mock.patch.object(compliance, "_throttle") as th:
             handler.redirect_request(
                 req, None, 302, "Found", {}, "/x2"

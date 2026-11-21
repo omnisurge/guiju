@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import io
+import urllib.request
 from typing import Any
 
+from guiju.currency import httpx as _httpx
 from guiju.net.body import BodyClient
-from guiju.net.policy import BodyPolicy
+from guiju.net.policy import BodyPolicy, MetadataPolicy
+from guiju.net.redirect import RedirectGuard
 from guiju.net.throttle import Throttle
 
 
@@ -57,6 +60,19 @@ class FakeTransport:
     def probe(self, url: str, *, timeout: float = 15.0):
         return self.probe_info
 
+
+
+
+def metadata_redirect():
+    """Test-only RedirectGuard construction; production has no factory."""
+    return RedirectGuard(MetadataPolicy(), _httpx._CompatThrottle())
+
+
+def build_metadata_opener(memory_transport, handler=None):
+    """Test-only raw opener assembly kept out of production/test subject modules."""
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), handler or metadata_redirect(), memory_transport
+    )
 
 def body_client(transport: FakeTransport, **kwargs) -> BodyClient:
     return BodyClient(
