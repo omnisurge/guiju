@@ -103,14 +103,16 @@ def attachments(html: str) -> list[Attachment]:
     for href, inner in _ATTACH_RE.findall(html):
         label = htmllib.unescape(re.sub(r"<[^>]+>", "", inner)).strip()
         url = urllib.parse.urljoin(BASE, href.replace("&amp;", "&"))
-        seen.setdefault(url, Attachment(url=url, label=label))
+        path = urllib.parse.urlsplit(url).path.lower()
+        kind = "pdf" if path.endswith(".pdf") else "doc" if path.endswith((".doc", ".docx")) else "zip" if path.endswith(".zip") else "unknown"
+        seen.setdefault(url, Attachment(url=url, label=label, kind=kind))
     return list(seen.values())
 
 
 def magic_of(body: bytes) -> str:
     if body.startswith(b"%PDF"):
         return MAGIC_PDF
-    if body.startswith(b"D0CF11E0"):
+    if body.startswith(b"\xd0\xcf\x11\xe0"):
         return MAGIC_DOC
     if body.startswith(b"PK\x03\x04"):
         return MAGIC_ZIP
@@ -122,15 +124,15 @@ def magic_of(body: bytes) -> str:
 
 def download(file_url: str, referer: str) -> tuple[bytes, str]:
     """下载附件并做魔数判定。非 PDF 一律报错，绝不落盘。"""
-    resp = compliance.get(file_url, referer=referer, timeout=180)
-    magic = magic_of(resp.body)
+    body, content_type = compliance.download_bytes(file_url, referer=referer, timeout=180)
+    magic = magic_of(body)
     if magic == MAGIC_PDF:
-        return resp.body, magic
+        return body, magic
     detail_msg = {
         MAGIC_DOC: "附件是 .doc（多为「废止的强制性条文」，不是规范正文）",
         MAGIC_ZIP: "附件是压缩包，需解压后人工确认内容",
         MAGIC_HTML: "附件返回 HTML 错误页，可能链接失效或需重新解析详情页",
-    }.get(magic, f"附件不是 PDF（Content-Type={resp.content_type}, {len(resp.body)} 字节）")
+    }.get(magic, f"附件不是 PDF（Content-Type={content_type}, {len(body)} 字节）")
     raise BadAttachment(detail_msg)
 
 

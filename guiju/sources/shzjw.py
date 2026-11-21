@@ -109,15 +109,11 @@ def download_to(file_url: str, part_path: str, referer: str = REFERER) -> tuple[
 
 
 def download(file_url: str, referer: str = REFERER) -> tuple[bytes, str]:
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(suffix=".part", delete=False) as fp:
-        tmp = fp.name
-    try:
-        _n, magic, _r = download_to(file_url, tmp, referer)
-        return Path(tmp).read_bytes(), magic
-    finally:
-        Path(tmp).unlink(missing_ok=True)
+    body, _content_type = compliance.download_bytes(file_url, referer=referer, timeout=180)
+    magic = magic_of(body)
+    if magic != MAGIC_PDF:
+        raise BadAttachment("上海标准接口返回的不是 PDF（可能是错误页或文件已撤下）")
+    return body, magic
 
 
 def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int]:

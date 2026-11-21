@@ -1,6 +1,7 @@
 """A1：下载完整性 —— 声明长度/范围与实际字节不符必须失败，不能把截断当成功。"""
 
 import http.server
+import json
 import re
 import tempfile
 import threading
@@ -16,6 +17,8 @@ PAYLOAD = b"%PDF-1.7\n" + b"0123456789" * 200
 
 class RangeHandler(http.server.BaseHTTPRequestHandler):
     mode = "truncated_200"
+    etag = '"a1-wrong-start-v1"'
+    last_modified = "Wed, 01 Jan 2025 00:00:00 GMT"
 
     def _range_start(self):
         match = re.match(r"bytes=(\d+)-", self.headers.get("Range") or "")
@@ -44,6 +47,8 @@ class RangeHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(206)
             self.send_header("Content-Range", "bytes 0-99/2000")
             self.send_header("Content-Length", "100")
+            self.send_header("ETag", self.etag)
+            self.send_header("Last-Modified", self.last_modified)
             self.end_headers()
             self.wfile.write(PAYLOAD[:100])
             return
@@ -136,6 +141,10 @@ class DownloadIntegrityTest(unittest.TestCase):
         RangeHandler.mode = "wrong_start"
         part = self.dir / "wrong-start.part"
         part.write_bytes(PAYLOAD[:100])
+        (self.dir / "wrong-start.part.meta").write_text(
+            json.dumps({"etag": '"a1-wrong-start-v1"',
+                        "last_modified": "Wed, 01 Jan 2025 00:00:00 GMT",
+                        "total": 2000, "size": 100}), encoding="utf-8")
         with self.assertRaises(SourceUnreachable) as ctx:
             compliance.download(self.url, part, attempts=2)
         self.assertIn("起点", str(ctx.exception))

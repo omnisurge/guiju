@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -27,6 +26,7 @@ from ...errors import (
     NoAttachment,
 )
 from ...files import default_out_dir, find_cached, sha256_bytes, sha256_file
+from ...net.body import finalize as finalize_body
 from ...sources import registry
 from ...store.sqlite import Store, persist_codes
 from .. import render
@@ -137,7 +137,7 @@ def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
         else naming.library_name(code_key, rec["name"], digest)
     )
     dest.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(part, dest)
+    finalize_body(part, dest)
 
     store.upsert_announcement(
         rec["page_url"], rec["published_on"], rec["name"], rec["name"], "local_standard"
@@ -322,7 +322,7 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
         else naming.library_name(code_key, display_name, digest, ann_id)
     )
     dest.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(part, dest)
+    finalize_body(part, dest)
     store.log_probe(source.id, choice.url, 200, nbytes, "ok", choice.label)
     store.commit()
 

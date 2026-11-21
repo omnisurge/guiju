@@ -20,6 +20,7 @@ python -m unittest discover，游离 def test_ 函数不会被 discover 收编�
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import tempfile
 import unittest
@@ -30,7 +31,11 @@ from unittest import mock
 from guiju import compliance, files, localstatus
 from guiju.domain import codes, naming
 from guiju.domain.attachment import Attachment, _is_pdf
-from guiju.errors import BadUsage, NeedsHuman, SourceUnreachable
+from guiju.errors import BadUsage, ComplianceDenied, NeedsHuman, SourceUnreachable
+from guiju.net.body import BodyClient
+from guiju.net.policy import BodyPolicy
+from guiju.net.request import ProbeInfo
+from guiju.net.throttle import Throttle
 
 # ---------- 1. _is_pdf ----------
 
@@ -165,13 +170,12 @@ class AutosyncNotifyTest(unittest.TestCase):
 # ---------- 9. post_json：HTML 错误页 → SourceUnreachable ----------
 
 class PostJsonTest(unittest.TestCase):
-    def test_post_json_html_body_is_source_unreachable(self) -> None:
-        with mock.patch.object(compliance, "_post_once",
-                               lambda url, data, **kw: b"<html><body>403 Forbidden</body></html>"), \
-             self.assertRaises(SourceUnreachable) as ctx:
-            compliance.post_json("https://x.gov.cn/api", {"a": 1})
-        self.assertEqual(ctx.exception.exit, 20)
-        self.assertIn("JSON", str(ctx.exception))
+    def test_post_json_html_body_is_compliance_denied(self) -> None:
+        with mock.patch.object(compliance.MetadataClient, "_request",
+                               return_value=b"<html><body>403 Forbidden</body></html>"), \
+             self.assertRaises(ComplianceDenied) as ctx:
+            compliance.post_json("https://www.ccsn.org.cn/newweb/api/StandardQuery.assx/queryStandard", {"a": 1})
+        self.assertEqual(ctx.exception.exit, 40)
 
 
 # ---------- 10. 416：HEAD 校验，不符则重下 ----------
@@ -201,28 +205,47 @@ def _http416() -> urllib.error.HTTPError:
     return urllib.error.HTTPError("https://x.gov.cn/f.pdf", 416, "Range", {}, None)
 
 
+class _FakeTransport:
+    def __init__(self, open_side, probe_info):
+        self.open_side = open_side
+        self.probe_info = probe_info
+
+    def open(self, req, timeout=0):
+        return self.open_side(req, timeout)
+
+    def probe(self, url, *, timeout=15):
+        return self.probe_info
+
+
+def _write_meta(part: Path, *, etag='"v1"', total=5, size=5):
+    part.with_name(part.name + ".meta").write_text(
+        json.dumps({"etag": etag, "last_modified": "Wed, 01 Jan 2025 00:00:00 GMT",
+                    "total": total, "size": size}), encoding="utf-8")
+
+
 class Download416Test(unittest.TestCase):
-    def _patches(self, open_side, remote_len):
-        return (
-            mock.patch.object(compliance, "_opener", mock.Mock(open=open_side)),
-            mock.patch.object(compliance, "check_url", lambda url: url),
-            mock.patch.object(compliance, "_throttle", lambda host: None),
-            mock.patch.object(compliance, "_remote_length", lambda url, **kw: remote_len),
+    def _client(self, open_side, probe_info):
+        return BodyClient(
+            policy=BodyPolicy(check_url_fn=lambda url: url),
+            throttle=Throttle(min_interval=0),
+            transport=_FakeTransport(open_side, probe_info),
         )
 
     def test_416_accepts_when_remote_size_matches(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             part = Path(tmp) / "x.part"
             part.write_bytes(b"12345")
+            _write_meta(part, etag='"v1"', total=5, size=5)
             calls = []
 
             def open_side(req, timeout=0):
                 calls.append(req.headers.get("Range"))
                 raise _http416()
 
-            with self._ctx(open_side, 5):
-                compliance._download_once("https://x.gov.cn/f.pdf", part, start=5,
-                                          referer=None, timeout=10, chunk_size=4)
+            result = self._client(open_side, ProbeInfo(content_length=5, etag='"v1"')).download(
+                "https://x.gov.cn/f.pdf", part, timeout=10)
+            self.assertEqual(result.bytes, 5)
+            self.assertEqual(result.resumed_from, 5)
             self.assertEqual(part.read_bytes(), b"12345")   # 未删未重下
             self.assertEqual(calls, ["bytes=5-"])             # 只有最初一次 GET
 
@@ -230,6 +253,7 @@ class Download416Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             part = Path(tmp) / "x.part"
             part.write_bytes(b"corrupted-longer-than-remote")
+            _write_meta(part, etag='"v1"', total=5, size=28)
             calls = []
 
             def open_side(req, timeout=0):
@@ -238,9 +262,9 @@ class Download416Test(unittest.TestCase):
                     raise _http416()
                 return _Resp(status=200, body=b"fresh")
 
-            with self._ctx(open_side, 5):  # remote=5 < local
-                compliance._download_once("https://x.gov.cn/f.pdf", part, start=28,
-                                          referer=None, timeout=10, chunk_size=4)
+            result = self._client(open_side, ProbeInfo(content_length=5, etag='"v1"')).download(
+                "https://x.gov.cn/f.pdf", part, timeout=10)
+            self.assertEqual(result.bytes, 5)
             self.assertEqual(part.read_bytes(), b"fresh")                 # 删掉重下
             self.assertEqual(calls[0], "bytes=28-")
             self.assertIsNone(calls[1])                                   # 第二次无 Range
@@ -249,32 +273,14 @@ class Download416Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             part = Path(tmp) / "x.part"
             part.write_bytes(b"done")
+            _write_meta(part, etag='"v1"', total=4, size=4)
 
             def open_side(req, timeout=0):
                 raise _http416()
 
-            with self._ctx(open_side, None), self.assertRaises(compliance._Retryable):
-                compliance._download_once("https://x.gov.cn/f.pdf", part, start=4,
-                                          referer=None, timeout=10, chunk_size=4)
+            with self.assertRaises(SourceUnreachable):
+                self._client(open_side, ProbeInfo()).download("https://x.gov.cn/f.pdf", part, timeout=10)
             self.assertFalse(part.exists())
-
-    def _ctx(self, open_side, remote_len):
-        return _PatchCtx(self._patches(open_side, remote_len))
-
-
-class _PatchCtx:
-    def __init__(self, patches):
-        self._patches = patches
-
-    def __enter__(self):
-        for p in self._patches:
-            p.start()
-        return self
-
-    def __exit__(self, *a):
-        for p in self._patches:
-            p.stop()
-        return False
 
 
 # ---------- 11. lookup 三小修 ----------

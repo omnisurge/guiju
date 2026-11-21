@@ -1,6 +1,7 @@
 """断点续传：206 追加、服务端无视 Range 时重下、HTML 页拒绝落盘。"""
 
 import http.server
+import json
 import tempfile
 import threading
 import unittest
@@ -17,6 +18,8 @@ MARKER = compliance.BLOCK_MARKERS[0]
 class Handler(http.server.BaseHTTPRequestHandler):
     support_range = True
     as_html = False
+    etag = '"resume-v1"'
+    last_modified = "Wed, 01 Jan 2025 00:00:00 GMT"
 
     def do_GET(self):
         if self.as_html:
@@ -40,6 +43,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body = data[start:]
             self.send_response(206)
             self.send_header("Content-Range", f"bytes {start}-{len(data) - 1}/{len(data)}")
+            self.send_header("ETag", self.etag)
+            self.send_header("Last-Modified", self.last_modified)
         else:
             body = data
             self.send_response(200)
@@ -79,6 +84,10 @@ class ResumeTest(unittest.TestCase):
     def test_range_resume_appends(self):
         part = self.dir / "a.part"
         part.write_bytes(PAYLOAD[:500])
+        (self.dir / "a.part.meta").write_text(
+            json.dumps({"etag": '"resume-v1"',
+                        "last_modified": "Wed, 01 Jan 2025 00:00:00 GMT",
+                        "total": len(PAYLOAD), "size": 500}), encoding="utf-8")
         info = compliance.download(self.url, part)
         self.assertEqual(info["resumed_from"], 500)
         self.assertEqual(info["bytes"], len(PAYLOAD))
