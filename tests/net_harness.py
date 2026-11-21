@@ -47,6 +47,7 @@ class FakeTransport:
         self.responses = list(responses or [])
         self.calls: list[Any] = []
         self.probe_info = probe_info
+        self.probe_calls: list[dict[str, Any]] = []
 
     def open(self, req, timeout=0):
         self.calls.append(req)
@@ -57,7 +58,8 @@ class FakeTransport:
             raise item
         return item
 
-    def probe(self, url: str, *, timeout: float = 15.0):
+    def probe(self, url: str, *, timeout: float = 15.0, referer: str | None = None):
+        self.probe_calls.append({"url": url, "timeout": timeout, "referer": referer})
         return self.probe_info
 
 

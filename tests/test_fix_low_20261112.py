@@ -209,11 +209,13 @@ class _FakeTransport:
     def __init__(self, open_side, probe_info):
         self.open_side = open_side
         self.probe_info = probe_info
+        self.probe_calls = []
 
     def open(self, req, timeout=0):
         return self.open_side(req, timeout)
 
-    def probe(self, url, *, timeout=15):
+    def probe(self, url, *, timeout=15, referer=None):
+        self.probe_calls.append({"url": url, "timeout": timeout, "referer": referer})
         return self.probe_info
 
 

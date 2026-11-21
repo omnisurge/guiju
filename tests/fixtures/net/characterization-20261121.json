@@ -670,12 +670,12 @@
           "range": "bytes=500-",
           "if-range": "\"v1\""
         },
-        "outcome": "error:TypeError",
-        "exit": 1,
+        "outcome": "ok",
+        "exit": 0,
         "body_read_bytes": 500,
         "part_size": 500,
         "final_exists": false,
-        "request_count": 1,
+        "request_count": 2,
         "sleeps": []
       }
     },
@@ -709,12 +709,12 @@
           "range": "bytes=500-",
           "if-range": "\"v1\""
         },
-        "outcome": "error:TypeError",
-        "exit": 1,
-        "body_read_bytes": 500,
-        "part_size": 500,
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
         "final_exists": false,
-        "request_count": 1,
+        "request_count": 3,
         "sleeps": []
       }
     },
@@ -748,12 +748,12 @@
           "range": "bytes=500-",
           "if-range": "\"v1\""
         },
-        "outcome": "error:TypeError",
-        "exit": 1,
-        "body_read_bytes": 500,
-        "part_size": 500,
+        "outcome": "source_unreachable",
+        "exit": 20,
+        "body_read_bytes": 0,
+        "part_size": 0,
         "final_exists": false,
-        "request_count": 1,
+        "request_count": 3,
         "sleeps": []
       }
     },
@@ -823,12 +823,12 @@
           "range": "bytes=500-",
           "if-range": "\"v1\""
         },
-        "outcome": "error:TypeError",
-        "exit": 1,
+        "outcome": "ok",
+        "exit": 0,
         "body_read_bytes": 500,
         "part_size": 500,
         "final_exists": false,
-        "request_count": 1,
+        "request_count": 2,
         "sleeps": []
       }
     },
@@ -2518,6 +2518,8 @@
         "mode": "probe",
         "url_shape": "/CHAR-PRB-03",
         "request_headers": {
+          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
           "accept-encoding": "identity"
         },
         "outcome": "ok",
@@ -2551,6 +2553,8 @@
         "mode": "probe",
         "url_shape": "/CHAR-HEAD-01",
         "request_headers": {
+          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "accept": "*/*",
           "accept-encoding": "identity"
         },
         "outcome": "ok",
