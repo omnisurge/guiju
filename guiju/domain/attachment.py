@@ -42,6 +42,8 @@ class Verdict(StrEnum):
 class Attachment:
     url: str
     label: str = ""
+    #: Explicit attachment kind when the page/URL tells us; never guessed from content.
+    kind: str = "unknown"
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,8 @@ def _is_pdf(att: Attachment) -> bool:
     # 「是不是 PDF」只看文件扩展：URL 路径以 .pdf 结尾（剥掉 query/fragment），
     # 或标签里出现独立的 ".pdf" 字样。裸 "pdf" 子串会误伤：实测「X规范PDF版.zip」、
     # 「xxpdfyy」这类名字都含 pdf 却不是 PDF。
+    if att.kind != "unknown":
+        return att.kind == "pdf"
     path = urllib.parse.urlsplit(att.url).path.lower()
     if path.endswith(".pdf"):
         return True
@@ -158,6 +162,11 @@ def pick(
     if target:
         exact = [a for a in alive if target in _norm(a.label)]
         if len(exact) == 1:
+            if exact[0].kind in ("doc", "zip"):
+                return _ambiguous(
+                    [exact[0]], names,
+                    f"唯一附件明确不是 PDF（{exact[0].kind}），需人工确认",
+                )
             return Pick(
                 Verdict.OK, choice=exact[0], candidates=(exact[0],),
                 reason="名称完全匹配", book_names=names,
@@ -177,6 +186,9 @@ def pick(
     # 候选只剩一个时不存在"选错"，名称不完全匹配只作提示：多标准合并公告的附件名
     # 常被截断（实测「城市给水工程项目建设」vs 标准名「城市给水工程项目建设标准」）。
     if len(alive) == 1:
+        if alive[0].kind in ("doc", "zip"):
+            return _ambiguous([alive[0]], names,
+                              f"唯一附件明确不是 PDF（{alive[0].kind}），需人工确认")
         reason = "唯一候选附件" if target else "唯一附件"
         if target and target not in _norm(alive[0].label):
             reason = "唯一候选附件（名称不完全匹配，已按数量唯一性接受）"

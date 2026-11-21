@@ -56,6 +56,18 @@ class PickTest(unittest.TestCase):
     def test_empty_is_no_attachment(self):
         self.assertIs(pick([], "某标准").verdict, Verdict.NO_ATTACHMENT)
 
+    def test_exact_non_pdf_attachment_is_ambiguous(self):
+        item = Attachment(url="https://x.gov.cn/a.doc", label="某标准", kind="doc")
+        got = pick([item], "某标准", announcement_title="关于发布《某标准》的公告")
+        self.assertIs(got.verdict, Verdict.AMBIGUOUS)
+        self.assertIsNone(got.choice)
+        self.assertEqual(got.candidates, (item,))
+
+    def test_exact_zip_attachment_is_ambiguous(self):
+        item = Attachment(url="https://x.gov.cn/a.zip", label="某标准", kind="zip")
+        got = pick([item], "某标准", announcement_title="关于发布《某标准》的公告")
+        self.assertIs(got.verdict, Verdict.AMBIGUOUS)
+
 
 if __name__ == "__main__":
     unittest.main()
