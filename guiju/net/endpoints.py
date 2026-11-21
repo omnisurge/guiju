@@ -15,5 +15,6 @@ DEFAULT_METADATA_ENDPOINTS: dict[str, dict[str, frozenset[str]]] = {
 }
 
 SHANGHAI_HOST = "bzjg.zjw.sh.gov.cn"
-SHANGHAI_ORIGIN = "https://bzjg.zjw.sh.gov.cn:9175"
+SHANGHAI_PORT = 9175
+SHANGHAI_ORIGIN = f"https://{SHANGHAI_HOST}:{SHANGHAI_PORT}"
 SHANGHAI_REFERER = SHANGHAI_ORIGIN + "/JGBStandardWeb/pc/"

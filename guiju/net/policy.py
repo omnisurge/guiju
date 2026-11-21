@@ -7,7 +7,7 @@ import urllib.parse
 from collections.abc import Callable, Mapping
 
 from ..errors import ComplianceDenied, SourceUnreachable
-from .endpoints import DEFAULT_METADATA_ENDPOINTS, SHANGHAI_HOST
+from .endpoints import DEFAULT_METADATA_ENDPOINTS, SHANGHAI_HOST, SHANGHAI_PORT
 
 
 class BodyPolicy:
@@ -40,12 +40,15 @@ class BodyPolicy:
             port = parts.port
         except ValueError as exc:
             raise ComplianceDenied(f"URL 端口无效：{url}") from exc
-        if port not in (None, 80, 443):
-            raise ComplianceDenied(f"URL 端口不允许：{url}")
         from .headers import canonical_host
         host = canonical_host(parts.hostname or "")
         if not host:
             raise ComplianceDenied(f"非法 host，拒绝访问：{parts.hostname or '(空)'}")
+        if host == SHANGHAI_HOST:
+            if parts.scheme != "https" or port != SHANGHAI_PORT:
+                raise ComplianceDenied(f"上海正文只允许 https:{SHANGHAI_PORT}：{url}")
+        elif port not in (None, 80, 443):
+            raise ComplianceDenied(f"URL 端口不允许：{url}")
         if not (host == "gov.cn" or host.endswith(self.ALLOWED_SUFFIX)):
             raise ComplianceDenied(f"非政府域名，拒绝访问：{host or '(空)'}")
         netloc = host if port is None else f"{host}:{port}"
@@ -101,7 +104,7 @@ class MetadataPolicy:
             or normalize_path(parts.path) not in self.endpoints[host]
             or parts.username is not None
             or parts.password is not None
-            or (host == SHANGHAI_HOST and (parts.scheme != "https" or port != 9175))
+            or (host == SHANGHAI_HOST and (parts.scheme != "https" or port != SHANGHAI_PORT))
             or (host != SHANGHAI_HOST and port not in (None, 80 if parts.scheme == "http" else 443))
             or parts.fragment
         ):
