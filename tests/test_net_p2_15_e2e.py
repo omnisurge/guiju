@@ -60,6 +60,19 @@ class SidecarE2ETest(unittest.TestCase):
         self.assertEqual(m["total"], 10)
         self.assertEqual(m["size"], 5)
 
+    def test_416_success_cleans_part_meta(self):
+        body = b"%PDF-12345"
+        self.part.write_bytes(body)
+        Path(str(self.part) + ".meta").write_text(json.dumps({
+            "etag": '"v1"', "last_modified": "", "total": 10, "size": 10,
+        }), encoding="utf-8")
+        with LocalServer("http_416", body=body, headers={"ETag": '"v1"'}) as server:
+            result = _client().download(server.url + "/a", self.part, attempts=1)
+            self.assertEqual(result.status, 416)
+            self.assertEqual(result.bytes, 10)
+        self.assertEqual(self.part.read_bytes(), body)
+        self.assertFalse(Path(str(self.part) + ".meta").exists())
+
     def test_resume_after_interrupt_sends_range_and_if_range(self):
         body = b"%PDF-12345"
         with self._first(body) as server, self.assertRaises(SourceUnreachable):
