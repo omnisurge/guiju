@@ -185,6 +185,11 @@ class BodyClient:
         max_bytes = self.policy.max_download_bytes
         sidecar = _read_meta(part)
         part_size = part.stat().st_size if part.exists() else 0
+        if sidecar.get("size") not in (None, part_size):
+            part.unlink(missing_ok=True)
+            _unlink_meta(part)
+            part_size = 0
+            sidecar = {}
         if part_size > max_bytes:
             part.unlink(missing_ok=True)
             _unlink_meta(part)
@@ -221,11 +226,14 @@ class BodyClient:
                             raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
                         if content_length is None and not chunked:
                             raise SourceUnreachable(f"响应既无 Content-Length 也无 chunked：{url}")
-                        written = self._write_response(resp, part, resume=False, max_bytes=max_bytes)
-                        if chunked and content_length is not None and written != content_length:
-                            part.unlink(missing_ok=True)
-                            _unlink_meta(part)
-                            raise SourceUnreachable(f"Content-Length 与 chunked 实际长度不一致：{url}")
+                        written = self._write_response(resp, part, resume=False, max_bytes=max_bytes, chunk_size=chunk_size)
+                        if content_length is not None and written != content_length:
+                            if written > content_length:
+                                with open(part, "r+b") as fp:
+                                    fp.truncate(content_length)
+                            raise SourceUnreachable(
+                                f"响应截断或 Content-Length 与实际读取不一致：{written} != {content_length}"
+                            )
                         missing = getattr(resp, "length", None)
                         if missing is not None and missing > 0:
                             raise SourceUnreachable(f"响应读取失败（响应截断，尚缺 {missing} 字节）：{url}")
@@ -270,7 +278,7 @@ class BodyClient:
                                 raise SourceUnreachable(f"206 验证器与 .part 不匹配：{url}")
                         elif start != 0:
                             raise SourceUnreachable(f"206 起点不为 0：{start}")
-                        written = self._write_response(resp, part, resume=resume, max_bytes=max_bytes)
+                        written = self._write_response(resp, part, resume=resume, max_bytes=max_bytes, chunk_size=chunk_size)
                         if written != end + 1 or (total is not None and written != total):
                             raise SourceUnreachable(f"206 响应长度不完整：{written} != {end + 1}/{total}")
                         _write_meta(part, etag=resp.headers.get("ETag", ""),
@@ -353,7 +361,7 @@ class BodyClient:
             ctype = exc.headers.get("Content-Type", "")
         self.detector.check(body[:65536], ctype)
 
-    def _write_response(self, resp, part: Path, *, resume: bool, max_bytes: int) -> int:
+    def _write_response(self, resp, part: Path, *, resume: bool, max_bytes: int, chunk_size: int = 1 << 16) -> int:
         mode = "ab" if resume else "wb"
         start_size = part.stat().st_size if resume and part.exists() else 0
         written = start_size
@@ -361,7 +369,7 @@ class BodyClient:
         if not resume:
             # Check the first chunk before truncating an existing .part: a block
             # page must never destroy a previously valid partial body.
-            pending = resp.read(1 << 16)
+            pending = resp.read(chunk_size)
             if pending:
                 self.detector.check(pending[:65536], resp.headers.get("Content-Type", ""))
         with open(part, mode) as fp:
@@ -375,7 +383,7 @@ class BodyClient:
                 fp.write(pending)
             first = True
             while True:
-                chunk = resp.read(1 << 16)
+                chunk = resp.read(chunk_size)
                 if not chunk:
                     break
                 if first and resume:
@@ -406,7 +414,7 @@ class BodyClient:
             policy = BodyPolicy(
                 max_page_bytes=self.policy.max_page_bytes,
                 max_download_bytes=max_bytes,
-                check_url_fn=self.policy._check_url_fn,
+                check_url_fn=getattr(self.policy, "_check_url_fn", None),
             )
             client = BodyClient(policy=policy, throttle=self.throttle, detector=self.detector,
                                 transport=self.transport, probe_sink=self.probe_sink)
