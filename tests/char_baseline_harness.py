@@ -186,7 +186,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         if mode in ("range_ok", "range_missing", "range_wrong_start", "range_star",
                     "range_short", "range_extra", "range_upper", "range_no_cl",
-                    "range_bad_etag", "range_cl_mismatch"):
+                    "range_bad_etag", "range_cl_mismatch", "range_truncate_200"):
             self._range_response(mode)
             return
         # normal 200 modes
@@ -221,6 +221,18 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 start = int(raw)
         end = total - 1
         headers = {"Content-Type": st.content_type, **st.headers}
+        if mode == "range_truncate_200":
+            headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+            headers["Content-Length"] = str(end - start + 1)
+            headers.setdefault("ETag", '"truncate-v1"')
+            self._send_headers(206, headers)
+            if len(st.requests) == 1:
+                self.wfile.write(st.body[start : start + 200])
+                self.wfile.flush()
+                self.close_connection = True
+            else:
+                self.wfile.write(st.body[start:])
+            return
         if mode == "range_missing":
             headers["Content-Length"] = str(total - start)
             self._send_headers(206, headers)

@@ -3,6 +3,7 @@
 # ruff: noqa: SIM117
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import threading
@@ -71,6 +72,30 @@ class SidecarE2ETest(unittest.TestCase):
             self.assertEqual(result.status, 416)
             self.assertEqual(result.bytes, 10)
         self.assertEqual(self.part.read_bytes(), body)
+        self.assertFalse(Path(str(self.part) + ".meta").exists())
+
+    def test_range_truncate_200_retries_from_disk_size(self):
+        body = b"%PDF-1.7\n" + b"x" * (1000 - 9)
+        self.assertEqual(len(body), 1000)
+        self.part.write_bytes(body[:500])
+        Path(str(self.part) + ".meta").write_text(json.dumps({
+            "etag": '"truncate-v1"',
+            "last_modified": "Wed, 01 Jan 2025 00:00:00 GMT",
+            "total": 1000,
+            "size": 500,
+        }), encoding="utf-8")
+        with LocalServer("range_truncate_200", body=body, headers={
+            "ETag": '"truncate-v1"',
+            "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
+        }) as server:
+            result = _client().download(server.url + "/a", self.part, attempts=2)
+            requests = server.state.requests
+        self.assertEqual(result.status, 206)
+        self.assertEqual(result.bytes, 1000)
+        self.assertEqual(result.resumed_from, 700)
+        self.assertEqual([r.headers.get("range") for r in requests], ["bytes=500-", "bytes=700-"])
+        self.assertEqual(self.part.read_bytes(), body)
+        self.assertEqual(hashlib.sha256(self.part.read_bytes()).hexdigest(), hashlib.sha256(body).hexdigest())
         self.assertFalse(Path(str(self.part) + ".meta").exists())
 
     def test_resume_after_interrupt_sends_range_and_if_range(self):
@@ -366,14 +391,15 @@ class SidecarE2ETest(unittest.TestCase):
                 "ETag": '"pull-v1"', "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
             }) as server:
                 source.download_url = server.url + "/a"
-                with self.assertRaises(SourceUnreachable):
-                    pull._pull_one(store, args, "TEST-1", source, out_dir)
                 result = pull._pull_one(store, args, "TEST-1", source, out_dir)
-                req = server.state.requests[1].headers
+                second = pull._pull_one(store, args, "TEST-1", source, out_dir)
+                requests = server.state.requests
         self.assertEqual(result["bytes"], 10)
+        self.assertEqual(second["exit"], 10)
         self.assertEqual(Path(result["path"]).read_bytes(), body)
-        self.assertEqual(req.get("range"), "bytes=5-")
-        self.assertEqual(req.get("if-range"), '"pull-v1"')
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[1].headers.get("range"), "bytes=5-")
+        self.assertEqual(requests[1].headers.get("if-range"), '"pull-v1"')
         self.assertFalse(Path(str(out_dir / ".partial")).exists() and any((out_dir / ".partial").iterdir()))
 
 if __name__ == "__main__":

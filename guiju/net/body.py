@@ -13,7 +13,6 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from .._version import __version__
 from ..errors import NeedsHuman, SourceUnreachable
 from .block import BlockDetector
 from .headers import header_int, parse_content_range
@@ -21,12 +20,21 @@ from .policy import BodyPolicy
 from .request import DownloadResult, ProbeInfo, ProbeRecord, Response
 from .throttle import Throttle, default_throttle
 from .transport import Transport
+from .useragent import BODY_USER_AGENT
 
-UA = f"guiju/{__version__} (compliance-aware; official code fetcher)"
+META_CHECKPOINT_BYTES = 1 << 20
 
 
 class _MetaWriteError(OSError):
     """Local sidecar persistence failed; keep part/meta diagnosable."""
+
+
+class _ResponseTruncated(Exception):
+    """A bounded, resumable short read; distinct from permanent protocol errors."""
+
+    def __init__(self, message: str, *, resumable: bool) -> None:
+        super().__init__(message)
+        self.resumable = resumable
 
 
 def _strong(value: str) -> bool:
@@ -50,6 +58,42 @@ def _read_meta(part: Path) -> dict:
         return raw if isinstance(raw, dict) else {}
     except (OSError, ValueError, TypeError):
         return {}
+
+
+def _reload_part_state(part: Path) -> tuple[int, dict]:
+    """Re-read the on-disk part/meta pair before every request attempt."""
+    if not part.exists():
+        return 0, {}
+    part_size = part.stat().st_size
+    sidecar = _read_meta(part)
+    if sidecar.get("size") not in (None, part_size):
+        part.unlink(missing_ok=True)
+        _unlink_meta(part)
+        return 0, {}
+    return part_size, sidecar
+
+
+def _load_part_state(part: Path, max_bytes: int) -> tuple[int, dict, bool]:
+    """Load, enforce the existing max/validator rules, and return resume capability."""
+    part_size, sidecar = _reload_part_state(part)
+    if part_size > max_bytes:
+        part.unlink(missing_ok=True)
+        _unlink_meta(part)
+        return 0, {}, False
+    strong = _strong(sidecar.get("etag", "")) or _strong(sidecar.get("last_modified", ""))
+    if part_size and not strong:
+        part.unlink(missing_ok=True)
+        _unlink_meta(part)
+        return 0, {}, False
+    return part_size, sidecar, part_size > 0 and strong
+
+
+def _has_strong_validator(*values: str) -> bool:
+    return any(_strong(value) for value in values)
+
+
+def _can_resume(part: Path, start_size: int, *validators: str) -> bool:
+    return part.exists() and part.stat().st_size > start_size and _has_strong_validator(*validators)
 
 
 def _write_meta(part: Path, *, etag: str, last_modified: str, total: int | None, size: int) -> None:
@@ -107,7 +151,7 @@ class BodyClient:
         self._emit(ProbeRecord(url=url, status=status, bytes=bytes_read, outcome=outcome))
 
     def _headers(self, referer: str | None = None) -> dict[str, str]:
-        headers = {"User-Agent": UA, "Accept": "*/*"}
+        headers = {"User-Agent": BODY_USER_AGENT, "Accept": "*/*"}
         if referer:
             headers["Referer"] = referer
         return headers
@@ -193,26 +237,12 @@ class BodyClient:
         part = Path(part_path)
         part.parent.mkdir(parents=True, exist_ok=True)
         max_bytes = self.policy.max_download_bytes
-        sidecar = _read_meta(part)
-        part_size = part.stat().st_size if part.exists() else 0
-        if sidecar.get("size") not in (None, part_size):
-            part.unlink(missing_ok=True)
-            _unlink_meta(part)
-            part_size = 0
-            sidecar = {}
-        if part_size > max_bytes:
-            part.unlink(missing_ok=True)
-            _unlink_meta(part)
-            part_size = 0
-        strong = _strong(sidecar.get("etag", "")) or _strong(sidecar.get("last_modified", ""))
-        if part_size and not strong:
-            part.unlink(missing_ok=True)
-            _unlink_meta(part)
-            part_size = 0
-        resume = part_size > 0 and strong
+        part_size, sidecar, resume = _load_part_state(part, max_bytes)
         restarted = False
+        truncation_retry_used = False
         attempt = 0
         while True:
+            part_size, sidecar, resume = _load_part_state(part, max_bytes)
             attempt += 1
             if attempt > max(1, attempts):
                 raise SourceUnreachable(f"下载失败（{url}）")
@@ -238,6 +268,7 @@ class BodyClient:
                             raise SourceUnreachable(f"响应既无 Content-Length 也无 chunked：{url}")
                         if chunked and content_length is not None:
                             raise SourceUnreachable(f"响应同时声明 Content-Length 与 chunked：{url}")
+                        start_size = part_size
                         written = self._write_response(
                             resp, part, resume=False, max_bytes=max_bytes, chunk_size=chunk_size,
                             etag=resp.headers.get("ETag", ""),
@@ -248,12 +279,26 @@ class BodyClient:
                             if written > content_length:
                                 with open(part, "r+b") as fp:
                                     fp.truncate(content_length)
+                            if written < content_length and _can_resume(
+                                part, start_size, resp.headers.get("ETag", ""), resp.headers.get("Last-Modified", "")
+                            ):
+                                self._emit_failure(url, status, written, "truncated")
+                                raise _ResponseTruncated(
+                                    f"200 响应长度不完整：{written} != {content_length}", resumable=True
+                                )
                             self._emit_failure(url, status, written, "truncated")
                             raise SourceUnreachable(
                                 f"响应截断或 Content-Length 与实际读取不一致：{written} != {content_length}"
                             )
                         missing = getattr(resp, "length", None)
                         if missing is not None and missing > 0:
+                            if _can_resume(
+                                part, start_size, resp.headers.get("ETag", ""), resp.headers.get("Last-Modified", "")
+                            ):
+                                self._emit_failure(url, status, written, "truncated")
+                                raise _ResponseTruncated(
+                                    f"200 响应读取不完整（尚缺 {missing} 字节）", resumable=True
+                                )
                             self._emit_failure(url, status, written, "truncated")
                             raise SourceUnreachable(f"响应读取失败（响应截断，尚缺 {missing} 字节）：{url}")
                         _unlink_meta(part)
@@ -269,6 +314,10 @@ class BodyClient:
                             raise SourceUnreachable(f"206 响应缺少有效 Content-Range：{url}")
                         if total is None:
                             raise SourceUnreachable(f"206 响应总长未知（*）：{url}")
+                        if end < start:
+                            raise SourceUnreachable(f"206 Content-Range 边界非法：{start}-{end}/{total}")
+                        if end >= total:
+                            raise SourceUnreachable(f"206 Content-Range 越过总长：{start}-{end}/{total}")
                         if total > max_bytes:
                             raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
                         if content_length is not None and content_length != end - start + 1:
@@ -290,6 +339,7 @@ class BodyClient:
                                 resume = False
                                 if not restarted:
                                     restarted = True
+                                    attempt = max(0, attempt - 1)
                                     continue
                                 raise SourceUnreachable(f"206 验证器与 .part 不匹配：{url}")
                         elif start != 0:
@@ -300,7 +350,17 @@ class BodyClient:
                             last_modified=resp.headers.get("Last-Modified", ""),
                             total=total,
                         )
-                        if written != end + 1 or (total is not None and written != total):
+                        if written < end + 1:
+                            if _can_resume(
+                                part, part_size, resp.headers.get("ETag", ""), resp.headers.get("Last-Modified", "")
+                            ):
+                                self._emit_failure(url, status, written, "truncated")
+                                raise _ResponseTruncated(
+                                    f"206 响应长度不完整：{written} != {end + 1}/{total}", resumable=True
+                                )
+                            self._emit_failure(url, status, written, "truncated")
+                            raise SourceUnreachable(f"206 响应长度不完整：{written} != {end + 1}/{total}")
+                        if written > end + 1 or (total is not None and written != total):
                             self._emit_failure(url, status, written, "truncated")
                             raise SourceUnreachable(f"206 响应长度不完整：{written} != {end + 1}/{total}")
                         _unlink_meta(part)
@@ -312,7 +372,7 @@ class BodyClient:
                     if status == 416:
                         if not resume or part_size <= 0:
                             raise SourceUnreachable(f"416 但本地没有可验证的 .part：{url}")
-                        probe = self.transport.probe(url, timeout=min(float(timeout), 20.0)) or ProbeInfo()
+                        probe = self.transport.probe(url, timeout=min(float(timeout), 20.0), referer=referer) or ProbeInfo()
                         probe_etag, probe_lm = probe.etag, probe.last_modified
                         expected_etag = sidecar.get("etag", "")
                         expected_lm = sidecar.get("last_modified", "")
@@ -333,6 +393,7 @@ class BodyClient:
                         resume = False
                         if not restarted:
                             restarted = True
+                            attempt = max(0, attempt - 1)
                             continue
                         raise SourceUnreachable(f"416 验证器或长度不匹配：{url}")
                     raise SourceUnreachable(f"下载返回 HTTP {status}：{url}")
@@ -340,7 +401,7 @@ class BodyClient:
                 self._check_error_body(exc, url)
                 if exc.code == 416:
                     if resume and part_size > 0:
-                        probe = self.transport.probe(url, timeout=min(float(timeout), 20.0)) or ProbeInfo()
+                        probe = self.transport.probe(url, timeout=min(float(timeout), 20.0), referer=referer) or ProbeInfo()
                         expected_etag = sidecar.get("etag", "")
                         expected_lm = sidecar.get("last_modified", "")
                         if _strong(expected_etag):
@@ -360,11 +421,21 @@ class BodyClient:
                         resume = False
                         if not restarted:
                             restarted = True
+                            attempt = max(0, attempt - 1)
                             continue
                     raise SourceUnreachable(f"下载返回 HTTP 416：{url}") from exc
                 if 500 <= exc.code <= 599 and attempt < attempts:
                     continue
                 raise SourceUnreachable(f"下载返回 HTTP {exc.code}：{url}") from exc
+            except _ResponseTruncated as exc:
+                if not exc.resumable or truncation_retry_used:
+                    raise SourceUnreachable(str(exc)) from exc
+                truncation_retry_used = True
+                part_size, sidecar, resume = _load_part_state(part, max_bytes)
+                if not resume:
+                    raise SourceUnreachable(str(exc)) from exc
+                attempt = max(0, attempt - 1)
+                continue
             except _MetaWriteError:
                 raise
             except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
@@ -401,10 +472,18 @@ class BodyClient:
         mode = "ab" if resume else "wb"
         start_size = part.stat().st_size if resume and part.exists() else 0
         written = start_size
+        last_meta_size = start_size
+
+        def read_chunk():
+            try:
+                return resp.read(chunk_size), None
+            except (http.client.IncompleteRead, ConnectionResetError) as exc:
+                return getattr(exc, "partial", b""), exc
+
         # Read and inspect the first chunk before touching an existing .part.
         # A block page must never destroy a previously valid partial body, and
         # an empty first chunk is still a valid zero-byte response.
-        pending = resp.read(chunk_size)
+        pending, pending_error = read_chunk()
         if pending:
             self.detector.check(pending[:65536], resp.headers.get("Content-Type", ""))
         # P2-15: persist the sidecar at response-header/first-chunk time, not
@@ -435,22 +514,40 @@ class BodyClient:
                                 total=total, size=written)
                 except OSError as exc:
                     raise _MetaWriteError(str(exc)) from exc
+                last_meta_size = written
+            if pending_error is not None:
+                if written > start_size and _has_strong_validator(etag, last_modified):
+                    raise _ResponseTruncated("响应流读取不完整", resumable=True) from pending_error
+                raise pending_error
             while True:
-                chunk = resp.read(chunk_size)
+                chunk, chunk_error = read_chunk()
+                if chunk:
+                    written += len(chunk)
+                    if written > max_bytes:
+                        if resume:
+                            fp.flush()
+                            fp.truncate(start_size)
+                        else:
+                            fp.close()
+                            part.unlink(missing_ok=True)
+                            _unlink_meta(part)
+                        raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
+                    fp.write(chunk)
+                    fp.flush()
+                    if written - last_meta_size >= META_CHECKPOINT_BYTES:
+                        try:
+                            _write_meta(part, etag=etag, last_modified=last_modified,
+                                        total=total, size=written)
+                        except OSError as exc:
+                            raise _MetaWriteError(str(exc)) from exc
+                        last_meta_size = written
+                if chunk_error is not None:
+                    if written > start_size and _has_strong_validator(etag, last_modified):
+                        raise _ResponseTruncated("响应流读取不完整", resumable=True) from chunk_error
+                    raise chunk_error
                 if not chunk:
                     break
-                written += len(chunk)
-                if written > max_bytes:
-                    if resume:
-                        fp.flush()
-                        fp.truncate(start_size)
-                    else:
-                        fp.close()
-                        part.unlink(missing_ok=True)
-                        _unlink_meta(part)
-                    raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
-                fp.write(chunk)
-                fp.flush()
+            if last_meta_size != written:
                 try:
                     _write_meta(part, etag=etag, last_modified=last_modified,
                                 total=total, size=written)

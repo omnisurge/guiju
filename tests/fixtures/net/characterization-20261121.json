@@ -177,8 +177,8 @@
         },
         "outcome": "source_unreachable",
         "exit": 20,
-        "body_read_bytes": 0,
-        "part_size": 0,
+        "body_read_bytes": 3,
+        "part_size": 3,
         "final_exists": false,
         "request_count": 1,
         "sleeps": []
@@ -592,12 +592,12 @@
           "range": "bytes=500-",
           "if-range": "\"v1\""
         },
-        "outcome": "source_unreachable",
-        "exit": 20,
-        "body_read_bytes": 0,
-        "part_size": 0,
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1009,
+        "part_size": 1009,
         "final_exists": false,
-        "request_count": 1,
+        "request_count": 2,
         "sleeps": []
       }
     },
@@ -670,12 +670,12 @@
           "range": "bytes=500-",
           "if-range": "\"v1\""
         },
-        "outcome": "ok",
-        "exit": 0,
+        "outcome": "error:TypeError",
+        "exit": 1,
         "body_read_bytes": 500,
         "part_size": 500,
         "final_exists": false,
-        "request_count": 2,
+        "request_count": 1,
         "sleeps": []
       }
     },
@@ -709,12 +709,12 @@
           "range": "bytes=500-",
           "if-range": "\"v1\""
         },
-        "outcome": "source_unreachable",
-        "exit": 20,
-        "body_read_bytes": 0,
-        "part_size": 0,
+        "outcome": "error:TypeError",
+        "exit": 1,
+        "body_read_bytes": 500,
+        "part_size": 500,
         "final_exists": false,
-        "request_count": 2,
+        "request_count": 1,
         "sleeps": []
       }
     },
@@ -748,12 +748,12 @@
           "range": "bytes=500-",
           "if-range": "\"v1\""
         },
-        "outcome": "source_unreachable",
-        "exit": 20,
-        "body_read_bytes": 0,
-        "part_size": 0,
+        "outcome": "error:TypeError",
+        "exit": 1,
+        "body_read_bytes": 500,
+        "part_size": 500,
         "final_exists": false,
-        "request_count": 2,
+        "request_count": 1,
         "sleeps": []
       }
     },
@@ -823,12 +823,12 @@
           "range": "bytes=500-",
           "if-range": "\"v1\""
         },
-        "outcome": "ok",
-        "exit": 0,
+        "outcome": "error:TypeError",
+        "exit": 1,
         "body_read_bytes": 500,
         "part_size": 500,
         "final_exists": false,
-        "request_count": 2,
+        "request_count": 1,
         "sleeps": []
       }
     },
@@ -901,12 +901,12 @@
           "range": "bytes=5-",
           "if-range": "Wed, 01 Jan 2025 00:00:00 GMT"
         },
-        "outcome": "source_unreachable",
-        "exit": 20,
-        "body_read_bytes": 0,
-        "part_size": 0,
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
         "final_exists": false,
-        "request_count": 1,
+        "request_count": 2,
         "sleeps": []
       }
     },
@@ -1090,12 +1090,12 @@
           "range": "bytes=5-",
           "if-range": "\"v1\""
         },
-        "outcome": "source_unreachable",
-        "exit": 20,
-        "body_read_bytes": 0,
-        "part_size": 0,
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 10,
+        "part_size": 10,
         "final_exists": false,
-        "request_count": 1,
+        "request_count": 2,
         "sleeps": []
       }
     },
@@ -1701,12 +1701,12 @@
           "range": "bytes=5-",
           "if-range": "\"v1\""
         },
-        "outcome": "source_unreachable",
-        "exit": 20,
-        "body_read_bytes": 0,
-        "part_size": 0,
+        "outcome": "ok",
+        "exit": 0,
+        "body_read_bytes": 1004,
+        "part_size": 1004,
         "final_exists": false,
-        "request_count": 1,
+        "request_count": 2,
         "sleeps": []
       }
     },
