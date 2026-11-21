@@ -29,8 +29,7 @@ def check_url(url: str) -> str:
     return BodyPolicy().check_url(url)
 
 
-def _throttle(host: str) -> None:
-    default_throttle().wait(host)
+_throttle = default_throttle().wait
 
 
 class _CompatThrottle:
@@ -101,8 +100,6 @@ def download_bytes(
     return _body_client().download_bytes(url, referer=referer, timeout=timeout, max_bytes=max_bytes)
 
 
-def _detect_block(resp: Response) -> None:
-    BlockDetector().check(resp.body, resp.content_type)
 
 
 def _GuardedRedirect():

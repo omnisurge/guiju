@@ -29,15 +29,27 @@ class BodyPolicy:
     def check_url(self, url: str) -> str:
         if self._check_url_fn is not None:
             return self._check_url_fn(url)
+        if any(ord(ch) < 32 for ch in url):
+            raise ComplianceDenied("URL 含控制字符，拒绝访问")
         parts = urllib.parse.urlsplit(url)
         if parts.scheme not in ("https", "http"):
             raise ComplianceDenied(f"仅允许 http(s)：{url}")
+        if parts.username is not None or parts.password is not None:
+            raise ComplianceDenied("URL 不得携带用户名或密码")
+        try:
+            port = parts.port
+        except ValueError as exc:
+            raise ComplianceDenied(f"URL 端口无效：{url}") from exc
+        if port not in (None, 80, 443):
+            raise ComplianceDenied(f"URL 端口不允许：{url}")
         from .headers import canonical_host
         host = canonical_host(parts.hostname or "")
         if not host:
             raise ComplianceDenied(f"非法 host，拒绝访问：{parts.hostname or '(空)'}")
         if not (host == "gov.cn" or host.endswith(self.ALLOWED_SUFFIX)):
             raise ComplianceDenied(f"非政府域名，拒绝访问：{host or '(空)'}")
+        if parts.fragment:
+            return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, ""))
         return url
 
     def check_redirect(self, req, target: str) -> str:
@@ -82,6 +94,8 @@ class MetadataPolicy:
         except ValueError as exc:
             raise ComplianceDenied("元数据 URL 端口无效") from exc
         host = (parts.hostname or "").lower()
+        if any(ord(ch) < 32 for ch in url):
+            raise ComplianceDenied("元数据 URL 含控制字符")
         if (
             parts.scheme not in ("http", "https")
             or host not in self.endpoints

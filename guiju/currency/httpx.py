@@ -30,16 +30,9 @@ def _normalize_path(path: str) -> str:
     return normalize_path(path)
 
 
-def _check_url(url: str) -> str:
-    return MetadataPolicy().check_url(url)
-
-
-def _check_redirect_target(req, target: str) -> str:
-    return MetadataPolicy().check_redirect(req, target)
-
-
-def _throttle(host: str) -> None:
-    default_throttle().wait(host)
+_check_url = MetadataPolicy().check_url
+_check_redirect_target = MetadataPolicy().check_redirect
+_throttle = default_throttle().wait
 
 
 class _CompatThrottle:
@@ -47,12 +40,7 @@ class _CompatThrottle:
         _throttle(host)
 
 
-def _check_headers(headers, url: str, *, redirect: bool = False) -> None:
-    MetadataPolicy().check_headers(headers, url, redirect=redirect)
-
-
-def _detect_block(body: bytes) -> None:
-    BlockDetector().check(body, "text/html", reject_binary=True)
+_check_headers = MetadataPolicy().check_headers
 
 
 def _MetadataRedirect():

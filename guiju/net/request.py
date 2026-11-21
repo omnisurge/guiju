@@ -44,6 +44,7 @@ class Response:
     content_type: str
     status: int = 200
     headers: Mapping[str, str] = field(default_factory=dict)
+    probe: ProbeRecord | None = None
 
     @property
     def text(self) -> str:
@@ -59,3 +60,9 @@ class DownloadResult:
     etag: str = ""
     last_modified: str = ""
     probe: ProbeRecord | None = None
+
+    def __post_init__(self) -> None:
+        if self.probe is None:
+            object.__setattr__(
+                self, "probe", ProbeRecord(url=self.url, status=self.status, bytes=self.bytes, outcome="ok")
+            )
