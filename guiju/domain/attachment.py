@@ -162,7 +162,7 @@ def pick(
     if target:
         exact = [a for a in alive if target in _norm(a.label)]
         if len(exact) == 1:
-            if exact[0].kind in ("doc", "zip"):
+            if not _is_pdf(exact[0]):
                 return _ambiguous(
                     [exact[0]], names,
                     f"唯一附件明确不是 PDF（{exact[0].kind}），需人工确认",
@@ -186,7 +186,7 @@ def pick(
     # 候选只剩一个时不存在"选错"，名称不完全匹配只作提示：多标准合并公告的附件名
     # 常被截断（实测「城市给水工程项目建设」vs 标准名「城市给水工程项目建设标准」）。
     if len(alive) == 1:
-        if alive[0].kind in ("doc", "zip"):
+        if not _is_pdf(alive[0]):
             return _ambiguous([alive[0]], names,
                               f"唯一附件明确不是 PDF（{alive[0].kind}），需人工确认")
         reason = "唯一候选附件" if target else "唯一附件"
