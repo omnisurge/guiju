@@ -1,7 +1,7 @@
 # 规矩 guiju — 交接文档
 
 > 一句话：从官方站点取工程建设标准的**目录 + 正文 + 引用串 + 现行状态**，只搬运与校验，不生产内容。
-> 状态：**v1.2.0-alpha.3 已发布**（2026-11-21；tag v1.2.0-alpha.3，发布提交见 tag；hk guiju-mcp 部署见 ./docs/ACCEPTANCE.md）。单测 **984 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.3。
+> 状态：**v1.2.0-alpha.3 已发布**（2026-11-21；tag v1.2.0-alpha.3，发布提交 `c053ddd`；hk guiju-mcp 已升级到 `1.2.0a3`）。单测 **984 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.3。
 > 本文件包含版本历史记录；历史行中的 cmd/mcp、NAS spec-currency 是当时事实，不代表当前运行形态。当前形态见 [docs/README.md](docs/README.md)。
 > ADR 0001 / ADR 0002 均已关闭（历史决策，见 [docs/adr/README.md](docs/adr/README.md)）；当前时效只使用 **native**，`GUIJU_CURRENCY` 只认 `native[:off|dir]` / `off`；hk `guiju-mcp` 已部署，NAS spec-currency 已于 2026-11-01 停用（历史事实，本项目不依赖 NAS）。
 

@@ -13,8 +13,8 @@
 
 | 项 | 本次实测 |
 |---|---|
-| 代码基线 | `refactor/root-cause` a42cb64（B2/W1 网络层收口 + P0/P1 修复；发布 tag 指向本次发布提交） |
-| 版本 | `1.2.0a3`（发布 tag `v1.2.0-alpha.3`，指向本次发布提交；代码内容为 a42cb64） |
+| 代码基线 | `refactor/root-cause` c053ddd（a42cb64 + 发版文档；发布 tag 指向本次发布提交） |
+| 版本 | `1.2.0a3`（发布 tag `v1.2.0-alpha.3`，指向本次发布提交 c053ddd；代码内容为 a42cb64） |
 | 完整单测矩阵 | Python 3.13.5、3.10.21 **各 984/984 通过** |
 | 本地 CI | ruff、984 单测、离线 e2e **4/4**、version/status/help 入口自检全绿 |
 | 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39 通过**，exit 0；日志 `/tmp/guiju-b2-blockfix-e2e-final2-20261121.log`，2781 bytes，SHA-256 `557f5647e699fa44c215d90d9fe0b4532b8900382267c7b5398e714cac958812` |
@@ -22,7 +22,7 @@
 | 构建烟测 | wheel/sdist 均为 `guiju-1.2.0a3`；临时 venv 安装 wheel 后 `guiju version --json` 返回 `1.2.0a3` |
 | 发布产物 | GitHub prerelease `v1.2.0-alpha.3`；wheel `guiju-1.2.0a3-py3-none-any.whl` SHA-256 `ab74bc17d7a94c282f0bf36e6eb8eefbdd8d21a5dd4563c89fcca925471f5975`；sdist `guiju-1.2.0a3.tar.gz` SHA-256 `c192078fa9c993522aa8cbac6c98f7e4eb8a333cd2cea0268921f3927da6ab69` |
 | 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.3 |
-| hk 生产部署 | 待本次发布提交创建后部署并复核（部署记录补于本表） |
+| hk 生产部署 | `guiju-mcp.service` 已升级到 `1.2.0a3`（/opt/guiju，Python 3.11.2），本机 health `{"ok":true}`；公网 `https://guiju.守夜人.中国/health`（Bearer）HTTP 200，MCP query `GB 55037-2022` 返回 current；备份 `/opt/guiju/guiju.prev-1.2.0a2-20261121-215402` 与 unit `.bak-alpha3-20261121-215402`；未访问 NAS |
 
 ## v1.2.0-alpha.2（2026-11-20，预发布）
 
