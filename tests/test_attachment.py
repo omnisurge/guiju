@@ -68,6 +68,19 @@ class PickTest(unittest.TestCase):
         got = pick([item], "某标准", announcement_title="关于发布《某标准》的公告")
         self.assertIs(got.verdict, Verdict.AMBIGUOUS)
 
+    def test_pdf_candidate_is_pdf_for_unique_tie_break(self):
+        candidate = Attachment(url="https://x.gov.cn/api-gateway/1", label="某标准", kind="pdf_candidate")
+        got = pick([candidate], "某标准", announcement_title="关于发布《某标准》的公告")
+        self.assertIs(got.verdict, Verdict.OK)
+        self.assertIs(got.choice, candidate)
+
+    def test_two_exact_candidates_choose_only_pdf(self):
+        doc = Attachment(url="https://x.gov.cn/a.doc", label="某标准", kind="doc")
+        pdf = Attachment(url="https://x.gov.cn/a.pdf", label="某标准", kind="pdf")
+        got = pick([doc, pdf], "某标准", announcement_title="关于发布《某标准》的公告")
+        self.assertIs(got.verdict, Verdict.OK)
+        self.assertIs(got.choice, pdf)
+
 
 if __name__ == "__main__":
     unittest.main()

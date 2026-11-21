@@ -44,7 +44,7 @@ QUERY_DATA = {
 _ITEM_RE = re.compile(r'<a[^>]+href="(/gongkai/zc/wjk/art/[^"]+)"[^>]*title="([^"]*)"', re.S)
 _DATE_RE = re.compile(r'<span class="date-info">\s*([0-9]{4}-[0-9]{2}-[0-9]{2})')
 _ATTACH_RE = re.compile(
-    r'<a[^>]+href="([^"]*(?:api-gateway|\.pdf|\.docx?|\.zip)[^"]*)"[^>]*>(.*?)</a>', re.S | re.I
+    r'<a[^>]+href="([^"]*(?:api-gateway|\.pdf|\.docx?|\.zip|\.rar)[^"]*)"[^>]*>(.*?)</a>', re.S | re.I
 )
 _COUNT_RE = re.compile(r'count="(\d+)"')
 # 公告标题的规范名/分类判定统一在 domain.announcement：此前这里复制了一份
@@ -104,7 +104,16 @@ def attachments(html: str) -> list[Attachment]:
         label = htmllib.unescape(re.sub(r"<[^>]+>", "", inner)).strip()
         url = urllib.parse.urljoin(BASE, href.replace("&amp;", "&"))
         path = urllib.parse.urlsplit(url).path.lower()
-        kind = "pdf" if path.endswith(".pdf") else "doc" if path.endswith((".doc", ".docx")) else "zip" if path.endswith(".zip") else "unknown"
+        if path.endswith(".pdf"):
+            kind = "pdf"
+        elif path.endswith((".doc", ".docx")):
+            kind = "doc"
+        elif path.endswith((".zip", ".rar")):
+            kind = "zip"
+        elif "/api-gateway/" in path:
+            kind = "pdf_candidate"
+        else:
+            kind = "unknown"
         seen.setdefault(url, Attachment(url=url, label=label, kind=kind))
     return list(seen.values())
 

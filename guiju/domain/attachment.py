@@ -83,7 +83,7 @@ def _is_pdf(att: Attachment) -> bool:
     # 或标签里出现独立的 ".pdf" 字样。裸 "pdf" 子串会误伤：实测「X规范PDF版.zip」、
     # 「xxpdfyy」这类名字都含 pdf 却不是 PDF。
     if att.kind != "unknown":
-        return att.kind == "pdf"
+        return att.kind in ("pdf", "pdf_candidate")
     path = urllib.parse.urlsplit(att.url).path.lower()
     if path.endswith(".pdf"):
         return True
