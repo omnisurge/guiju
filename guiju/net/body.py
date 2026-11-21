@@ -25,6 +25,10 @@ from .transport import Transport
 UA = f"guiju/{__version__} (compliance-aware; official code fetcher)"
 
 
+class _MetaWriteError(OSError):
+    """Local sidecar persistence failed; keep part/meta diagnosable."""
+
+
 def _strong(value: str) -> bool:
     if not value or value.strip().startswith(("W/", "w/")):
         return False
@@ -72,7 +76,9 @@ def _unlink_meta(part: Path) -> None:
 
 def finalize(part_path: str | Path, dest_path: str | Path) -> None:
     """The sole body-file placement point: atomic rename after caller checks SHA."""
-    os.replace(Path(part_path), Path(dest_path))
+    part = Path(part_path)
+    os.replace(part, Path(dest_path))
+    _unlink_meta(part)
 
 
 class BodyClient:
@@ -96,6 +102,10 @@ class BodyClient:
         if record is not None:
             self.probe_sink(record)
 
+    def _emit_failure(self, url: str, status: int | None, bytes_read: int | None,
+                      outcome: str = "truncated") -> None:
+        self._emit(ProbeRecord(url=url, status=status, bytes=bytes_read, outcome=outcome))
+
     def _headers(self, referer: str | None = None) -> dict[str, str]:
         headers = {"User-Agent": UA, "Accept": "*/*"}
         if referer:
@@ -115,7 +125,7 @@ class BodyClient:
         attempts: int = 2,
         max_bytes: int | None = None,
     ) -> Response:
-        self.policy.check_url(url)
+        url = self.policy.check_url(url)
         limit = self.policy.max_page_bytes if max_bytes is None else max_bytes
         for attempt in range(max(1, attempts)):
             self.throttle.wait(urllib.parse.urlsplit(url).hostname or "")
@@ -179,7 +189,7 @@ class BodyClient:
         attempts: int = 2,
         chunk_size: int = 1 << 16,
     ) -> DownloadResult:
-        self.policy.check_url(url)
+        url = self.policy.check_url(url)
         part = Path(part_path)
         part.parent.mkdir(parents=True, exist_ok=True)
         max_bytes = self.policy.max_download_bytes
@@ -226,20 +236,26 @@ class BodyClient:
                             raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
                         if content_length is None and not chunked:
                             raise SourceUnreachable(f"响应既无 Content-Length 也无 chunked：{url}")
-                        written = self._write_response(resp, part, resume=False, max_bytes=max_bytes, chunk_size=chunk_size)
+                        if chunked and content_length is not None:
+                            raise SourceUnreachable(f"响应同时声明 Content-Length 与 chunked：{url}")
+                        written = self._write_response(
+                            resp, part, resume=False, max_bytes=max_bytes, chunk_size=chunk_size,
+                            etag=resp.headers.get("ETag", ""),
+                            last_modified=resp.headers.get("Last-Modified", ""),
+                            total=content_length,
+                        )
                         if content_length is not None and written != content_length:
                             if written > content_length:
                                 with open(part, "r+b") as fp:
                                     fp.truncate(content_length)
+                            self._emit_failure(url, status, written, "truncated")
                             raise SourceUnreachable(
                                 f"响应截断或 Content-Length 与实际读取不一致：{written} != {content_length}"
                             )
                         missing = getattr(resp, "length", None)
                         if missing is not None and missing > 0:
+                            self._emit_failure(url, status, written, "truncated")
                             raise SourceUnreachable(f"响应读取失败（响应截断，尚缺 {missing} 字节）：{url}")
-                        _write_meta(part, etag=resp.headers.get("ETag", ""),
-                                    last_modified=resp.headers.get("Last-Modified", ""),
-                                    total=written, size=written)
                         _unlink_meta(part)
                         result = DownloadResult(url=url, bytes=written, resumed_from=0, status=200,
                                                 etag=resp.headers.get("ETag", ""),
@@ -278,12 +294,15 @@ class BodyClient:
                                 raise SourceUnreachable(f"206 验证器与 .part 不匹配：{url}")
                         elif start != 0:
                             raise SourceUnreachable(f"206 起点不为 0：{start}")
-                        written = self._write_response(resp, part, resume=resume, max_bytes=max_bytes, chunk_size=chunk_size)
+                        written = self._write_response(
+                            resp, part, resume=resume, max_bytes=max_bytes, chunk_size=chunk_size,
+                            etag=resp.headers.get("ETag", ""),
+                            last_modified=resp.headers.get("Last-Modified", ""),
+                            total=total,
+                        )
                         if written != end + 1 or (total is not None and written != total):
+                            self._emit_failure(url, status, written, "truncated")
                             raise SourceUnreachable(f"206 响应长度不完整：{written} != {end + 1}/{total}")
-                        _write_meta(part, etag=resp.headers.get("ETag", ""),
-                                    last_modified=resp.headers.get("Last-Modified", ""),
-                                    total=total, size=written)
                         _unlink_meta(part)
                         result = DownloadResult(url=url, bytes=written, resumed_from=part_size if resume else 0,
                                                 status=206, etag=resp.headers.get("ETag", ""),
@@ -346,7 +365,10 @@ class BodyClient:
                 if 500 <= exc.code <= 599 and attempt < attempts:
                     continue
                 raise SourceUnreachable(f"下载返回 HTTP {exc.code}：{url}") from exc
+            except _MetaWriteError:
+                raise
             except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
+                self._emit_failure(url, None, None, "truncated")
                 if attempt < attempts:
                     continue
                 raise SourceUnreachable(f"下载不可达（{url}）：{type(exc).__name__}：{exc}") from exc
@@ -364,37 +386,64 @@ class BodyClient:
             ctype = exc.headers.get("Content-Type", "")
         self.detector.check(body[:65536], ctype)
 
-    def _write_response(self, resp, part: Path, *, resume: bool, max_bytes: int, chunk_size: int = 1 << 16) -> int:
+    def _write_response(
+        self,
+        resp,
+        part: Path,
+        *,
+        resume: bool,
+        max_bytes: int,
+        chunk_size: int = 1 << 16,
+        etag: str = "",
+        last_modified: str = "",
+        total: int | None = None,
+    ) -> int:
         mode = "ab" if resume else "wb"
         start_size = part.stat().st_size if resume and part.exists() else 0
         written = start_size
-        pending = b""
-        if not resume:
-            # Check the first chunk before truncating an existing .part: a block
-            # page must never destroy a previously valid partial body.
-            pending = resp.read(chunk_size)
-            if pending:
-                self.detector.check(pending[:65536], resp.headers.get("Content-Type", ""))
+        # Read and inspect the first chunk before touching an existing .part.
+        # A block page must never destroy a previously valid partial body, and
+        # an empty first chunk is still a valid zero-byte response.
+        pending = resp.read(chunk_size)
+        if pending:
+            self.detector.check(pending[:65536], resp.headers.get("Content-Type", ""))
+        # P2-15: persist the sidecar at response-header/first-chunk time, not
+        # only after a successful transfer.  If this first write fails, no
+        # new part has been opened yet; new part/meta stay absent and an old
+        # part/meta pair remains untouched.
+        try:
+            _write_meta(part, etag=etag, last_modified=last_modified,
+                        total=total, size=start_size)
+        except OSError as exc:
+            raise _MetaWriteError(str(exc)) from exc
         with open(part, mode) as fp:
             if pending:
-                written += len(pending)
-                if written > max_bytes:
+                if written + len(pending) > max_bytes:
                     fp.close()
-                    part.unlink(missing_ok=True)
-                    _unlink_meta(part)
+                    if resume:
+                        fp = open(part, "r+b")
+                        fp.truncate(start_size)
+                        fp.close()
+                    else:
+                        part.unlink(missing_ok=True)
+                        _unlink_meta(part)
                     raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
                 fp.write(pending)
-            first = True
+                fp.flush()
+                written += len(pending)
+                try:
+                    _write_meta(part, etag=etag, last_modified=last_modified,
+                                total=total, size=written)
+                except OSError as exc:
+                    raise _MetaWriteError(str(exc)) from exc
             while True:
                 chunk = resp.read(chunk_size)
                 if not chunk:
                     break
-                if first and resume:
-                    self.detector.check(chunk[:65536], resp.headers.get("Content-Type", ""))
-                    first = False
                 written += len(chunk)
                 if written > max_bytes:
                     if resume:
+                        fp.flush()
                         fp.truncate(start_size)
                     else:
                         fp.close()
@@ -402,6 +451,12 @@ class BodyClient:
                         _unlink_meta(part)
                     raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
                 fp.write(chunk)
+                fp.flush()
+                try:
+                    _write_meta(part, etag=etag, last_modified=last_modified,
+                                total=total, size=written)
+                except OSError as exc:
+                    raise _MetaWriteError(str(exc)) from exc
         return written
 
     def download_bytes(

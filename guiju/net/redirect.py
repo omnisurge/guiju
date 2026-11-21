@@ -11,7 +11,7 @@ from ..errors import ComplianceDenied, SourceUnreachable
 from .block import BlockDetector
 from .endpoints import SHANGHAI_HOST
 from .headers import header_int
-from .policy import MetadataPolicy
+from .policy import BodyPolicy, MetadataPolicy
 
 
 class RedirectGuard(urllib.request.HTTPRedirectHandler):
@@ -26,7 +26,11 @@ class RedirectGuard(urllib.request.HTTPRedirectHandler):
 
     def _validate(self, req, newurl: str) -> tuple[str, str]:
         target = urllib.parse.urljoin(req.full_url, newurl)
-        host = self.policy.check_redirect(req, target)
+        if isinstance(self.policy, BodyPolicy):
+            host = self.policy.check_redirect(req, target)
+            target = self.policy.check_url(target)
+        else:
+            host = self.policy.check_redirect(req, target)
         return target, host
 
     def http_error_302(self, req, fp, code, msg, headers):
@@ -36,6 +40,8 @@ class RedirectGuard(urllib.request.HTTPRedirectHandler):
                 raise SourceUnreachable(f"重定向未提供目标：{req.full_url}")
             target = urllib.parse.urljoin(req.full_url, target)
             self.policy.check_redirect(req, target)
+            if isinstance(self.policy, BodyPolicy):
+                target = self.policy.check_url(target)
             if isinstance(self.policy, MetadataPolicy):
                 self.policy.check_headers(headers, req.full_url, redirect=True)
             if fp is not None:
