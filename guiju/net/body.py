@@ -92,6 +92,10 @@ class BodyClient:
         self.probe_sink = probe_sink or (lambda record: None)
         self._last_content_type = ""
 
+    def _emit(self, record: ProbeRecord | None) -> None:
+        if record is not None:
+            self.probe_sink(record)
+
     def _headers(self, referer: str | None = None) -> dict[str, str]:
         headers = {"User-Agent": UA, "Accept": "*/*"}
         if referer:
@@ -145,7 +149,7 @@ class BodyClient:
                     missing = getattr(resp, "length", None)
                     if missing is not None and missing > 0:
                         raise SourceUnreachable(f"响应读取失败（尚缺 {missing} 字节）：{url}")
-                    return Response(
+                    response = Response(
                         url=resp.geturl() if hasattr(resp, "geturl") else url,
                         body=body,
                         content_type=resp.headers.get("Content-Type", "").split(";", 1)[0].strip().lower(),
@@ -153,6 +157,8 @@ class BodyClient:
                         headers=dict(resp.headers.items()) if hasattr(resp.headers, "items") else {},
                         probe=ProbeRecord(url=url, status=status, bytes=len(body), outcome="ok"),
                     )
+                    self._emit(response.probe)
+                    return response
             except urllib.error.HTTPError as exc:
                 self._check_error_body(exc, url)
                 if 500 <= exc.code <= 599 and attempt + 1 < attempts:
@@ -227,9 +233,11 @@ class BodyClient:
                                     last_modified=resp.headers.get("Last-Modified", ""),
                                     total=written, size=written)
                         _unlink_meta(part)
-                        return DownloadResult(url=url, bytes=written, resumed_from=0, status=200,
-                                               etag=resp.headers.get("ETag", ""),
-                                               last_modified=resp.headers.get("Last-Modified", ""))
+                        result = DownloadResult(url=url, bytes=written, resumed_from=0, status=200,
+                                                etag=resp.headers.get("ETag", ""),
+                                                last_modified=resp.headers.get("Last-Modified", ""))
+                        self._emit(result.probe)
+                        return result
                     if status == 206:
                         self._last_content_type = ctype
                         start, end, total = parse_content_range(resp.headers.get("Content-Range"))
@@ -269,9 +277,11 @@ class BodyClient:
                                     last_modified=resp.headers.get("Last-Modified", ""),
                                     total=total, size=written)
                         _unlink_meta(part)
-                        return DownloadResult(url=url, bytes=written, resumed_from=part_size if resume else 0,
-                                               status=206, etag=resp.headers.get("ETag", ""),
-                                               last_modified=resp.headers.get("Last-Modified", ""))
+                        result = DownloadResult(url=url, bytes=written, resumed_from=part_size if resume else 0,
+                                                status=206, etag=resp.headers.get("ETag", ""),
+                                                last_modified=resp.headers.get("Last-Modified", ""))
+                        self._emit(result.probe)
+                        return result
                     if status == 416:
                         if not resume or part_size <= 0:
                             raise SourceUnreachable(f"416 但本地没有可验证的 .part：{url}")
@@ -284,8 +294,10 @@ class BodyClient:
                         )
                         if valid:
                             _unlink_meta(part)
-                            return DownloadResult(url=url, bytes=part_size, resumed_from=part_size, status=416,
-                                                   etag=probe_etag, last_modified=probe_lm)
+                            result = DownloadResult(url=url, bytes=part_size, resumed_from=part_size, status=416,
+                                                    etag=probe_etag, last_modified=probe_lm)
+                            self._emit(result.probe)
+                            return result
                         part.unlink(missing_ok=True)
                         _unlink_meta(part)
                         part_size = 0
@@ -308,8 +320,10 @@ class BodyClient:
                         )
                         if valid:
                             _unlink_meta(part)
-                            return DownloadResult(url=url, bytes=part_size, resumed_from=part_size, status=416,
-                                                   etag=probe.etag, last_modified=probe.last_modified)
+                            result = DownloadResult(url=url, bytes=part_size, resumed_from=part_size, status=416,
+                                                    etag=probe.etag, last_modified=probe.last_modified)
+                            self._emit(result.probe)
+                            return result
                         part.unlink(missing_ok=True)
                         _unlink_meta(part)
                         part_size = 0
