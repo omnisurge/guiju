@@ -117,7 +117,7 @@ def record_case(case_id: str, backend) -> dict:
         return _record_g(case_id, backend)
     if case_id.startswith("CHAR-BLK-"):
         return _record_h(case_id, backend)
-    if case_id.startswith("CHAR-403-") or case_id.startswith("CHAR-429-"):
+    if case_id.startswith(("CHAR-403-", "CHAR-429-")):
         return _record_i(case_id, backend)
     if case_id.startswith("CHAR-THR-"):
         return _record_j(case_id, backend)
@@ -191,10 +191,9 @@ def _record_c(case_id: str, backend) -> dict:
                 _seed_meta(part, total=400, size=500, etag='"v1"')
         elif case_id == "CHAR-416-03":
             mode = "http_416_head_405"
-        elif case_id == "CHAR-416-05":
-            if getattr(backend, "sidecar", False):
-                part.unlink(missing_ok=True)
-                part.write_bytes(b"x" * 500)
+        elif case_id == "CHAR-416-05" and getattr(backend, "sidecar", False):
+            part.unlink(missing_ok=True)
+            part.write_bytes(b"x" * 500)
         with LocalServer(mode, body=body, headers={"ETag": '"v1"'}) as server:
             outcome, exit_code, _ = _download(backend, server, case_id, part)
             return _metrics(mode="http_416", case_id=case_id, headers=_headers(server),
@@ -366,7 +365,7 @@ def _record_k(case_id: str, backend) -> dict:
             shutil.rmtree(part.parent, ignore_errors=True)
     if case_id == "CHAR-PRB-03":
         with LocalServer("head_ok", body=b"%PDF" + b"x") as server:
-            outcome, exit_code, result = _run(lambda: backend.remote_length(server.url + "/" + case_id))
+            outcome, exit_code, _ = _run(lambda: backend.remote_length(server.url + "/" + case_id))
             return _metrics(mode="probe", case_id=case_id, headers=_headers(server), outcome=outcome,
                             exit_code=exit_code, part=None, final_exists=False,
                             request_count=len(server.state.requests), sleeps=[], body_bytes=0)

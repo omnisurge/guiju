@@ -12,14 +12,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
-from guiju.net.body import BodyClient, finalize
 from guiju.net.block import BlockDetector
+from guiju.net.body import BodyClient, finalize
 from guiju.net.policy import BodyPolicy
 from guiju.net.throttle import Throttle
 from guiju.net.transport import Transport
 from tests.char_case_recorder import record_case
-from tests.char_baseline_harness import LocalServer
 
 FIXTURE = Path(__file__).parent / "fixtures/net/characterization-20261121.json"
 CASES = json.loads(FIXTURE.read_text("utf-8"))["cases"]
@@ -123,9 +121,8 @@ class CharacterizationTest(unittest.TestCase):
                 for key in REQUIRED:
                     broken = copy.deepcopy(case)
                     del broken[side][key]
-                    with self.subTest(case=case_id, side=side, key=key):
-                        with self.assertRaises(AssertionError):
-                            self.validate_case(broken, case_id)
+                    with self.subTest(case=case_id, side=side, key=key), self.assertRaises(AssertionError):
+                        self.validate_case(broken, case_id)
 
 
     def test_unknown_case_fails(self) -> None:
