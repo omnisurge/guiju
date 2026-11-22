@@ -57,7 +57,7 @@ MAGIC_HTML = "html"
 MAGIC_UNKNOWN = "unknown"
 
 
-def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int]:
+def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int | None]:
     """取一页目录。返回 (条目, 总数)。"""
     params = dict(QUERY_DATA)
     params["paramJson"] = json.dumps({"pageNo": page_no, "pageSize": page_size})
@@ -71,9 +71,12 @@ def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int]:
 
     fragment = (payload.get("data") or {}).get("html") or ""
     if not fragment:
-        return [], 0
+        # 空 fragment 不是“明确空目录”：没有计数证据时 total 必须是 None，
+        # 否则 syncengine 会把站点改版/WAF 空白页误判成 complete=empty_catalog。
+        return [], None
 
-    total = int(_COUNT_RE.search(fragment).group(1)) if _COUNT_RE.search(fragment) else 0
+    match = _COUNT_RE.search(fragment)
+    total = int(match.group(1)) if match else None
     items: list[dict] = []
     for block in re.split(r'<li class="date">', fragment)[1:]:
         link = _ITEM_RE.search(block)

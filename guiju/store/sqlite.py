@@ -358,18 +358,24 @@ class Store:
             # 有 meta 但解析不了 ≠ 没同步：返回 None 保安全（调用方按"旧"处理），
             # 但别让它静默 —— catalog_meta_corrupt() 负责把脏信号显式化。
             return None
-        return (datetime.now() - then).total_seconds() / 86400
+        age = (datetime.now() - then).total_seconds() / 86400
+        # 未来时间戳超过 1 小时不是“新鲜”，而是元数据损坏；小幅时钟漂移按 0 处理。
+        if age < -(1 / 24):
+            return None
+        return max(0.0, age)
 
     def catalog_meta_corrupt(self, source: str | None = None) -> str | None:
         """对应源的 synced_at 存在但解析不出 → 返回描述串；否则 None。"""
         raw = self._synced_at(source)
         if not raw:
             return None
+        label = f"sync:{source}:synced_at" if source else "synced_at"
         try:
-            datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+            then = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
         except ValueError:
-            label = f"sync:{source}:synced_at" if source else "synced_at"
             return f"catalog meta 损坏：{label}={raw!r}"
+        if (datetime.now() - then).total_seconds() < -3600:
+            return f"catalog meta 损坏：{label}={raw!r}（未来时间戳超过 1 小时）"
         return None
 
     def source_meta(self, source: str) -> dict:
@@ -396,6 +402,10 @@ class Store:
             try:
                 then = datetime.strptime(synced_at, "%Y-%m-%d %H:%M:%S")
                 age = (datetime.now() - then).total_seconds() / 86400
+                if age < -(1 / 24):
+                    age = None
+                else:
+                    age = max(0.0, age)
             except ValueError:
                 age = None
         return {

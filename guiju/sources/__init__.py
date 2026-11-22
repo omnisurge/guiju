@@ -24,8 +24,12 @@ class Source(Protocol):
     id: str
     display_name: str
 
-    def catalog_page(self, page_no: int, page_size: int) -> tuple[list[dict], int]:
-        """返回 (条目列表, 总数)。条目字段：date / url / title。"""
+    def catalog_page(self, page_no: int, page_size: int) -> tuple[list[dict], int | None]:
+        """返回 (条目列表, 总数或 None)。条目字段：date / url / title。
+
+        总数为 None 表示源没有给出可证明的计数（不等于空目录）；
+        只有明确计数 0 才是空目录。
+        """
 
     def detail(self, url: str) -> tuple[str, str]:
         """返回 (原始 HTML, 纯文本)。"""

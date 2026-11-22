@@ -21,6 +21,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from .errors import NeedsHuman
+from .sources import registry
 from .store.sqlite import Store, now
 
 MAX_AGE_DAYS = 7
@@ -78,8 +79,15 @@ def safe_sync(store: Store):
     return _try_lock(store, strict=True)
 
 
-def _cooldown_left(store: Store) -> int:
-    raw = store.get_meta("auto_sync_failed_at")
+def _cooldown_key(source: str) -> str:
+    return f"auto_sync_failed_at:{source}"
+
+
+def _cooldown_left(store: Store, source: str = "mohurd") -> int:
+    """按源读失败冷却；mohurd 回退读旧全局键，兼容旧版本留下的冷却。"""
+    raw = store.get_meta(_cooldown_key(source))
+    if not raw and source == "mohurd":
+        raw = store.get_meta("auto_sync_failed_at")
     if not raw:
         return 0
     try:
@@ -90,9 +98,72 @@ def _cooldown_left(store: Store) -> int:
     return max(0, int(left))
 
 
+def _set_cooldown(store: Store, source: str, value: str) -> None:
+    """写按源冷却；mohurd 同时维护旧全局键，确保旧读者仍能看到失败。"""
+    store.set_meta(_cooldown_key(source), value)
+    if source == "mohurd":
+        store.set_meta("auto_sync_failed_at", value)
+
+
 def _age(store: Store, source: str) -> float | None:
     """mohurd 走无参路径，保留现有 mock/兼容；其它源按源查询。"""
     return store.catalog_age_days() if source == "mohurd" else store.catalog_age_days(source)
+
+
+def _source_entry(
+    store: Store,
+    source_id: str,
+    *,
+    current_source: str,
+    current_state: str,
+) -> dict:
+    """一个源的可观测状态；未同步源按 stale 处理，不能被别的源带成 fresh。"""
+    meta = store.source_meta(source_id)
+    age = meta["age_days"]
+    stale = (
+        not meta["complete"]
+        or age is None
+        or age > MAX_AGE_DAYS
+    )
+    entry = dict(meta)
+    entry["stale"] = stale
+    if source_id == current_source:
+        entry["state"] = current_state
+    else:
+        entry["state"] = "stale" if stale else "fresh"
+    return entry
+
+
+def _aggregate(entries: list[dict]) -> dict:
+    """catalog 全局视图：complete 取交集，age 取最老，state 取最坏。"""
+    if not entries:
+        return {
+            "state": "stale", "stale": True, "complete": False,
+            "reason": "unknown", "age_days": None,
+        }
+    incomplete = [e for e in entries if not e["complete"]]
+    reason = "; ".join(
+        f"{e['source']}={e['reason'] or 'unknown'}" for e in incomplete
+    )
+    ages = [e["age_days"] for e in entries]
+    age_days = None if any(a is None for a in ages) else max(ages)
+    stale = any(e["stale"] for e in entries)
+    if stale:
+        state = "stale"
+    elif any(e["state"] == "refresh_failed" for e in entries):
+        state = "refresh_failed"
+    elif any(e["state"] == "refreshing" for e in entries):
+        state = "refreshing"
+    else:
+        # refreshed 表示本轮已成功刷新，聚合层等价于 fresh。
+        state = "fresh"
+    return {
+        "state": state,
+        "stale": stale,
+        "complete": all(e["complete"] for e in entries),
+        "reason": reason,
+        "age_days": age_days,
+    }
 
 
 def _snap(
@@ -106,6 +177,15 @@ def _snap(
 ) -> dict:
     age = _age(store, source)
     meta = store.source_meta(source)
+    source_ids = list(registry())
+    entries = [
+        _source_entry(
+            store, source_id,
+            current_source=source,
+            current_state=state,
+        )
+        for source_id in source_ids
+    ]
     return {
         "state": state,
         "message": message,
@@ -117,7 +197,10 @@ def _snap(
         "announcements": store.count_announcements(),
         "new": new,
         "retry_after_seconds": retry_after_seconds,
+        # 兼容字段：仍是当前触发源数组，不改既有语义。
         "sources": [meta],
+        "sources_all": entries,
+        "aggregate": _aggregate(entries),
     }
 
 
@@ -169,7 +252,7 @@ def evaluate(
             source=source,
         )
 
-    left = _cooldown_left(store)
+    left = _cooldown_left(store, source)
     if left > 0:
         return _snap(
             store,
@@ -225,7 +308,7 @@ def evaluate(
             # 冷却时间戳写失败（只读库/磁盘满/并发锁）不能反过来阻断命令：
             # 刷新失败本来就要降级为"用旧目录继续"，记录失败只是锦上添花。
             with contextlib.suppress(Exception):
-                store.set_meta("auto_sync_failed_at", now())
+                _set_cooldown(store, source, now())
                 store.commit()
             return _snap(
                 store,
@@ -238,7 +321,7 @@ def evaluate(
                 source=source,
             )
         with contextlib.suppress(Exception):
-            store.set_meta("auto_sync_failed_at", "")
+            _set_cooldown(store, source, "")
             store.commit()
         return _snap(
             store,

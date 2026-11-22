@@ -8,14 +8,16 @@ from __future__ import annotations
 
 import argparse
 
+from ...autosync import MAX_AGE_DAYS
 from ...domain.availability import FULL_TEXT_SINCE_YEAR, coverage_statement
-from ...store.sqlite import Store
+from ...store.sqlite import SCHEMA_VERSION, Store
 from .. import render
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
     st = store.stats()
     age = store.catalog_age_days()
+    catalog_meta_corrupt = store.catalog_meta_corrupt()
     by_year = st["by_year"]
     pre = sum(c for y, c in by_year.items() if y and y.isdigit() and int(y) < FULL_TEXT_SINCE_YEAR)
     in_window = sum(c for y, c in by_year.items() if y and y.isdigit() and int(y) >= FULL_TEXT_SINCE_YEAR)
@@ -27,8 +29,11 @@ def run(store: Store, args: argparse.Namespace) -> int:
     for source_id in registry():
         meta = store.source_meta(source_id)
         meta["stale"] = (
-            not meta["complete"] or meta["age_days"] is None or meta["age_days"] > 7
+            not meta["complete"]
+            or meta["age_days"] is None
+            or meta["age_days"] > MAX_AGE_DAYS
         )
+        meta["catalog_meta_corrupt"] = store.catalog_meta_corrupt(source_id)
         sources.append(meta)
 
     probe = store.db.execute(
@@ -37,7 +42,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
     payload = {
         "ok": True,
         "db": str(store.path),
-        "schema_version": 2,
+        "schema_version": SCHEMA_VERSION,
         "currency_source": currency_mod.default_currency().name,
         "currency_endpoint": currency_mod.endpoint_of(currency_mod.default_currency()),
         "probe": {row["outcome"]: row["c"] for row in probe},
@@ -47,7 +52,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "scanned": st["scanned"],
         "synced_at": st["synced_at"],
         "catalog_age_days": None if age is None else round(age, 2),
-        "catalog_stale": age is None or age > 7,
+        "catalog_stale": age is None or age > MAX_AGE_DAYS,
+        "catalog_meta_corrupt": catalog_meta_corrupt,
         "sources": sources,
         "latest_published_on": store.max_published_on(),
         "coverage": {

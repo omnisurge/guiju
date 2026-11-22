@@ -116,15 +116,12 @@ def crawl(
         store.set_meta(f"sync:{source}:reason", reason)
         store.set_meta(f"sync:{source}:synced_at", stamp)
         if source == "mohurd":
-            # 只保留给旧版/旧调用方读；新逻辑不再用全局 complete 代替任何源。
-            store.set_meta("catalog_complete", "1")
+            # 只保留旧 synced_at 兼容读；旧版 catalog_complete 不再写，
+            # 所有“完整”判断都以 sync:<source>:complete 为准。
             store.set_meta("synced_at", stamp)
     else:
         store.set_meta(f"sync:{source}:complete", "0")
         store.set_meta(f"sync:{source}:reason", reason)
-        if source == "mohurd":
-            # 旧读者即使只看全局键，也不能把这一轮缺口当成完整。
-            store.set_meta("catalog_complete", "0")
     store.set_meta(f"sync:{source}:total", "" if best_total is None else str(best_total))
     store.set_meta(f"sync:{source}:seen", str(seen))
     if source == "mohurd":
