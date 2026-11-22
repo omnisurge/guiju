@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..domain.codes import Codes, Confidence, Role, _code_stem
-from ..errors import GuijuError, NeedsHuman, SourceUnreachable
+from ..errors import NeedsHuman, SourceUnreachable
 
 SCHEMA_VERSION = 2
 _SCHEMA_FILE = Path(__file__).with_name("schema.sql")
@@ -420,10 +420,7 @@ class Store:
             try:
                 then = datetime.strptime(synced_at, "%Y-%m-%d %H:%M:%S")
                 age = (datetime.now() - then).total_seconds() / 86400
-                if age < -(1 / 24):
-                    age = None
-                else:
-                    age = max(0.0, age)
+                age = None if age < -(1 / 24) else max(0.0, age)
             except ValueError:
                 age = None
         return {
