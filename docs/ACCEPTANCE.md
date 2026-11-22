@@ -17,7 +17,7 @@
 | 版本 | `1.2.0a4`（发布 tag `v1.2.0-alpha.4`） |
 | 完整单测矩阵 | Python 3.13.5、3.10.21 **各 1223/1223 通过** |
 | 本地 CI | ruff、1223 单测、`check-release.py --docs-only`、离线 e2e **4/4**、version/status/help 入口自检全绿 |
-| 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39 通过**，exit 0（本机权威执行） |
+| 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39 通过**，exit 0（本机权威执行）；日志 `/tmp/guiju-e2e-20261122-final2.log`，2781 bytes，SHA-256 `a0f37a9f3814a6344322282224ddd17dd13af153c1e2552775677cbb3e782fef` |
 | 修复范围 | B3（W2/W3/W4 本地合并）+ W1 网络/合规、W2 存储/同步、W3 时效/编号/地标、W4 CLI/pull、W5 MCP；详见 [发版记录](audit/release-1.2.0a4-20261122.md) |
 | 构建烟测 | wheel/sdist 均为 `guiju-1.2.0a4`；临时 venv 安装 wheel 后 `guiju version --json` 返回 `1.2.0a4`（2026-11-22 实测） |
 | 发布产物 | 本地发布包 `dist/`；wheel `guiju-1.2.0a4-py3-none-any.whl` SHA-256 `31352cb545061c19cfa73e60ff20a894cc1fb7b7b1dda950b16b4fb22b12e13e`；sdist `guiju-1.2.0a4.tar.gz` SHA-256 `d1079807e3ef27a360fdb6c13eb8bd0f30151d0b2743379e2f6340e20624d5d2` |
