@@ -17,6 +17,7 @@ import re
 
 from .. import currency as currency_mod
 from ..currency.model import QueryCancelled
+from ..domain.currency_check import completeness_of
 from ..domain.search import rank, tokens_of
 from ..errors import (
     AmbiguousCode,
@@ -336,8 +337,22 @@ def _by_code(
             f"编号 {ref} 的权威名称取不到：{exc}",
             hint="检查时效服务是否可达（GUIJU_CURRENCY 应为 native）；或加 --offline 后改用 guiju search 按名称查",
         ) from None
+    complete, incomplete_reason = completeness_of(currency)
     best_record = _pick_record(records, key)
     if best_record is None or not best_record.name:
+        if complete is False:
+            # 空结果可能只是没取全（无总页数证据/翻页截断/明文回退），
+            # 不能把它伪装成“本地没收录”的 31；交人复核/重试完整查询。
+            raise NeedsHuman(
+                f"时效服务结果不完整，无法确认编号 {ref} 是否收录",
+                hint=(
+                    "本次时效结果未取全，空结果不能当作「没有这条编号」；"
+                    f"原因：{incomplete_reason or '未知'}；稍后重试或检查源站"
+                ),
+                currency=[r.as_payload() for r in records],
+                currency_complete=False,
+                currency_incomplete_reason=incomplete_reason or None,
+            )
         raise NotIndexed(
             f"编号 {ref} 既不在本地索引中，时效服务也未返回可识别的名称",
             hint="确认编号是否完整（含年份）；或 guiju sync 后再试；仍无则本地目录里没有这本规范",
@@ -350,6 +365,18 @@ def _by_code(
     hits, _mode = rank(store.catalog_entries(), tokens_of(search_name))
     hits = _filter_by_version_window(hits, best_record.implement_date)
     if not hits:
+        if complete is False:
+            raise NeedsHuman(
+                f"时效服务结果不完整，无法确认编号 {ref} 是否对应公开公告",
+                hint=(
+                    "本次时效结果未取全，不能把「本地未找到公告」当作最终结论；"
+                    f"原因：{incomplete_reason or '未知'}；稍后重试或检查源站"
+                ),
+                currency=[r.as_payload() for r in records],
+                currency_complete=False,
+                currency_incomplete_reason=incomplete_reason or None,
+                resolved_name=best_record.name,
+            )
         raise NotIndexed(
             f"时效服务给到名称「{best_record.name}」，但本地目录没有对应公告",
             hint="先 guiju sync；若目录已同步仍无，说明该标准没有公开正文公告（如非工程建设类国标）",
