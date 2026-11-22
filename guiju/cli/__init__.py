@@ -111,9 +111,9 @@ def main(argv: list[str] | None = None) -> int:
         return int(args.func(store, args))
     except GuijuError as exc:
         return _fail(exc)
-    except sqlite3.OperationalError as exc:
-        # 写路径（set_meta/cache/commit）在只读库或锁等待超时时抛的是
-        # sqlite3.OperationalError；不能穿透成 exit 1“程序缺陷”。
+    except sqlite3.DatabaseError as exc:
+        # 写路径（set_meta/cache/commit）的锁/只读/完整性错误都属于数据库类别，
+        # 不能穿透成 exit 1“程序缺陷”；locked/busy 可重试，其余交人处理。
         text = str(exc).lower()
         if "locked" in text or "busy" in text:
             return _fail(SourceUnreachable(
@@ -121,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
                 hint="稍后重试一次；若持续出现，检查是否有另一个 guiju 进程在长期写库",
             ))
         return _fail(NeedsHuman(
-            f"数据库写入失败：{type(exc).__name__}: {exc}",
+            f"数据库操作失败：{type(exc).__name__}: {exc}",
             hint="备份数据库并检查磁盘/目录权限；只读库请移走或改到可写 GUIJU_HOME",
         ))
     except KeyboardInterrupt:

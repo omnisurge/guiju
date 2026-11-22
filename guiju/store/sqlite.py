@@ -34,6 +34,11 @@ def _is_locked(exc: sqlite3.OperationalError) -> bool:
     return "locked" in text or "busy" in text
 
 
+def _escape_like(value: str) -> str:
+    """转义 LIKE 通配符，保持用户输入的 % / _ / \\ 为字面量。"""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class Store:
     def __init__(self, path: str | Path | None = None, *, cross_thread: bool = False) -> None:
         # cross_thread=True：MCP 这类共享连接的场景放开 check_same_thread；
@@ -145,7 +150,10 @@ class Store:
             self.db.row_factory = sqlite3.Row
             self._configure_connection()
         elif version not in (0, SCHEMA_VERSION):
-            raise GuijuError(f"数据库 schema 版本 {version} 超出本程序认知（{SCHEMA_VERSION}）")
+            raise NeedsHuman(
+                f"数据库 schema 版本 {version} 超出本程序认知（{SCHEMA_VERSION}）",
+                hint="备份数据库后确认 guiju 版本；需要升级/迁移时联系维护者，勿直接删除数据",
+            )
         self.db.executescript(_SCHEMA_FILE.read_text(encoding="utf-8"))
         self.db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         self.db.commit()
@@ -202,19 +210,28 @@ class Store:
         存量。这里只更新事实字段，不改 fetched_at（它表示首次抓取时间）；id 不变，
         已有 mention 的引用关系不会被破坏。
         """
-        row = self.db.execute("SELECT id FROM announcement WHERE url=?", (url,)).fetchone()
-        if row is not None:
-            self.db.execute(
-                "UPDATE announcement SET published_on=?, title=?, doc_name=?, category=? WHERE id=?",
-                (published_on, title, doc_name, category, int(row["id"])),
-            )
-            return int(row["id"]), False
+        # INSERT OR IGNORE + 条件 UPDATE：两个连接同时写同一 URL 时由 UNIQUE
+        # 约束原子裁决，不会出现 SELECT 后再 INSERT 的 UNIQUE race；
+        # UPDATE 不触碰 fetched_at，首次抓取时间保持不变。
         cur = self.db.execute(
-            "INSERT INTO announcement(url,published_on,title,doc_name,category,fetched_at) "
+            "INSERT OR IGNORE INTO announcement(url,published_on,title,doc_name,category,fetched_at) "
             "VALUES(?,?,?,?,?,?)",
             (url, published_on, title, doc_name, category, now()),
         )
-        return int(cur.lastrowid or 0), True
+        fresh = cur.rowcount == 1
+        if fresh:
+            return int(cur.lastrowid or 0), True
+        self.db.execute(
+            "UPDATE announcement SET published_on=?, title=?, doc_name=?, category=? WHERE url=?",
+            (published_on, title, doc_name, category, url),
+        )
+        row = self.db.execute("SELECT id FROM announcement WHERE url=?", (url,)).fetchone()
+        if row is None:
+            raise NeedsHuman(
+                f"公告写入竞争失败：{url}",
+                hint="重试一次；若持续出现，检查数据库完整性和并发写入",
+            )
+        return int(row["id"]), False
 
     def get_ann(self, ann_id: int) -> sqlite3.Row | None:
         return self.db.execute("SELECT * FROM announcement WHERE id=?", (ann_id,)).fetchone()
@@ -234,9 +251,10 @@ class Store:
             return []
         where, params = [], []
         for kw in keywords:
-            where.append("(a.title LIKE ? OR a.doc_name LIKE ? OR e.code_key LIKE ?)")
-            like = f"%{kw}%"
-            params += [like, like, f"%{kw.upper().replace(' ', '')}%"]
+            where.append("(a.title LIKE ? ESCAPE '\\' OR a.doc_name LIKE ? ESCAPE '\\' OR e.code_key LIKE ? ESCAPE '\\')")
+            like = f"%{_escape_like(kw)}%"
+            code_like = f"%{_escape_like(kw.upper().replace(' ', ''))}%"
+            params += [like, like, code_like]
         if status:
             where.append("e.status = ?")
             params.append(status)
@@ -323,8 +341,8 @@ class Store:
             "SELECT m.code_key, m.role, m.evidence, e.code_display, e.status, e.confidence, a.*"
             " FROM mention m JOIN announcement a ON a.id = m.ann_id"
             " LEFT JOIN edition e ON e.code_key = m.code_key"
-            " WHERE m.code_key LIKE ? ORDER BY a.published_on DESC LIMIT 20",
-            (f"%{key}%",),
+            " WHERE m.code_key LIKE ? ESCAPE '\\' ORDER BY a.published_on DESC LIMIT 20",
+            (f"%{_escape_like(key)}%",),
         ).fetchall()
 
     # ---------------------------------------------------------------- probe / meta
