@@ -461,8 +461,8 @@ B1 非阻塞残余清理（2026-11-20）：显式 sync 与 autosync 共用 flock
 ### B3（2026-11-22，未发版）
 
 - 分支 `feat/b3-w2-w3-w4`（从 `75b820f`）；W2 4 项、W4 3 项、W3 回归 + B3-W3-8；不升 schema、不新增退出码。
-- 提交：`2b90123` baseline、`32546d8` W2、`080d085` W4、`04dfa77` W3、`752e3b5` lint。
-- 验证：Python 3.13.5 / 3.10.21 各 **1009 tests OK**；`scripts/ci.sh`（ruff/全量/离线 e2e/入口）通过。
+- 提交：`2b90123` baseline、`32546d8` W2、`080d085` W4、`04dfa77` W3、`752e3b5` lint、`5c5a3bb` docs、`0f7d507` review 测试、`d0fb6d5` review 文档、`d3de529` aggregate stale 修复。
+- 验证：Python 3.13.5 / 3.10.21 各 **1010 tests OK**；`scripts/ci.sh`（ruff/全量/离线 e2e/入口）通过。
 - 证据：`docs/audit/b3-w2-w3-w4-20261122.md`；真实 gov.cn e2e 与 hk 部署留待发布阶段。
 
 ### B2-B5
