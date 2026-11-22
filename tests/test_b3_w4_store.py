@@ -30,11 +30,16 @@ class StoreW4Test(unittest.TestCase):
             try:
                 store = Store(self.path)
                 try:
-                    barrier.wait()
-                    store.upsert_announcement(
-                        "https://x/same", "2026-01-01", f"标题{n}", "名称", "other"
-                    )
-                    store.commit()
+                    for round_no in range(20):
+                        barrier.wait()
+                        store.upsert_announcement(
+                            "https://x/same",
+                            "2026-01-01",
+                            f"标题{n}-{round_no}",
+                            "名称",
+                            "other",
+                        )
+                        store.commit()
                 finally:
                     store.close()
             except Exception as exc:  # 捕捉以便断言零异常

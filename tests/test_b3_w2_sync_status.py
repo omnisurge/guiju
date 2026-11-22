@@ -2,6 +2,7 @@
 
 import io
 import json
+import os
 import tempfile
 import unittest
 from argparse import Namespace
@@ -97,6 +98,11 @@ class SyncEngineW2Test(unittest.TestCase):
 
 class AutoSyncW2Test(unittest.TestCase):
     def setUp(self):
+        # 每个用例清掉宿主/外层测试可能带进来的关闭开关，避免 autosync 不执行。
+        env = mock.patch.dict(os.environ, {}, clear=False)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("GUIJU_NO_AUTO_SYNC", None)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.store = Store(str(Path(self.tmp.name) / "catalog.db"))

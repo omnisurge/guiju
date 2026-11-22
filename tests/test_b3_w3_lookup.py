@@ -44,6 +44,7 @@ class ByCodeCompletenessTest(unittest.TestCase):
         with self.assertRaises(NeedsHuman) as ctx:
             self._run(_FakeCurrency(records, complete=False, reason="无总页数"))
         self.assertEqual(ctx.exception.exit, 50)
+        self.assertEqual(ctx.exception.extra["resolved_name"], "抗震规范")
 
     def test_complete_empty_remains_not_indexed_31(self):
         with self.assertRaises(NotIndexed) as ctx:
