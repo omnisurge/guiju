@@ -80,11 +80,33 @@ def date_only(value: str) -> str:
     return value
 
 
-def query_with_base_fallback(code: str, fetch: Callable[[str], list[Record]]) -> list[Record]:
+def query_with_base_fallback(
+    code: str,
+    fetch: Callable[[str], list[Record]],
+    *,
+    snapshot: Callable[[], object] | None = None,
+    restore: Callable[[object], None] | None = None,
+) -> list[Record]:
+    """先查完整编号、无命中再查基础号。
+
+    第二次检索不能把第一次的不完整证据洗白：第一次 total>rows（只取到第一页）而
+    基础号恰好返回 0 条时，合并后的结论仍是"没取全"，不是"源明确回答没有"。
+    适配器通过 snapshot/restore 回调传入自己的 Completeness 状态；不传回调的旧
+    调用保持原行为（默认 None）。
+    """
     rows = filter_by_code(fetch(code), code)
+    first_state = snapshot() if snapshot is not None else None
     if rows:
         return rows
     base = base_code(code)
     if not base or base == code:
         return rows
-    return filter_by_code(fetch(base), code)
+    fallback_rows = filter_by_code(fetch(base), code)
+    if (
+        first_state is not None
+        and restore is not None
+        and not bool(getattr(first_state, "complete", True))
+    ):
+        # AND 语义：第一次不完整时恢复第一次的证据（更贴近"为什么没取全"）。
+        restore(first_state)
+    return fallback_rows

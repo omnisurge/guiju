@@ -135,6 +135,9 @@ class CsresPage:
     pages: int | None = None
     page: int | None = None
     page_size: int | None = None
+    #: 原始 pageNum 明确为 0 且无记录 = 站点"无结果页"标记；page 字段会把它
+    #: 投影成 None，这里保留区分（missing pageNum 不是同一个事实）。
+    page_zero: bool = False
 
 
 def _has_data_traces(rows: list[_Row]) -> bool:
@@ -171,7 +174,8 @@ def parse_csres_page(raw: bytes) -> CsresPage:
     # csres 对“0 条命中”返回 pageNum=0 且 pageSize=25；0 不是第 0 页，
     # 而是站点表示“没有结果页”。把它投影成 None，不能让 lookup 误判为
     # “请求第 1 页、服务端返回第 0 页”的结构异常（真实未知编号会因此 50）。
-    if page == 0 and not records:
+    page_zero = page == 0 and not records
+    if page_zero:
         page = None
     return CsresPage(
         records=records,
@@ -179,6 +183,7 @@ def parse_csres_page(raw: bytes) -> CsresPage:
         pages=_int_or_none(_PAGES, text),
         page=page,
         page_size=_int_or_none(_PAGE_SIZE, text),
+        page_zero=page_zero,
     )
 
 
@@ -235,12 +240,14 @@ class CsresCurrency(CompletenessMixin):
             return self.client.get(f"{PLAINTEXT_SEARCH_URL}?{query}")
 
     def _finish(self, fetched_pages: int, total: int | None, has_more: bool | None,
-                *, truncated: bool = False, reason: str = "") -> None:
+                *, truncated: bool = False, reason: str = "",
+                empty_authoritative: bool = False) -> None:
         if self.plaintext:
             reason = f"{self.plaintext_risk}；{reason}" if reason else self.plaintext_risk
         self._record_completeness(Completeness(
             fetched_pages=fetched_pages, total=total, has_more=has_more, truncated=truncated,
             reason=reason, insecure_transport=self.plaintext,
+            empty_authoritative=empty_authoritative,
         ))
 
     def lookup(self, code: str) -> list[Record]:
@@ -256,6 +263,21 @@ class CsresCurrency(CompletenessMixin):
             if parsed.page is not None and parsed.page != page:
                 # 服务端忽略 pageNum（重复返回同一页）时不能把重复记录当完整结果。
                 raise page_error("csres", f"请求第 {page} 页，服务端返回第 {parsed.page} 页")
+            # pageNum=0 + 0 条 = 站点明确的"无结果页"（0 不是第 0 页）。
+            # 只有 total/pages 也为 0/None 才是权威空；正数 total/pages 与空记录
+            # 自相矛盾，必须 50，不能悄悄当作"没有这本标准"。
+            empty_answer = (
+                page == 1
+                and not parsed.records
+                and parsed.page_zero
+                and (parsed.total is None or parsed.total == 0)
+                and (parsed.pages is None or parsed.pages == 0)
+            )
+            if page == 1 and not parsed.records and parsed.page_zero and not empty_answer:
+                raise page_error(
+                    "csres",
+                    f"pageNum=0 但源声称共有 {parsed.total} 条/{parsed.pages} 页：响应自相矛盾",
+                )
             collected.extend(parsed.records)
             if page == 1:
                 total, pages = parsed.total, parsed.pages
@@ -268,6 +290,12 @@ class CsresCurrency(CompletenessMixin):
                 if parsed.pages is not None and pages is not None and parsed.pages != pages:
                     raise page_error("csres", f"翻页期间总页数从 {pages} 变为 {parsed.pages}（第 {page} 页）")
             if pages is None:
+                if empty_answer:
+                    # 源明确回答无结果：显式 has_more=False，不让"缺总页数"把权威空
+                    # 说成"没取全"（明文下 complete 仍 False，但 empty_authoritative
+                    # 让调用方区分 31 与 50）。
+                    self._finish(page, total, False, empty_authoritative=True)
+                    return filter_by_code(collected, code)
                 # 没有总页数证据：只取第 1 页；has_more 保持 None，不把部分当完整。
                 has_more = None if total is None else total > len(collected)
                 self._finish(page, total, has_more,
@@ -285,7 +313,7 @@ class CsresCurrency(CompletenessMixin):
                     # 没有 total、不是第一页却给空页：无法证明前面已取全。
                     self._finish(page, total, True, reason="末页为空且总条数未知")
                 else:
-                    self._finish(page, total, False)
+                    self._finish(page, total, False, empty_authoritative=empty_answer)
                 return filter_by_code(collected, code)
             if page >= self.MAX_PAGES:
                 reason = f"翻到第 {page} 页上限（{self.MAX_PAGES} 页），共 {pages} 页，结果被截断"

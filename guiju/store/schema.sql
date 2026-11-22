@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS mention (
     code_key      TEXT NOT NULL REFERENCES edition(code_key),
     role          TEXT NOT NULL,
     evidence      TEXT,
+    -- 按公告的置信度（v1.2.0a4 增列）：edition.confidence 是跨公告的全局值，
+    -- 不能代表某条公告自己的解析结果。NULL = 老数据，读路径回退 edition.confidence。
+    confidence    TEXT,
     PRIMARY KEY (ann_id, code_key)
 );
 CREATE INDEX IF NOT EXISTS idx_mention_code ON mention(code_key);

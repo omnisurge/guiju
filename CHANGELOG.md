@@ -1,5 +1,16 @@
 # 变更记录
 
+## 1.2.0a4 — 2026-11-22（1.2.0-alpha.4 预发布）
+
+- **B3（W2/W3/W4 本地合并）**：存储事实（P2-5/6/7）、同步完成判定（P1-1/P2-1）、aggregate current-stale 修复与 W3 回归一并纳入本版本；B3 当时的 1010 单测读数保留在 `docs/audit/b3-w2-w3-w4-20261122.md`，不随本版本改写。
+- **W1 网络/合规**：block 检测改为先循环读前缀再判定（`read_prefix`），短读 10B 带标记也不再漏检；`get_page`、`_write_response`、`_check_error_body`、RedirectGuard、Metadata HTTPError 统一短读处理，命中 40 立即停止且保留可续传 partial；`.part.meta` 缺失/非整数/负数不再 TypeError，`sidecar.size < part.size` 截断而非删 part；JSON 端点 200 HTML（BOM/空白/首字符 `<`/text/html）→ 40；畸形 URL（urlsplit/port ValueError）→ 40；mohurd 目录异常 payload/data/fragment → 50 而非 exit 1。
+- **W2 存储/同步**：v1.1.0 升级库缺 complete 时不再误判已完成，`--if-stale`/autosync 强制完整 sync；status 顶层 stale/age/meta_corrupt 与 per-source 聚合一致；同步按唯一 URL 计数，重复页最多容忍 2 页、MAX_PAGES=200；`persist_codes` 年份降级仅限 PARSED 的 MENTIONED/TARGET_OF_REVISION；`Store(read_only=True)` 只读打开不建库/不写 schema；mention.confidence 按公告存储，edition.confidence 不被无关公告污染；`persist_codes` 真正写 edition.status。
+- **W3 时效/编号/地标**：base fallback 完整性改为 AND，备源空结果不再覆盖主源不完整；csres 零命中改 31（`empty_authoritative` 与 `complete` 分离，明文结果仍不写缓存）；`_demote_older` 仅在双方年份均为 4 位且候选更早时降级；`_pick_current_version`/`_by_code` 只认 parsed 决定性；which 地标回落与 `prefer_exact` 修正；显式未知配置不读旧缓存。
+- **W4 CLI/pull**：批量失败体保留 error/hint/candidates/availability/availability_note/attachments/page_url/verdict/names/pick_reason；单条 30/32/33 全路径补 availability；批量 SQLite DatabaseError locked/busy→20、其余→50 并停止整批；shzjw pull 落库使 `cite --offline` 可用（含已缓存 exit 10 回填）。
+- **W5 MCP**：batch 命中 40 立即停止；`--db` 注入；query/verify 保留完整错误 payload 并追加 stale/from_cache 告警（verify content[0] 仍严格为 code\tstatus）；HTTP POST Content-Type/timeout/线程上限/Host-Origin allowlist（GUIJU_MCP_ALLOWED_HOSTS/ORIGINS）；ReadOnlyStore 区分缺库/空库/v0/v2 缺表，不自动 DDL。
+- **W6 发布工程**：版本 1.2.0a4（tag v1.2.0-alpha.4）；README/HANDOFF/INSTALL/ACCEPTANCE 同步，历史审计记录不改写；POSIX-only 平台声明（Linux/macOS，不再声明 OS Independent）；新增 `scripts/check-release.py --docs-only / --artifacts` 与 `release-check.yml`；`tests/test_hygiene.py` 增加版本/文档/平台/CHANGELOG 门。
+- **验证**（详见 `docs/ACCEPTANCE.md` 与 `docs/audit/release-1.2.0a4-20261122.md`）：全量 **1223 项单测**、Python 3.10/3.13 双版本、ruff、本地 CI、离线 e2e 4/4、完整联网 e2e **39/39**；wheel/sdist 与 SHA-256 以发布记录为准。
+
 ## 1.2.0a3 — 2026-11-21（1.2.0-alpha.3 预发布）
 
 - **P0-1：上海正文 9175 端口**：`BodyPolicy` 仅对 `bzjg.zjw.sh.gov.cn` 放行 `https:9175`，其他 gov.cn 主机仍沿用 None/80/443 的全局端口策略。

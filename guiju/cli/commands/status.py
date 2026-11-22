@@ -14,10 +14,37 @@ from ...store.sqlite import SCHEMA_VERSION, Store
 from .. import render
 
 
+def _catalog_message(
+    sources: list[dict],
+    *,
+    all_complete: bool,
+    ages_known: bool,
+    age_days: float | None,
+) -> str:
+    """解释顶层目录结论为什么可用/不可用。
+
+    不允许“catalog_age_days=0.0 但 catalog_stale=true”这种自相矛盾的输出：
+    age 只在所有源都完整且时间已知时才有值，其余情况必须说明是未完整还是未知。
+    """
+    if not sources:
+        return "没有可用的数据源配置"
+    if not all_complete:
+        detail = "; ".join(
+            f"{s['source']}={s['reason'] or 'unknown'}"
+            for s in sources
+            if not s["complete"]
+        )
+        return f"存在未完整源（{detail}）；目录年龄不可用，运行 guiju sync 做完整同步"
+    if not ages_known:
+        missing = ", ".join(s["source"] for s in sources if s["age_days"] is None)
+        return f"存在同步时间未知的源（{missing}）；目录年龄不可用，运行 guiju sync"
+    if age_days is not None and age_days > MAX_AGE_DAYS:
+        return f"目录已 {age_days:.1f} 天未更新：guiju sync（增量约 3 秒 / 2 个请求）"
+    return ""
+
+
 def run(store: Store, args: argparse.Namespace) -> int:
     st = store.stats()
-    age = store.catalog_age_days()
-    catalog_meta_corrupt = store.catalog_meta_corrupt()
     by_year = st["by_year"]
     pre = sum(c for y, c in by_year.items() if y and y.isdigit() and int(y) < FULL_TEXT_SINCE_YEAR)
     in_window = sum(c for y, c in by_year.items() if y and y.isdigit() and int(y) >= FULL_TEXT_SINCE_YEAR)
@@ -36,6 +63,26 @@ def run(store: Store, args: argparse.Namespace) -> int:
         meta["catalog_meta_corrupt"] = store.catalog_meta_corrupt(source_id)
         sources.append(meta)
 
+    # 顶层结论按“最坏源”取：任一源不完整/过期/时间未知，整体就不能算新鲜。
+    # 只有所有源都完整且 age 已知时才给出整体 age（取最老源）；否则 None。
+    all_complete = all(meta["complete"] for meta in sources)
+    ages_known = all(meta["age_days"] is not None for meta in sources)
+    age = (
+        round(max(meta["age_days"] for meta in sources), 2)
+        if sources and all_complete and ages_known
+        else None
+    )
+    catalog_stale = any(meta["stale"] for meta in sources)
+    corrupts = [
+        meta["catalog_meta_corrupt"]
+        for meta in sources
+        if meta["catalog_meta_corrupt"]
+    ]
+    catalog_meta_corrupt = corrupts[0] if corrupts else None
+    catalog_message = _catalog_message(
+        sources, all_complete=all_complete, ages_known=ages_known, age_days=age
+    )
+
     probe = store.db.execute(
         "SELECT outcome, COUNT(*) c FROM probe GROUP BY outcome ORDER BY c DESC"
     ).fetchall()
@@ -51,8 +98,9 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "mentions": st["mentions"],
         "scanned": st["scanned"],
         "synced_at": st["synced_at"],
-        "catalog_age_days": None if age is None else round(age, 2),
-        "catalog_stale": age is None or age > MAX_AGE_DAYS,
+        "catalog_age_days": age,
+        "catalog_stale": catalog_stale,
+        "catalog_message": catalog_message,
         "catalog_meta_corrupt": catalog_meta_corrupt,
         "sources": sources,
         "latest_published_on": store.max_published_on(),
@@ -65,11 +113,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "by_year": by_year,
     }
     render.emit(payload)
-    if payload["announcements"] and payload["catalog_stale"]:
-        if age is not None:
-            render.note(f"目录已 {age:.1f} 天未更新：guiju sync（增量约 3 秒 / 2 个请求）")
-        else:
-            render.note("目录上次同步时间未知：guiju sync（增量约 3 秒 / 2 个请求）")
+    if payload["announcements"] and catalog_message:
+        render.note(catalog_message)
     if not render.is_json():
         render.out(f"库：{payload['db']}（schema v{payload['schema_version']}）")
         render.out(f"公告 {st['announcements']} 条 · 版本 {st['editions']} 个 · 提及 {st['mentions']} 处")

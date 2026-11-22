@@ -14,7 +14,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from ..domain.codes import Codes, Confidence, Role, _code_stem
+from ..domain.codes import Codes, Confidence, Role, _is_older_same_family
 from ..errors import NeedsHuman, SourceUnreachable
 
 SCHEMA_VERSION = 2
@@ -40,9 +40,16 @@ def _escape_like(value: str) -> str:
 
 
 class Store:
-    def __init__(self, path: str | Path | None = None, *, cross_thread: bool = False) -> None:
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        *,
+        cross_thread: bool = False,
+        read_only: bool = False,
+    ) -> None:
         # cross_thread=True：MCP 这类共享连接的场景放开 check_same_thread；
         # CPython sqlite3 threadsafety=1，共享后调用方必须自己串行化访问。
+        # read_only=True：调用方承诺只读（MCP 共享库）；缺库时明确失败，绝不偷偷建库。
         home = None
         if path is None:
             home = default_home()
@@ -50,12 +57,21 @@ class Store:
         self.path = Path(path)
         self.legacy_backup: Path | None = None
         self._cross_thread = cross_thread
+        if read_only and not self.path.exists():
+            raise NeedsHuman(
+                f"只读打开要求数据库已存在：{self.path}",
+                hint="先让 guiju 在可写目录创建并同步一次，或用 --db 指向已有数据库",
+            )
         # 文件或父目录不可写时，用 SQLite 的 mode=ro 打开；否则 WAL 的连接
         # 初始化会尝试写 -wal/-shm，只读目录下连 SELECT 都打不开。
-        self._read_only = self.path.exists() and (
-            not os.access(self.path, os.W_OK)
-            or not os.access(self.path.parent, os.W_OK)
+        self._read_only = bool(read_only) or (
+            self.path.exists() and (
+                not os.access(self.path, os.W_OK)
+                or not os.access(self.path.parent, os.W_OK)
+            )
         )
+        # 公开只读标记：调用方（MCP/测试）不必摸私有字段。
+        self.read_only = self._read_only
         self._read_only_dir = self.path.exists() and not os.access(self.path.parent, os.W_OK)
         ok = False
         try:
@@ -82,6 +98,9 @@ class Store:
             self._configure_connection()
             self._migrate()
             self._ensure_additions()
+            # 老 v2 库可能没有 mention.confidence 列（只读库不能补列）：
+            # 读路径据此决定用 COALESCE(m.confidence,e.confidence) 还是 e.confidence。
+            self._mention_confidence = self._mention_has_confidence()
             ok = True
         except sqlite3.OperationalError as exc:
             # 初始化/迁移期的瞬时锁是可重试的 20，不是“数据库损坏”的 50；
@@ -134,12 +153,14 @@ class Store:
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         if version == SCHEMA_VERSION:
             return
+        if self._read_only:
+            # 只读库绝不执行 DDL/迁移：0 字节空文件、旧格式库、未来版本都必须显式交人，
+            # 不能在 read-only 连接上偷偷建表（那只会得到 SQLite 的只读错误）。
+            raise NeedsHuman(
+                f"只读库 schema 版本 {version} 不是当前版本（{SCHEMA_VERSION}）：{self.path}",
+                hint="把数据库复制到可写目录后重新打开，或让 guiju 在可写 GUIJU_HOME 重建",
+            )
         if version == 0 and self._has_tables():
-            if self._read_only:
-                raise NeedsHuman(
-                    f"只读旧库无法迁移到当前 schema：{self.path}",
-                    hint="把数据库复制到可写目录后重新打开，或让 guiju 在可写 GUIJU_HOME 重建",
-                )
             backup = self.path.with_name(f"{self.path.name}.legacy-{now().replace(':', '').replace(' ', '-')}")
             self.db.close()
             shutil.copy2(self.path, backup)
@@ -159,26 +180,43 @@ class Store:
         self.db.commit()
 
     def _ensure_additions(self) -> None:
-        """只做"加法"的结构变更：已有库升级到本版本时补表，绝不动已有数据。
+        """只做"加法"的结构变更：已有库升级到本版本时补表/补列，绝不动已有数据。
 
-        为什么不上提 schema 版本：缓存表是完全可丢弃的派生数据，
-        把它算进版本迁移会让"版本对了但少张表"变成一类新故障。
+        为什么不上提 schema 版本：缓存表与按公告置信度都是可重建的派生数据，
+        把它们算进版本迁移会让"版本对了但少张表/少一列"变成一类新故障。
         """
         if self._read_only:
-            # 只读旧库即使缺 cache 表也不能补 DDL；读命令继续可用，写缓存时
+            # 只读库即使缺表/缺列也不能补 DDL；读命令继续可用，写缓存时
             # 由调用方得到明确的只读写失败（CLI 映射 50）。
             return
-        exists = self.db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='currency_cache'"
-        ).fetchone()
-        if exists is not None:
-            # 不重复执行 DDL：只读的既有 v2 库不应因为每次构造都写 schema 而失败。
-            return
-        self.db.execute(
-            "CREATE TABLE IF NOT EXISTS currency_cache ("
-            "code_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at TEXT NOT NULL)"
-        )
+        if not self._table_exists("currency_cache"):
+            self.db.execute(
+                "CREATE TABLE IF NOT EXISTS currency_cache ("
+                "code_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at TEXT NOT NULL)"
+            )
+        # v1.2.0a4：mention 增加按公告的 confidence。老 v2 库只补列不动数据；
+        # 旧行保持 NULL，读路径 COALESCE 回退 edition.confidence。
+        if self._table_exists("mention") and not self._mention_has_confidence():
+            self.db.execute("ALTER TABLE mention ADD COLUMN confidence TEXT")
         self.db.commit()
+
+    def _table_exists(self, name: str) -> bool:
+        row = self.db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        ).fetchone()
+        return row is not None
+
+    def _mention_has_confidence(self) -> bool:
+        rows = self.db.execute("PRAGMA table_info(mention)").fetchall()
+        return any(row["name"] == "confidence" for row in rows)
+
+    def _mention_confidence_sql(self) -> str:
+        """按公告 confidence：新库用 m.confidence，老只读库回退 edition.confidence。"""
+        return (
+            "COALESCE(m.confidence, e.confidence)"
+            if self._mention_confidence
+            else "e.confidence"
+        )
 
     def cache_currency(self, code_key: str, payload: str) -> None:
         self.db.execute(
@@ -259,7 +297,8 @@ class Store:
             where.append("e.status = ?")
             params.append(status)
         sql = (
-            "SELECT a.*, e.code_key, e.code_display, e.status AS code_status, e.confidence,"
+            "SELECT a.*, e.code_key, e.code_display, e.status AS code_status,"
+            f"       {self._mention_confidence_sql()} AS confidence,"
             "       m.role, m.evidence"
             " FROM announcement a"
             " LEFT JOIN mention m ON m.ann_id = a.id"
@@ -296,17 +335,49 @@ class Store:
         ]
 
     # ---------------------------------------------------------------- edition / mention
-    def upsert_edition(self, key: str, display: str, title: str | None, confidence: str) -> None:
+    def upsert_edition(
+        self,
+        key: str,
+        display: str,
+        title: str | None,
+        confidence: str,
+        status: str | None = None,
+    ) -> None:
+        """写版本；status 只有拿到明确现行性（current/withdrawn…）时才覆盖已知值。
+
+        插入用 status or "unknown" 满足 NOT NULL；ON CONFLICT 里 NULL/''/'unknown'
+        一律保留旧值，避免"这次没查到现行性"把已确认的 current 洗回 unknown。
+        """
         self.db.execute(
-            "INSERT INTO edition(code_key,code_display,title,confidence) VALUES(?,?,?,?) "
+            "INSERT INTO edition(code_key,code_display,title,confidence,status)"
+            " VALUES(?,?,?,?,?) "
             "ON CONFLICT(code_key) DO UPDATE SET"
             " confidence=CASE WHEN edition.confidence='parsed' AND excluded.confidence!='parsed'"
             " THEN edition.confidence ELSE excluded.confidence END,"
-            " title=COALESCE(edition.title, excluded.title)",
-            (key, display, title, confidence),
+            " title=COALESCE(edition.title, excluded.title),"
+            " status=CASE WHEN excluded.status IS NULL OR excluded.status IN ('','unknown')"
+            " THEN edition.status ELSE excluded.status END",
+            (key, display, title, confidence, status or "unknown"),
         )
 
-    def add_mention(self, ann_id: int, code_key: str, role: str, evidence: str) -> None:
+    def add_mention(
+        self,
+        ann_id: int,
+        code_key: str,
+        role: str,
+        evidence: str,
+        confidence: str | None = None,
+    ) -> None:
+        """写提及；confidence 是按公告的置信度，None 时读路径回退 edition.confidence。"""
+        if self._mention_confidence:
+            self.db.execute(
+                "INSERT INTO mention(ann_id,code_key,role,evidence,confidence) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(ann_id,code_key) DO UPDATE SET role=excluded.role,"
+                " evidence=excluded.evidence,"
+                " confidence=COALESCE(excluded.confidence, mention.confidence)",
+                (ann_id, code_key, role, evidence, confidence),
+            )
+            return
         self.db.execute(
             "INSERT INTO mention(ann_id,code_key,role,evidence) VALUES(?,?,?,?) "
             "ON CONFLICT(ann_id,code_key) DO UPDATE SET role=excluded.role, evidence=excluded.evidence",
@@ -321,7 +392,8 @@ class Store:
 
     def mentions_for(self, ann_id: int) -> list[sqlite3.Row]:
         return self.db.execute(
-            "SELECT m.code_key, m.role, m.evidence, e.code_display, e.status, e.confidence"
+            "SELECT m.code_key, m.role, m.evidence, e.code_display, e.status,"
+            f" {self._mention_confidence_sql()} AS confidence"
             " FROM mention m LEFT JOIN edition e ON e.code_key = m.code_key"
             " WHERE m.ann_id = ? ORDER BY m.role, m.code_key",
             (ann_id,),
@@ -329,7 +401,8 @@ class Store:
 
     def find_by_code(self, key: str) -> list[sqlite3.Row]:
         exact = self.db.execute(
-            "SELECT m.code_key, m.role, m.evidence, e.code_display, e.status, e.confidence, a.*"
+            "SELECT m.code_key, m.role, m.evidence, e.code_display, e.status,"
+            f" {self._mention_confidence_sql()} AS confidence, a.*"
             " FROM mention m JOIN announcement a ON a.id = m.ann_id"
             " LEFT JOIN edition e ON e.code_key = m.code_key"
             " WHERE m.code_key = ? ORDER BY a.published_on DESC",
@@ -338,7 +411,8 @@ class Store:
         if exact:
             return exact
         return self.db.execute(
-            "SELECT m.code_key, m.role, m.evidence, e.code_display, e.status, e.confidence, a.*"
+            "SELECT m.code_key, m.role, m.evidence, e.code_display, e.status,"
+            f" {self._mention_confidence_sql()} AS confidence, a.*"
             " FROM mention m JOIN announcement a ON a.id = m.ann_id"
             " LEFT JOIN edition e ON e.code_key = m.code_key"
             " WHERE m.code_key LIKE ? ESCAPE '\\' ORDER BY a.published_on DESC LIMIT 20",
@@ -471,15 +545,29 @@ class Store:
         self.close()
 
 
-def persist_codes(store: Store, ann_id: int, codes: Codes, doc_name: str, status: str = "unknown") -> None:
+def persist_codes(
+    store: Store, ann_id: int, codes: Codes, doc_name: str, status: str | None = None
+) -> None:
     """把一次 classify 的结果落库（edition + mention + scan）。
 
     重扫必须替换旧结果：先删该公告的旧 mention，再写本次结果，避免"新解析比旧结果少"
-    时旧编号永久残留。mention 的角色只在同族同号时降级，不能把无关引用说成被代替。
+    时旧编号永久残留。mention 的角色只在同族同号且年份更早时降级，不能把无关引用、
+    年份更新或年份缺失的编号说成被代替。
+
+    confidence 按公告写入 mention：edition 是跨公告的全局表，不能代表某条公告
+    自己的解析置信度（同名标准 A 解析成功、B 只是提及，两者必须可区分）。
+
+    status 只用于 primary 版本，且只在调用方拿到明确现行性（pull 的 current/withdrawn）
+    时传入；None 表示这次没查，不能覆盖库里已知状态。
     """
     if codes.primary_key:
-        store.upsert_edition(codes.primary_key, codes.primary_display or codes.primary_key,
-                             doc_name, codes.confidence.value)
+        store.upsert_edition(
+            codes.primary_key,
+            codes.primary_display or codes.primary_key,
+            doc_name,
+            codes.confidence.value,
+            status=status,
+        )
     store.db.execute("DELETE FROM mention WHERE ann_id=?", (ann_id,))
     for m in codes.mentions:
         if m.code_key != codes.primary_key:
@@ -493,11 +581,29 @@ def persist_codes(store: Store, ann_id: int, codes: Codes, doc_name: str, status
                 m.code_key, m.code_display, None, "parsed" if decisive else "ambiguous"
             )
         role = m.role.value
-        # 兜底降级只在 primary 是决定性证据（parsed）时成立，且必须同族同号：
-        # "参考 GB 50016-2014" 这类无关引用不能被说成被 primary 代替。
-        if (codes.primary_key and codes.confidence.value == "parsed"
-                and m.code_key != codes.primary_key and m.role is Role.MENTIONED
-                and _code_stem(m.code_key) == _code_stem(codes.primary_key)):
+        # 兜底降级只在 primary 是决定性证据（parsed）时成立，且必须同族同号、
+        # 候选年份严格更早：2010 primary + 2022 mentioned 不是"旧版被代替"。
+        if (
+            codes.primary_key
+            and codes.confidence.value == "parsed"
+            and m.code_key != codes.primary_key
+            and m.role in (Role.MENTIONED, Role.TARGET_OF_REVISION, Role.PRIMARY)
+            and _is_older_same_family(m.code_key, codes.primary_key)
+        ):
             role = "superseded_ref"
-        store.add_mention(ann_id, m.code_key, role, m.evidence)
+        # 非 primary 的置信度：只有整体 parsed 且角色本身是强证据时才是 parsed；
+        # mentioned/weak_primary 以及整条公告 ambiguous 时都不算确定引用。
+        if m.code_key == codes.primary_key:
+            mention_confidence = codes.confidence.value
+        elif codes.confidence is Confidence.PARSED and role in (
+            Role.TARGET_OF_REVISION.value,
+            Role.PRIMARY.value,
+            Role.SUPERSEDED_REF.value,
+        ):
+            mention_confidence = Confidence.PARSED.value
+        else:
+            mention_confidence = Confidence.AMBIGUOUS.value
+        store.add_mention(
+            ann_id, m.code_key, role, m.evidence, confidence=mention_confidence
+        )
     store.mark_scanned(ann_id, len(codes.mentions))

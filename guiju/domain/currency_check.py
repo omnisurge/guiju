@@ -27,6 +27,33 @@ class CurrencyState(StrEnum):
     OFFLINE = "offline"          # 用户显式 --offline，不做校验
 
 
+def _chain_of(currency: object) -> list[object]:
+    chain: list[object] = []
+    node: object | None = currency
+    for _ in range(_INNER_DEPTH):
+        if node is None:
+            break
+        chain.append(node)
+        node = getattr(node, "inner", None)
+    return chain
+
+
+def empty_authoritative_of(currency: object) -> bool:
+    """读"源明确回答没有这条记录"的权威空标记（W3-2）。
+
+    与 completeness_of 正交：明文回退的空结果 complete=False，但
+    empty_authoritative=True —— 调用方据此映射 31（没收录），而不是 50
+    （适配器需人工排查）。只做 duck-typing，不 import currency 层。
+    """
+    for holder in _chain_of(currency):
+        if bool(getattr(holder, "empty_authoritative", False)):
+            return True
+        outcome = getattr(holder, "last_outcome", None)
+        if outcome is not None and bool(getattr(outcome, "empty_authoritative", False)):
+            return True
+    return False
+
+
 def completeness_of(currency: object) -> tuple[bool | None, str]:
     """读时效端口的完整性证据（W3 的 complete / incomplete_reason）。
 
@@ -35,14 +62,7 @@ def completeness_of(currency: object) -> tuple[bool | None, str]:
       · complete=None：内层适配器没有完整性契约（老实现），按 W3 的约定视作完整；
       · reason 依次从端口自身、内层适配器、最近一次 Outcome 上取。
     """
-    chain: list[object] = []
-    node: object | None = currency
-    for _ in range(_INNER_DEPTH):
-        if node is None:
-            break
-        chain.append(node)
-        node = getattr(node, "inner", None)
-
+    chain = _chain_of(currency)
     complete = getattr(chain[0], "complete", None) if chain else None
     for holder in chain:
         reason = getattr(holder, "incomplete_reason", "")
@@ -55,6 +75,41 @@ def completeness_of(currency: object) -> tuple[bool | None, str]:
     return complete, ""
 
 
+def completeness_flags_of(currency: object) -> tuple[bool | None, bool, bool, bool | None, str]:
+    """读完整性的四个事实：complete / insecure_transport / truncated / has_more。
+
+    W3-4 的同名定版只在“明文回退但结果完整”这一种 complete=False 上放行；
+    翻页截断或 has_more 不是 False（未知/还有下一页）时仍交 32。
+    老实现没有这些属性时按 False/None 处理，不能 AttributeError。
+    """
+    chain: list[object] = []
+    node: object | None = currency
+    for _ in range(_INNER_DEPTH):
+        if node is None:
+            break
+        chain.append(node)
+        node = getattr(node, "inner", None)
+
+    complete = getattr(chain[0], "complete", None) if chain else None
+    insecure = any(bool(getattr(holder, "insecure_transport", False)) for holder in chain)
+    truncated = any(bool(getattr(holder, "truncated", False)) for holder in chain)
+
+    has_more: bool | None = None
+    for holder in chain:
+        value = getattr(holder, "has_more", None)
+        if value is not None:
+            has_more = bool(value)
+            break
+        outcome = getattr(holder, "last_outcome", None)
+        if outcome is not None:
+            value = getattr(outcome, "has_more", None)
+            if value is not None:
+                has_more = bool(value)
+                break
+    _, reason = completeness_of(currency)
+    return complete, insecure, truncated, has_more, reason
+
+
 @dataclass(frozen=True)
 class CurrencyCheck:
     state: CurrencyState
@@ -65,6 +120,8 @@ class CurrencyCheck:
     #: None = 内层适配器没有完整性契约（老实现，按完整处理）；False = 没取全
     complete: bool | None = None
     incomplete_reason: str = ""
+    #: 空结果是否来自源明确回答"没有"；不改变 verified 语义（cite 不因此放行）。
+    empty_authoritative: bool = False
 
     @property
     def verified(self) -> bool:
@@ -102,6 +159,8 @@ class CurrencyCheck:
             data["complete"] = self.complete
         if self.complete is False and self.incomplete_reason:
             data["incomplete_reason"] = self.incomplete_reason
+        if self.empty_authoritative:
+            data["empty_authoritative"] = True
         if self.message:
             data["message"] = self.message
         if self.status != "unknown":

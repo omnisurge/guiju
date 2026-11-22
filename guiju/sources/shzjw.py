@@ -95,9 +95,13 @@ def search(
     )
 
 
-def find(ref: str) -> list[dict]:
-    """沿用旧检索接口；在调用时注入 search，兼容调用方的 mock/覆写。"""
-    return core.find(ref, searcher=search)
+def find(ref: str, *, prefer_exact: bool = True) -> list[dict]:
+    """沿用旧检索接口；在调用时注入 search，兼容调用方的 mock/覆写。
+
+    prefer_exact=False 用于基础号（DG/TJ08-2007）：保留全部年版（current 优先），
+    避免只命中裸号的废止版而看不到现行年版。
+    """
+    return core.find(ref, searcher=search, prefer_exact=prefer_exact)
 
 
 def download_to(file_url: str, part_path: str, referer: str = REFERER) -> tuple[int, str, int]:

@@ -139,6 +139,9 @@ class CachedCurrency:
         # W3/P1-4：结果是否完整可信（False = 没取全、未写缓存）。
         # None 表示内层适配器没有完整性契约（老实现），调用方不得当成"已完整"。
         self.complete: bool | None = None
+        # W3-2：空结果是否来自源明确回答"没有"（可与 complete=False 并存）。
+        self.empty_authoritative = False
+        self.insecure_transport = False
 
     def lookup(self, code: str) -> list[Record]:
         # 每次都重置：上一题的"缓存命中/降级"绝不能污染本题。
@@ -147,6 +150,11 @@ class CachedCurrency:
         self.upstream_error = None
         self.cache_age_days = None
         self.complete = None
+        self.empty_authoritative = False
+        self.insecure_transport = False
+        if isinstance(self.inner, MisconfiguredCurrency):
+            # W3-7：显式配置错误必须立刻报 20；旧缓存不是"换个源"的理由。
+            self.inner.lookup(code)  # 总是抛 SourceUnreachable
         if self.inner.name == "native":
             # 原生内部已按 TTL 管理缓存；不能再外包旧 CachedCurrency 的无 TTL memo。
             records = self.inner.lookup(code)
@@ -155,6 +163,8 @@ class CachedCurrency:
             self.upstream_error = getattr(self.inner, "upstream_error", None)
             self.cache_age_days = getattr(self.inner, "cache_age_days", None)
             self.complete = getattr(self.inner, "complete", None)
+            self.empty_authoritative = bool(getattr(self.inner, "empty_authoritative", False))
+            self.insecure_transport = bool(getattr(self.inner, "insecure_transport", False))
             return records
         # 进程级 memo 的 key 必须带端点：同进程换 GUIJU_CURRENCY
         # 不能用旧端点的结论回答新端点的问题。
@@ -163,7 +173,8 @@ class CachedCurrency:
         if hit is not None:
             (
                 records, self.from_cache, self.stale, self.upstream_error,
-                self.cache_age_days, self.complete,
+                self.cache_age_days, self.complete, self.empty_authoritative,
+                self.insecure_transport,
             ) = hit
             return list(records)
         try:
@@ -176,16 +187,20 @@ class CachedCurrency:
             self.from_cache = True
             self.stale = True  # 落库缓存无 TTL：只有上游刚失败才会走到这里 → 一律按陈旧上报
             self.upstream_error = exc
-            _cache[key] = (records, True, True, exc, self.cache_age_days, None)
+            _cache[key] = (records, True, True, exc, self.cache_age_days, None, False, False)
             return records
         self.complete = getattr(self.inner, "complete", None)
+        self.empty_authoritative = bool(getattr(self.inner, "empty_authoritative", False))
+        self.insecure_transport = bool(getattr(self.inner, "insecure_transport", False))
         # 不完整的答案不落库（P1-4）：否则下次进程会在 24 小时缓存里
         # 把"没取全"当成"没有"。complete=None 是老适配器契约，按完整处理。
-        if records and self.complete is not False:
+        # 明文回退（含空结果）永远不写缓存（W3-2 的 cacheable 口径）。
+        if records and self.complete is not False and not self.insecure_transport:
             self._save(code, records)
         _cache[key] = (
             records, self.from_cache, self.stale, self.upstream_error,
-            self.cache_age_days, self.complete,
+            self.cache_age_days, self.complete, self.empty_authoritative,
+            self.insecure_transport,
         )
         return records
 

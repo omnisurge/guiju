@@ -12,8 +12,8 @@ from ... import currency as currency_mod
 from ... import localstatus
 from ...domain.availability import note as availability_note
 from ...domain.availability import state
-from ...domain.currency_check import completeness_of
-from ...errors import AmbiguousTarget, NotIndexed, SourceUnreachable
+from ...domain.currency_check import completeness_of, empty_authoritative_of
+from ...errors import AmbiguousTarget, NoCurrencyRecord, NotIndexed, SourceUnreachable
 from ...store.sqlite import Store
 from .. import render
 from ..lookup import ref_is_code, resolve
@@ -81,8 +81,17 @@ def _currency_upstream_error(cur) -> str | None:
 def run(store: Store, args: argparse.Namespace) -> int:
     base_currency = currency_mod.CachedCurrency(store=store)
     cur = _ReplayCurrency(base_currency)
-    # 名称（CJK）输入时效服务必然"没收录"：只有编号形态才问时效
-    records = cur.lookup(args.ref) if (not args.offline and ref_is_code(args.ref)) else []
+    # 名称（CJK）输入时效服务必然"没收录"：只有编号形态才问时效。
+    # W3-6：地标代码的 20/34 不是命令失败 —— 时效路由可能没覆盖上海体系，
+    # 源站自己有现行/废止结论，继续走下面的 localstatus 分支。
+    records = []
+    if not args.offline and ref_is_code(args.ref):
+        try:
+            records = cur.lookup(args.ref)
+        except (SourceUnreachable, NoCurrencyRecord):
+            if not localstatus.is_local_code(args.ref):
+                raise
+            records = []
     source_name = cur.name
     endpoint = currency_mod.endpoint_of(_currency_inner(base_currency))
     if not records and not args.offline and localstatus.is_local_code(args.ref):
@@ -105,6 +114,12 @@ def run(store: Store, args: argparse.Namespace) -> int:
         )
     except (NotIndexed, AmbiguousTarget) as exc:
         # 本地定位失败不算命令失败：时效结论仍然要输出，错误只在提示里说明
+        error = exc
+    except (SourceUnreachable, NoCurrencyRecord) as exc:
+        # W3-6：resolve 内部的 20/34 在地标场景降级为 local（时效记录已在上面
+        # 由 localstatus 填好）；其他编号体系仍按原契约上抛。
+        if not localstatus.is_local_code(args.ref):
+            raise
         error = exc
 
     ann = target["ann"] if target else None
@@ -131,8 +146,11 @@ def run(store: Store, args: argparse.Namespace) -> int:
                     break
             if ann_name != ann["doc_name"]:
                 break
-    # W3/P1-4：complete=False 表示这次答案没取全（空结果可能是漏记录，不是"没有"）
+    # W3/P1-4：complete=False 表示这次答案没取全（空结果可能是漏记录，不是"没有"）。
+    # W3-2：empty_authoritative=True 时例外 —— 源明确回答"没有这条编号"，
+    # 只是明文回退导致 complete=False，不能再说"可能漏判"。
     currency_complete, incomplete_reason = completeness_of(cur)
+    currency_empty_authoritative = empty_authoritative_of(cur)
     payload = {
         "ok": True,
         "query": args.ref,
@@ -143,6 +161,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         "currency_stale": _currency_stale(cur),
         "currency_upstream_error": _currency_upstream_error(cur),
         "currency_complete": currency_complete,
+        "currency_empty_authoritative": currency_empty_authoritative,
         "currency_incomplete_reason": incomplete_reason or None,
         "currency": [r.as_payload() for r in records],
         "resolved": bool(target),
@@ -185,7 +204,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
             "现行性可能已变化"
         )
 
-    if payload["currency_complete"] is False:
+    if payload["currency_complete"] is False and not payload["currency_empty_authoritative"]:
         # 不完整 ≠ 不可达：服务是通的，但这次没取全（翻页截断/无总页数证据/明文回退）。
         # 与 stale 分开说，agent 才知道该重查还是该复核。
         reason = (

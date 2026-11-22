@@ -15,7 +15,7 @@ export PYTHONWARNINGS=default
 
 echo "本地 CI · Python: $($PY -V 2>&1)"
 
-echo "== 1/4 静态检查 (ruff) =="
+echo "== 1/5 静态检查 (ruff) =="
 if command -v ruff >/dev/null 2>&1; then
   ruff check .
 elif command -v uv >/dev/null 2>&1 && uv tool run --offline ruff --version >/dev/null 2>&1; then
@@ -38,13 +38,16 @@ if [ "${CI_C0_BASELINE:-0}" = "1" ]; then
   fi
 fi
 
-echo "== 2/4 单元测试 =="
+echo "== 2/5 发版文档一致性（docs-only） =="
+"$PY" scripts/check-release.py --docs-only
+
+echo "== 3/5 单元测试 =="
 "$PY" -m unittest discover -s tests -t .
 
-echo "== 3/4 离线冒烟（装配 + 退出码契约） =="
+echo "== 4/5 离线冒烟（装配 + 退出码契约） =="
 "$PY" scripts/e2e.py --offline
 
-echo "== 4/4 入口自检 =="
+echo "== 5/5 入口自检 =="
 "$PY" -m guiju version --json >/dev/null
 "$PY" -m guiju status --json >/dev/null
 "$PY" -m guiju --help >/dev/null

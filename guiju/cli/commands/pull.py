@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 from collections import Counter
 from pathlib import Path
@@ -17,7 +18,9 @@ from ...domain.codes import Codes, Confidence, Role, classify
 from ...errors import (
     EXIT_COMPLIANCE,
     EXIT_EXISTS,
+    EXIT_NEEDS_HUMAN,
     EXIT_OK,
+    EXIT_UNREACHABLE,
     AmbiguousAttachment,
     AmbiguousCode,
     BadAttachment,
@@ -35,8 +38,59 @@ from ..lookup import resolve
 #: 这些退出码表示"需要人或环境干预"，批量时视为未达成
 _SEVERE = (1, 20, 40, 50)
 
+#: 批量失败体必须原样交给人/调用方的字段（W4-1）：缺一个都可能让交接断链。
+_BATCH_HANDOFF_FIELDS = (
+    "candidates",
+    "availability",
+    "availability_note",
+    "attachments",
+    "page_url",
+    "verdict",
+    "names",
+    "pick_reason",
+)
 
-def _codes_for_book(codes: Codes, book: str) -> Codes:
+
+def _availability_of(published_on: str | None) -> tuple[availability.Window, str]:
+    """公告日期 → (可得性窗口, 给 agent 的一句事实说明)。"""
+    window = availability.state(published_on)
+    return window, availability.note(window, published_on)
+
+
+def _attach_availability(exc: GuijuError, published_on: str | None = None) -> GuijuError:
+    """给任何 pull 失败体补 availability/availability_note；已有值不覆盖。"""
+    window, note = _availability_of(published_on)
+    exc.extra.setdefault("availability", window.value)
+    exc.extra.setdefault("availability_note", note)
+    return exc
+
+
+def _batch_failure(exc: GuijuError, ref: str) -> dict:
+    """W4-1：批量结果里的失败项必须保留人工交接字段，且不复制成功字段。"""
+    payload = exc.payload()
+    result = {
+        "ref": ref,
+        "exit": exc.exit,
+        "outcome": exc.reason,
+        "error": exc.message,
+        "hint": exc.hint,
+    }
+    for key in _BATCH_HANDOFF_FIELDS:
+        if key in payload:
+            result[key] = payload[key]
+    result.setdefault("availability", availability.Window.UNKNOWN.value)
+    result.setdefault(
+        "availability_note", availability.note(availability.Window.UNKNOWN)
+    )
+    return result
+
+
+def _codes_for_book(
+    codes: Codes,
+    book: str,
+    window: availability.Window | None = None,
+    published_on: str | None = None,
+) -> Codes:
     """多名称公告：只保留正文证据里出现这本书的编号。
 
     不能把整篇正文解析出的第一个编号当成用户点的那本书 —— 实测标题两本、
@@ -54,23 +108,27 @@ def _codes_for_book(codes: Codes, book: str) -> Codes:
             for m in (relevant or codes.mentions)
         ]
 
-    if not relevant:
-        raise AmbiguousCode(
-            f"公告标题含多本规范，正文没有与「{book}」对应的编号证据",
+    def _ambiguous(message: str) -> AmbiguousCode:
+        extra: dict = {}
+        if window is not None:
+            extra["availability"] = window.value
+            extra["availability_note"] = availability.note(window, published_on)
+        return AmbiguousCode(
+            message,
             hint="按编号 pull，或人工确认这本书的编号后再试",
             candidates=_candidates(),
+            **extra,
         )
+
+    if not relevant:
+        raise _ambiguous(f"公告标题含多本规范，正文没有与「{book}」对应的编号证据")
     decisive = tuple(
         m for m in relevant
         if m.role in (Role.PRIMARY, Role.TARGET_OF_REVISION)
     )
     keys = {m.code_key for m in decisive}
     if len(keys) != 1:
-        raise AmbiguousCode(
-            f"正文中「{book}」对应多个编号或没有决定性编号证据",
-            hint="按编号 pull，或人工确认这本书的编号后再试",
-            candidates=_candidates(),
-        )
+        raise _ambiguous(f"正文中「{book}」对应多个编号或没有决定性编号证据")
     chosen = decisive[0]
     return Codes(
         mentions=relevant,
@@ -85,48 +143,111 @@ def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
 
     流程：检索 → 判歧义 → 断点续传下载 → 按指纹命名落盘 → 补一条公告记录（供 cite/which 复用）。
     """
-    from ...domain.codes import normalize_key
+    from ...domain.codes import Mention, normalize_key
     from ...errors import AmbiguousCode, NotIndexed
 
-    hits = source.find(ref)
+    try:
+        hits = source.find(ref)
+    except GuijuError as exc:
+        # W4-2：检索阶段没有单一 rec，不得拿候选日期冒充可得性。
+        raise _attach_availability(exc) from None
     if not hits:
+        window, note = _availability_of(None)
         raise NotIndexed(
             f"{source.display_name}没有匹配「{ref}」的地方标准",
             hint="换编号或名称片段再试；该源只覆盖地方标准（DG/TJ、DB31/T 等）",
+            availability=window.value,
+            availability_note=note,
         )
     if len(hits) > 1:
+        window, note = _availability_of(None)
         raise AmbiguousCode(
             f"「{ref}」在{source.display_name}命中 {len(hits)} 条，需要人指定",
             candidates=[
                 {"code": h["code"], "name": h["name"], "published_on": h["published_on"]}
                 for h in hits[:10]
             ],
+            availability=window.value,
+            availability_note=note,
         )
 
     rec = hits[0]
-    if rec["status"] == "withdrawn":
+    window, avail_note = _availability_of(rec["published_on"])
+    if rec.get("status") == "withdrawn":
         render.warn(
             f"该版本在{source.display_name}已废止（{rec.get('abolish_on') or '时间未载明'}）；"
             "正文仍下载，但引用前请确认现行版"
         )
     code_key = normalize_key(rec["code"]) if rec["code"] else None
     if not rec.get("download_url"):
-        raise BadAttachment(f"{rec['code'] or rec['name']} 在该源没有可下载的正文文件")
+        raise BadAttachment(
+            f"{rec['code'] or rec['name']} 在该源没有可下载的正文文件",
+            availability=window.value,
+            availability_note=avail_note,
+        )
+
+    def _remember() -> None:
+        """API 记录落库：announcement + mention（W4-4，cite/which 复用）。
+
+        已缓存 exit 10 路径也要走这里：1.2.0a3 只落了文件没落库，
+        不补的话升级后 cite --offline 仍然查不到这条地标。
+        """
+        ann_id, _fresh = store.upsert_announcement(
+            rec["page_url"],
+            rec["published_on"],
+            rec["name"],
+            rec["name"],
+            "local_standard",
+        )
+        if code_key:
+            codes = Codes(
+                mentions=(
+                    Mention(
+                        code_key,
+                        rec["code"],
+                        Role.PRIMARY,
+                        f"{source.display_name}检索结果：{rec['code']}",
+                    ),
+                ),
+                primary_key=code_key,
+                primary_display=rec["code"],
+                confidence=Confidence.PARSED,
+            )
+            persist_codes(store, ann_id, codes, rec["name"], status=rec.get("status"))
+        store.commit()
 
     if not args.force:
         cached = find_cached(out_dir, code_key, rec["name"], readable=args.readable)
         if cached:
             path, digest = cached
+            _remember()
             return {
-                "ok": True, "already": True, "code": rec["code"],
-                "path": str(path), "sha256": digest,
-                "bytes": path.stat().st_size, "exit": EXIT_EXISTS,
+                "ok": True,
+                "already": True,
+                "source": source.id,
+                "code": rec["code"],
+                "name": rec["name"],
+                "path": str(path),
+                "sha256": digest,
+                "bytes": path.stat().st_size,
+                "magic": "pdf",
+                "status": rec.get("status", ""),
+                "published_on": rec["published_on"],
+                "implement_on": rec.get("implement_on"),
+                "availability": window.value,
+                "source_page": rec["page_url"],
+                "attachment": rec["download_url"],
+                "confidence": "parsed",
+                "exit": EXIT_EXISTS,
             }
 
     partial_dir = out_dir / ".partial"
     key = sha256_bytes(f"{source.id}|{rec['code'] or rec['name']}|{rec['download_url']}".encode())[:10]
     part = partial_dir / f"{key}.part"
-    nbytes, magic, resumed = source.download_to(rec["download_url"], str(part))
+    try:
+        nbytes, magic, resumed = source.download_to(rec["download_url"], str(part))
+    except GuijuError as exc:
+        raise _attach_availability(exc, rec["published_on"]) from None
     if resumed:
         render.note(f"  续传：从 {resumed} 字节处继续（共 {nbytes} 字节）")
 
@@ -139,13 +260,10 @@ def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     dest.parent.mkdir(parents=True, exist_ok=True)
     finalize_body(part, dest)
 
-    store.upsert_announcement(
-        rec["page_url"], rec["published_on"], rec["name"], rec["name"], "local_standard"
-    )
+    _remember()
     store.log_probe(source.id, rec["download_url"], 200, nbytes, "ok", rec["name"])
     store.commit()
 
-    window = availability.state(rec["published_on"])
     return {
         "ok": True,
         "source": source.id,
@@ -156,7 +274,7 @@ def _pull_api(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
         "bytes": nbytes,
         "magic": magic,
         "confidence": "parsed",
-        "status": rec["status"],
+        "status": rec.get("status", ""),
         "published_on": rec["published_on"],
         "implement_on": rec.get("implement_on"),
         "availability": window.value,
@@ -172,7 +290,11 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
 
     # 显式给带落库缓存的时效端口：否则 resolve 内部会建一个无 store 的
     # CachedCurrency，TTL 缓存够不到，pull 每次都直打时效服务（M9）。
-    target = resolve(store, ref, currency=currency_mod.CachedCurrency(store=store))
+    try:
+        target = resolve(store, ref, currency=currency_mod.CachedCurrency(store=store))
+    except GuijuError as exc:
+        # W4-2：resolve 早期失败（目录/URL 等）还没有公告日期，按 unknown 交人。
+        raise _attach_availability(exc) from None
     if target.get("versions"):
         picked = next(
             (v for v in target["versions"] if v["ann_id"] == int(target["ann"]["id"])), None
@@ -204,8 +326,7 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
             ref_name = ref
 
     # 可得性事实先算出来：本命令任何失败都要带上它，agent 才能区分"历史如此"与"出问题了"
-    window = availability.state(ann["published_on"])
-    avail_note = availability.note(window, ann["published_on"])
+    window, avail_note = _availability_of(ann["published_on"])
 
     from ...domain.codes import normalize_key
 
@@ -221,16 +342,25 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
             path, digest = cached
             return {
                 "ok": True, "already": True, "code": code_display or code_key,
+                "name": display_name, "status": status,
                 "path": str(path), "sha256": digest, "bytes": path.stat().st_size,
-                "exit": EXIT_EXISTS,
+                "magic": "pdf", "confidence": confidence, "attachment": None,
+                "published_on": ann["published_on"], "availability": window.value,
+                "source_page": ann["url"], "exit": EXIT_EXISTS,
             }
 
-    html, text = source.detail(ann["url"])
+    try:
+        html, text = source.detail(ann["url"])
+    except GuijuError as exc:
+        # W4-2：detail 解析/抓取失败（含 BadAttachment）也要带可得性事实。
+        raise _attach_availability(exc, ann["published_on"]) from None
     # 名称证据用"用户要的那一本"：doc_name（第一本）会把弱证据指向另一本书的编号
     codes = classify(text, display_name)
     if len(names) > 1 and ref_name:
         # 多名称公告必须把"用户选的那本"贯穿到编号，不能只换文件名。
-        codes = _codes_for_book(codes, ref_name)
+        codes = _codes_for_book(
+            codes, ref_name, window=window, published_on=ann["published_on"]
+        )
         selected_key = normalize_key(codes.primary_key) if codes.primary_key else None
         if code_key and selected_key and code_key != selected_key:
             raise AmbiguousCode(
@@ -240,6 +370,8 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
                     {"code": codes.primary_display, "key": codes.primary_key},
                     {"code": code_display, "key": code_key},
                 ],
+                availability=window.value,
+                availability_note=avail_note,
             )
         code_key = code_key or selected_key
         code_display = code_display or codes.primary_display
@@ -263,11 +395,19 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
         if cached:
             path, digest = cached
             return {
-                "ok": True, "already": True, "code": code_display, "path": str(path),
-                "sha256": digest, "bytes": path.stat().st_size, "exit": EXIT_EXISTS,
+                "ok": True, "already": True, "code": code_display,
+                "name": display_name, "status": status,
+                "path": str(path), "sha256": digest, "bytes": path.stat().st_size,
+                "magic": "pdf", "confidence": confidence, "attachment": None,
+                "published_on": ann["published_on"], "availability": window.value,
+                "source_page": ann["url"], "exit": EXIT_EXISTS,
             }
 
-    atts = source.attachments(html)
+    try:
+        atts = source.attachments(html)
+    except GuijuError as exc:
+        # W4-2：附件枚举失败同样带可得性；具体 30/50 由异常类型决定。
+        raise _attach_availability(exc, ann["published_on"]) from None
     picked = att_domain.pick(
         atts, names, ref_name=ref_name, announcement_title=ann["title"]
     )
@@ -280,7 +420,13 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
                     if not ref_name
                     else f"公告标题含 {len(names)} 本规范，名称对不上其中任何一本，需要人指定"
                 )
-            raise AmbiguousAttachment(message, hint=avail_note, **picked.as_payload())
+            raise AmbiguousAttachment(
+                message,
+                hint=avail_note,
+                availability=window.value,
+                availability_note=avail_note,
+                **picked.as_payload(),
+            )
         if picked.verdict is att_domain.Verdict.NOT_APPLICABLE:
             raise NoAttachment(
                 "该公告不是官方中文正文（英文版/译本），不做下载",
@@ -297,7 +443,7 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     assert choice is not None
     # 33/30 在 pick 阶段已抛出：只有附件确实选定后才写 mentions，
     # 否则一次歧义失败会先删掉旧 mentions，污染已有数据。
-    persist_codes(store, ann_id, codes, display_name)
+    persist_codes(store, ann_id, codes, display_name, status=status or None)
     store.commit()
     render.note(f"  附件 {len(atts)} 个，选定：{choice.label[:50] or choice.url[-40:]}")
 
@@ -307,11 +453,12 @@ def _pull_one(store: Store, args: argparse.Namespace, ref: str, source, out_dir:
     part = partial_dir / f"{key}.part"
     try:
         nbytes, magic, resumed = source.download_to(choice.url, str(part), referer=ann["url"])
-    except BadAttachment as exc:
-        store.log_probe(source.id, choice.url, None, None, "bad_attachment", choice.label)
-        store.commit()
-        exc.extra.setdefault("attachments", picked.as_payload().get("candidates", []))
-        raise
+    except GuijuError as exc:
+        if isinstance(exc, BadAttachment):
+            store.log_probe(source.id, choice.url, None, None, "bad_attachment", choice.label)
+            store.commit()
+            exc.extra.setdefault("attachments", picked.as_payload().get("candidates", []))
+        raise _attach_availability(exc, ann["published_on"]) from None
     if resumed:
         render.note(f"  续传：从 {resumed} 字节处继续（共 {nbytes} 字节）")
 
@@ -348,11 +495,11 @@ def _read_refs(spec: str) -> list[str]:
     raw = (
         sys.stdin.read()
         if spec == "-"
-        else Path(spec).expanduser().read_text(encoding="utf-8")
+        else Path(spec).expanduser().read_text(encoding="utf-8-sig")
     )
     refs = []
     for line in raw.splitlines():
-        line = line.strip()
+        line = line.strip().removeprefix("\ufeff").strip()
         if not line or line.startswith("#"):
             continue
         # 行尾注释须以空白与引用分隔（"GB 50037 # 国标"），URL 里的 #frag 不截断
@@ -371,6 +518,7 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
     out_dir = Path(args.out).expanduser() if args.out else default_out_dir()
     results: list[dict] = []
     stopped: str | None = None
+    stop_exit: int | None = None
     for index, ref in enumerate(refs, 1):
         render.note(f"[{index}/{len(refs)}] {ref}")
         try:
@@ -385,6 +533,10 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
                     "exit": exit_code,
                     "outcome": outcome,
                     "code": payload.get("code"),
+                    "name": payload.get("name"),
+                    "status": payload.get("status"),
+                    "availability": payload.get("availability"),
+                    "source_page": payload.get("source_page"),
                     "path": payload.get("path"),
                     "bytes": payload.get("bytes"),
                 }
@@ -392,21 +544,54 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
             if exit_code == EXIT_COMPLIANCE:
                 render.note(f"  → 停止（合规红线）{payload.get('code') or ''}")
                 stopped = "compliance"
+                stop_exit = EXIT_COMPLIANCE
                 break
             render.note(f"  → {'已存在' if exit_code == EXIT_EXISTS else '完成'} {payload.get('code') or ''}")
         except GuijuError as exc:
-            results.append(
-                {"ref": ref, "exit": exc.exit, "outcome": exc.reason,
-                 "error": exc.message, "hint": exc.hint}
-            )
+            results.append(_batch_failure(exc, ref))
             render.note(f"  → 未达成 exit={exc.exit} {exc.reason}：{exc.message[:60]}")
             if exc.exit == EXIT_COMPLIANCE:
                 stopped = "compliance"
+                stop_exit = EXIT_COMPLIANCE
                 break
+        except sqlite3.DatabaseError as exc:
+            # W4-3：数据库锁/只读/损坏是环境/需人工问题，不能兜成"程序缺陷 1"。
+            text = str(exc).lower()
+            if "locked" in text or "busy" in text:
+                exit_code = EXIT_UNREACHABLE
+                outcome = "unreachable"
+                hint = (
+                    "数据库正被其他进程占用：稍后重试一次；若持续出现，"
+                    "检查是否有另一个 guiju 进程在长期写库"
+                )
+            else:
+                exit_code = EXIT_NEEDS_HUMAN
+                outcome = "needs_human"
+                hint = (
+                    "数据库操作失败：备份数据库并检查磁盘/目录权限；"
+                    "只读库请移走或改到可写 GUIJU_HOME"
+                )
+            results.append(
+                {
+                    "ref": ref,
+                    "exit": exit_code,
+                    "outcome": outcome,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "hint": hint,
+                    "availability": availability.Window.UNKNOWN.value,
+                    "availability_note": availability.note(availability.Window.UNKNOWN),
+                }
+            )
+            render.note(f"  → 数据库错误 {type(exc).__name__}：停止整批（exit={exit_code}）")
+            stopped = "database"
+            stop_exit = exit_code
+            break
         except Exception as exc:  # 非 GuijuError 不得中断整批；批内兜底成 internal
             results.append(
                 {"ref": ref, "exit": 1, "outcome": "internal",
-                 "error": f"{type(exc).__name__}: {exc}", "hint": "程序缺陷：请带上该条 ref 上报维护者"}
+                 "error": f"{type(exc).__name__}: {exc}", "hint": "程序缺陷：请带上该条 ref 上报维护者",
+                 "availability": availability.Window.UNKNOWN.value,
+                 "availability_note": availability.note(availability.Window.UNKNOWN)}
             )
             render.note(f"  → 内部错误 {type(exc).__name__}：{str(exc)[:60]}")
 
@@ -436,11 +621,19 @@ def _batch(store: Store, args: argparse.Namespace, source) -> int:
     # 不能因为 severe[0] 是 20 就被当成"稍后重试"。
     if stopped == "compliance":
         return EXIT_COMPLIANCE
+    if stopped == "database" and stop_exit is not None:
+        return stop_exit
     return severe[0]["exit"] if severe else EXIT_OK
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
-    source = registry()[args.source]
+    sources = registry()
+    source = sources.get(args.source)
+    if source is None:
+        raise BadUsage(
+            f"未知数据源：{args.source}",
+            hint=f"可用数据源：{'、'.join(sources)}",
+        )
     if args.list:
         return _batch(store, args, source)
 

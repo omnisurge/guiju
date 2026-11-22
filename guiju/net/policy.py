@@ -31,17 +31,19 @@ class BodyPolicy:
             return self._check_url_fn(url)
         if any(ord(ch) < 32 for ch in url):
             raise ComplianceDenied("URL 含控制字符，拒绝访问")
-        parts = urllib.parse.urlsplit(url)
+        try:
+            parts = urllib.parse.urlsplit(url)
+            username, password = parts.username, parts.password
+            port = parts.port
+            hostname = parts.hostname
+        except ValueError as exc:
+            raise ComplianceDenied(f"URL 非法，拒绝访问：{url}") from exc
         if parts.scheme not in ("https", "http"):
             raise ComplianceDenied(f"仅允许 http(s)：{url}")
-        if parts.username is not None or parts.password is not None:
+        if username is not None or password is not None:
             raise ComplianceDenied("URL 不得携带用户名或密码")
-        try:
-            port = parts.port
-        except ValueError as exc:
-            raise ComplianceDenied(f"URL 端口无效：{url}") from exc
         from .headers import canonical_host
-        host = canonical_host(parts.hostname or "")
+        host = canonical_host(hostname or "")
         if not host:
             raise ComplianceDenied(f"非法 host，拒绝访问：{parts.hostname or '(空)'}")
         if host == SHANGHAI_HOST:

@@ -34,6 +34,12 @@ class FallbackCurrency:
         # 最近一次成功应答的完整性（由 native 决定是否写缓存）；默认与老适配器一致。
         self.complete = True
         self.incomplete_reason = ""
+        # W3-2：源明确回答"没有这条记录"的权威空标记也必须沿链传递；否则
+        # csres 被 FallbackCurrency 包一层后，20/31 判定就丢了。
+        self.empty_authoritative = False
+        self.insecure_transport = False
+        self.truncated = False
+        self.has_more = None
 
     def _check(self) -> None:
         if self.cancelled is not None and self.cancelled():
@@ -43,6 +49,10 @@ class FallbackCurrency:
         """整个链路只继承真正答话的那个源：备源的部分结果不能被当成主源的完整性。"""
         self.complete = bool(getattr(source, "complete", True))
         self.incomplete_reason = str(getattr(source, "incomplete_reason", "") or "")
+        self.empty_authoritative = bool(getattr(source, "empty_authoritative", False))
+        self.insecure_transport = bool(getattr(source, "insecure_transport", False))
+        self.truncated = bool(getattr(source, "truncated", False))
+        self.has_more = getattr(source, "has_more", None)
 
     def lookup(self, code: str) -> list[Record]:
         self._check()

@@ -167,4 +167,9 @@ class JtstCurrency(CompletenessMixin):
             ))
             return records
 
-        return query_with_base_fallback(code, fetch)
+        return query_with_base_fallback(
+            code,
+            fetch,
+            snapshot=lambda: self._completeness,
+            restore=self._record_completeness,
+        )

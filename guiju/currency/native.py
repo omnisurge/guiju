@@ -44,6 +44,16 @@ class Outcome:
     # 不会被写成缓存，调用方必须把它当作"可能缺少记录"而不是权威空结论。
     complete: bool = True
     incomplete_reason: str = ""
+    #: 源明确回答"没有这条记录"（pageNum=0 的 csres 空结果）。可与 complete=False
+    #: 并存：明文回退的空结果不可缓存，但仍是权威空而不是"需人工排查"。
+    empty_authoritative: bool = False
+    #: 本次结果来自明文回退；写缓存必须同时满足 complete 与 not insecure。
+    insecure_transport: bool = False
+    #: 翻页是否被上限截断；has_more 是完整性证据（False 才表示末页）。
+    #: 这两个标志用于区分“明文但完整”与“明文且不完整”，_pick_current_version
+    #: 只允许前者参与同名定版。
+    truncated: bool = False
+    has_more: bool | None = None
 
     @property
     def fallback_source(self) -> str:
@@ -184,10 +194,15 @@ class NativeCurrency:
         # 只有"完整且可信"的结果才能当权威结论写缓存：不完整的空结果一旦落盘，
         # 就是 24 小时假阴性（W3/P1-4）；没有 complete 字段的老适配器沿用旧契约。
         complete = bool(getattr(adapter, "complete", True))
+        insecure_transport = bool(getattr(adapter, "insecure_transport", False))
+        cacheable = complete and not insecure_transport
+        empty_authoritative = bool(getattr(adapter, "empty_authoritative", False))
+        truncated = bool(getattr(adapter, "truncated", False))
+        has_more = getattr(adapter, "has_more", None)
         incomplete_reason = "" if complete else str(getattr(adapter, "incomplete_reason", "") or "")
         if self.admit is not None:
             self.admit(code)  # put 前复验：查到的数据还没落盘，此刻拒绝就不能写缓存
-        if self.cache is not None and complete:
+        if self.cache is not None and cacheable:
             try:
                 self.cache.put(code, rows, namespace=namespace)
             except (GuijuError, QueryCancelled):
@@ -197,6 +212,8 @@ class NativeCurrency:
         self._guard(code)
         return self._succeed(code, Outcome(
             tuple(rows), adapter.name, complete=complete, incomplete_reason=incomplete_reason,
+            empty_authoritative=empty_authoritative, insecure_transport=insecure_transport,
+            truncated=truncated, has_more=has_more,
         ))
 
     def _succeed(self, code: str, outcome: Outcome) -> Outcome:
@@ -225,6 +242,24 @@ class NativeCurrency:
     def complete(self) -> bool:
         """最近一次成功结果是否完整；False = 没取全、未写缓存，结论需复核。"""
         return self.last_outcome is not None and self.last_outcome.complete
+
+    @property
+    def empty_authoritative(self) -> bool:
+        """最近一次空结果是否是源明确回答"没有"（而不是没读懂/没取全）。"""
+        return self.last_outcome is not None and self.last_outcome.empty_authoritative
+
+    @property
+    def insecure_transport(self) -> bool:
+        """最近一次结果是否走了明文回退（写缓存前必须同时满足 complete）。"""
+        return self.last_outcome is not None and self.last_outcome.insecure_transport
+
+    @property
+    def truncated(self) -> bool:
+        return self.last_outcome is not None and self.last_outcome.truncated
+
+    @property
+    def has_more(self) -> bool | None:
+        return self.last_outcome.has_more if self.last_outcome is not None else None
 
     @property
     def upstream_error(self) -> Exception | None:

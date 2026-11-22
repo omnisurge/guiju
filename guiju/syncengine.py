@@ -14,6 +14,11 @@ from .store.sqlite import Store, now
 
 PageHook = Callable[[int, int, int, int, int], None]
 
+#: 唯一页硬上限：源没有可用 total 或分页参数失效时不能无限翻页。
+MAX_PAGES = 200
+#: 允许连续多少个"没有新唯一 URL"的页继续往后翻：重复页后面可能还有新页。
+MAX_DUPLICATE_PAGES = 2
+
 
 def _classify(source, title: str) -> tuple[str, str]:
     fn = getattr(source, "classify_title", None)
@@ -35,23 +40,29 @@ def crawl(
       - 已知 total 且 seen >= total → 完整；
       - 未知 total 且遇到空页 → 不把部分当完整；
       - 截断（--pages）→ 不写完整/同步时间；
-      - 上一轮已完整时，连续两页 0 新增才允许 quiet stop（仅增量场景）。
-    seen 按实际条目累加，所以站点每页少于请求 page_size（mohurd 实测 99/100）
-    不会再用放大后的 page * page_size 提前宣布完整。
+      - 上一轮已完整时，连续两页 0 新增才允许 quiet stop（仅增量场景）；
+      - 重复页（本页没有带来任何新的唯一 URL）不参与 quiet stop：
+        未知 total 下连续 2 页 → no_progress；已知 total 时允许 2 页继续翻，
+        超过 → duplicate_page；
+      - 唯一页数达到 MAX_PAGES → truncated / page_limit。
+
+    seen 只按**唯一 URL** 累加。站点同一页重复条目、或分页参数失效返回重复页时，
+    用重复条目凑够 total 会把缺口写成 complete；这里按唯一 URL 计数，宁可不完整。
     """
     src = registry()[source]
     page = 1
-    new_total = seen = 0
+    new_total = 0
+    seen = 0
+    seen_urls: set[str] = set()
     best_total: int | None = None
     quiet_pages = 0
+    duplicate_pages = 0
+    unique_pages = 0
     complete = truncated = False
     reason = ""
 
-    # 按源读完成水位；mohurd 过渡期兼容旧的全局键。
-    source_complete = store.get_meta(f"sync:{source}:complete")
-    if not source_complete and source == "mohurd":
-        source_complete = store.get_meta("catalog_complete")
-    was_complete = source_complete == "1"
+    # 按源读完成水位；source_meta 已封装 mohurd 旧 catalog_complete=="1" 兼容。
+    was_complete = store.source_meta(source)["complete"]
 
     while True:
         items, page_total = src.catalog_page(page, page_size)
@@ -83,16 +94,28 @@ def crawl(
             break
 
         fresh = 0
+        page_seen = 0
         for item in items:
+            url = item["url"]
+            if url not in seen_urls:
+                seen_urls.add(url)
+                seen += 1
+                page_seen += 1
             name, category = _classify(src, item["title"])
             _, is_new = store.upsert_announcement(
-                item["url"], item["date"], item["title"], name, category
+                url, item["date"], item["title"], name, category
             )
             fresh += int(is_new)
         store.commit()
         new_total += fresh
-        seen += len(items)
-        quiet_pages = quiet_pages + 1 if fresh == 0 else 0
+
+        duplicate = page_seen == 0
+        if duplicate:
+            duplicate_pages += 1
+        else:
+            unique_pages += 1
+            duplicate_pages = 0
+            quiet_pages = quiet_pages + 1 if fresh == 0 else 0
         if on_page is not None:
             on_page(page, len(items), fresh, seen, best_total or 0)
 
@@ -100,14 +123,32 @@ def crawl(
             truncated = True
             reason = "truncated"
             break
-        if was_complete and quiet_pages >= 2:
+
+        # 顺序：先登记唯一 URL，再判重复/无进展，最后才轮到 quiet stop。
+        # 重复页上的 0 新增不是"目录已抓完"的证据，不能让 previous_complete 提前收工。
+        if duplicate:
+            if best_total is None and duplicate_pages >= 2:
+                complete = False
+                reason = "no_progress"
+                break
+            if duplicate_pages > MAX_DUPLICATE_PAGES:
+                complete = False
+                reason = "duplicate_page"
+                break
+        elif was_complete and quiet_pages >= 2:
             complete = True
             reason = "previous_complete"
             break
-        if best_total is not None and seen >= best_total:
+        elif best_total is not None and seen >= best_total:
             complete = True
             reason = "seen_ge_total"
             break
+
+        if unique_pages >= MAX_PAGES:
+            truncated = True
+            reason = "page_limit"
+            break
+
         page += 1
 
     if complete and not truncated:

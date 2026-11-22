@@ -62,6 +62,10 @@ class Completeness:
     truncated: bool = False
     reason: str = ""
     insecure_transport: bool = False
+    #: 源明确回答"没有这条记录"的权威空结果。与 complete 正交：明文回退的空结果
+    #: 仍 complete=False（不可作权威缓存），但它不是"没读懂/没取全"，调用方据此
+    #: 把未知编号映射成 31（本地没收录）而不是 50（需人工排查适配器）。
+    empty_authoritative: bool = False
 
     @property
     def complete(self) -> bool:
@@ -70,6 +74,11 @@ class Completeness:
             and self.has_more is False
             and not self.insecure_transport
         )
+
+    @property
+    def cacheable(self) -> bool:
+        """可以写入缓存：取全且传输可信。明文回退（含空结果）一律不写。"""
+        return self.complete and not self.insecure_transport
 
     def as_pagination(self) -> dict:
         return {
@@ -96,6 +105,26 @@ class CompletenessMixin:
     @property
     def incomplete_reason(self) -> str:
         return self._completeness.reason
+
+    @property
+    def empty_authoritative(self) -> bool:
+        return self._completeness.empty_authoritative
+
+    @property
+    def insecure_transport(self) -> bool:
+        return self._completeness.insecure_transport
+
+    @property
+    def truncated(self) -> bool:
+        return self._completeness.truncated
+
+    @property
+    def has_more(self) -> bool | None:
+        return self._completeness.has_more
+
+    @property
+    def cacheable(self) -> bool:
+        return self._completeness.cacheable
 
     @property
     def pagination(self) -> dict:

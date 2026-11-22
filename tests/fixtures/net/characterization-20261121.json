@@ -27,7 +27,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-200-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -63,7 +63,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-200-02",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -99,7 +99,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-200-03",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -135,7 +135,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-200-04",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -171,7 +171,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-200-05",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -207,7 +207,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-200-06",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -243,7 +243,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-200-07",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -280,7 +280,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -319,7 +319,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-02",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -358,7 +358,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-03",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -397,7 +397,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-04",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -436,7 +436,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-05",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -475,7 +475,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-06",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -513,7 +513,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-07",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -549,7 +549,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-08",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -586,7 +586,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-09",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -625,7 +625,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-206-10",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -664,7 +664,7 @@
         "mode": "http_416",
         "url_shape": "/CHAR-416-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -703,7 +703,7 @@
         "mode": "http_416",
         "url_shape": "/CHAR-416-02",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -742,7 +742,7 @@
         "mode": "http_416",
         "url_shape": "/CHAR-416-03",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -780,7 +780,7 @@
         "mode": "http_416",
         "url_shape": "/CHAR-416-04",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -817,7 +817,7 @@
         "mode": "http_416",
         "url_shape": "/CHAR-416-05",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=500-",
@@ -856,7 +856,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-IFR-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=5-",
@@ -895,7 +895,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-IFR-02",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=5-",
@@ -934,7 +934,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-IFR-03",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=5-",
@@ -973,7 +973,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-IFR-04",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1010,7 +1010,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-IFR-05",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1047,7 +1047,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-IFR-06",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1084,7 +1084,7 @@
         "mode": "local_server",
         "url_shape": "/CHAR-IFR-07",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=5-",
@@ -1122,7 +1122,7 @@
         "mode": "local_server_redirect",
         "url_shape": "/CHAR-RED-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1158,7 +1158,7 @@
         "mode": "local_server_redirect",
         "url_shape": "/CHAR-RED-02",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1194,7 +1194,7 @@
         "mode": "local_server_redirect",
         "url_shape": "/CHAR-RED-03",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1230,7 +1230,7 @@
         "mode": "local_server_redirect",
         "url_shape": "/CHAR-RED-04",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1266,7 +1266,7 @@
         "mode": "local_server_redirect",
         "url_shape": "/CHAR-RED-05",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1302,7 +1302,7 @@
         "mode": "local_server_redirect",
         "url_shape": "/CHAR-RED-06",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1338,7 +1338,7 @@
         "mode": "local_server_redirect",
         "url_shape": "/CHAR-RED-07",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1374,7 +1374,7 @@
         "mode": "local_server_redirect",
         "url_shape": "/CHAR-RED-08",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1550,7 +1550,7 @@
         "mode": "local_server_large",
         "url_shape": "/CHAR-CAP-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1586,7 +1586,7 @@
         "mode": "local_server_large",
         "url_shape": "/CHAR-CAP-02",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1622,7 +1622,7 @@
         "mode": "local_server_large",
         "url_shape": "/CHAR-CAP-03",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1658,7 +1658,7 @@
         "mode": "local_server_large",
         "url_shape": "/CHAR-CAP-04",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -1695,7 +1695,7 @@
         "mode": "local_server_large",
         "url_shape": "/CHAR-CAP-05",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity",
           "range": "bytes=5-",
@@ -1733,7 +1733,7 @@
         "mode": "local_server_large",
         "url_shape": "/CHAR-CAP-06",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2105,7 +2105,7 @@
         "mode": "local_server_error",
         "url_shape": "/CHAR-403-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2141,7 +2141,7 @@
         "mode": "local_server_error",
         "url_shape": "/CHAR-403-02",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2177,7 +2177,7 @@
         "mode": "local_server_error",
         "url_shape": "/CHAR-429-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2213,7 +2213,7 @@
         "mode": "local_server_error",
         "url_shape": "/CHAR-429-02",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2249,7 +2249,7 @@
         "mode": "local_server_error",
         "url_shape": "/CHAR-429-03",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2285,7 +2285,7 @@
         "mode": "local_server_error",
         "url_shape": "/CHAR-429-04",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2447,7 +2447,7 @@
         "mode": "probe",
         "url_shape": "/CHAR-PRB-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2483,7 +2483,7 @@
         "mode": "probe",
         "url_shape": "/CHAR-PRB-02",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2518,7 +2518,7 @@
         "mode": "probe",
         "url_shape": "/CHAR-PRB-03",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },
@@ -2553,7 +2553,7 @@
         "mode": "probe",
         "url_shape": "/CHAR-HEAD-01",
         "request_headers": {
-          "user-agent": "guiju/1.2.0a3 (compliance-aware; official code fetcher)",
+          "user-agent": "guiju/1.2.0a4 (compliance-aware; official code fetcher)",
           "accept": "*/*",
           "accept-encoding": "identity"
         },

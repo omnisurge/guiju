@@ -16,6 +16,7 @@ from ..errors import ComplianceDenied, NeedsHuman, SourceUnreachable
 from .block import BlockDetector
 from .endpoints import SHANGHAI_HOST, SHANGHAI_ORIGIN, SHANGHAI_REFERER
 from .policy import MetadataPolicy
+from .read import read_prefix
 from .throttle import Throttle, default_throttle
 from .transport import Transport
 
@@ -24,6 +25,14 @@ MAX_ATTEMPTS = 3
 BACKOFF = (0.5, 1.5)
 MAX_RESPONSE_BYTES = 2_000_000
 UA = f"guiju/{__version__} (metadata-only; standards currency)"
+
+
+def _looks_like_html(body: bytes) -> bool:
+    """A JSON endpoint answered with a web page, tolerating BOM and whitespace."""
+    view = body
+    while view.startswith(b"\xef\xbb\xbf"):
+        view = view[3:]
+    return view.lstrip()[:1] == b"<"
 
 
 class MetadataClient:
@@ -67,11 +76,8 @@ class MetadataClient:
         if host != SHANGHAI_HOST:
             raise ComplianceDenied("JSON POST 只允许上海固定元数据查询端点")
         data = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
-        body = self._request(url, method="POST", data=data, accept="application/json", json_body=True,
-                             referer=referer)
-        if body.lstrip()[:512].lower().startswith((b"<html", b"<!doctype")):
-            raise ComplianceDenied("元数据 JSON 端点返回网页错误页")
-        return body
+        return self._request(url, method="POST", data=data, accept="application/json", json_body=True,
+                             referer=referer, expect_json=True)
 
     def post_json_dict(self, url: str, payload: dict, *, referer: str | None = None) -> dict:
         raw = self.post_json(url, payload, referer=referer)
@@ -92,6 +98,7 @@ class MetadataClient:
         accept: str | None,
         json_body: bool = False,
         referer: str | None = None,
+        expect_json: bool = False,
     ) -> bytes:
         host = self.policy.check_url(url)
         if host == SHANGHAI_HOST and method != "POST":
@@ -124,27 +131,41 @@ class MetadataClient:
                     self.policy.check_headers(resp.headers, url)
                     chunks: list[bytes] = []
                     remaining = self.policy.max_bytes + 1
+                    content_type = resp.headers.get("Content-Type", "")
                     try:
                         while remaining > 0:
-                            chunk = resp.read(remaining)
+                            try:
+                                chunk = resp.read(remaining)
+                            except (http.client.IncompleteRead, ConnectionResetError) as exc:
+                                partial = getattr(exc, "partial", b"") or b""
+                                if partial:
+                                    chunks.append(partial[: max(0, remaining)])
+                                raise
                             if not chunk:
                                 break
                             chunks.append(chunk)
                             remaining -= len(chunk)
                     except (OSError, http.client.HTTPException) as exc:
+                        self.detector.check(b"".join(chunks), content_type, reject_binary=True)
                         raise SourceUnreachable(f"元数据响应读取失败：{url}：{exc}") from exc
                     body = b"".join(chunks)
                     missing = getattr(resp, "length", None)
                     if len(body) <= self.policy.max_bytes and missing is not None and missing > 0:
                         raise SourceUnreachable(f"元数据响应读取失败（响应截断，尚缺 {missing} 字节）：{url}")
-                    self.detector.check(body, resp.headers.get("Content-Type", ""), reject_binary=True)
+                    self.detector.check(body, content_type, reject_binary=True)
+                    if expect_json and (
+                        content_type.split(";", 1)[0].strip().lower() == "text/html"
+                        or _looks_like_html(body)
+                    ):
+                        raise ComplianceDenied("元数据 JSON 端点返回网页错误页")
                     if len(body) > self.policy.max_bytes:
                         raise NeedsHuman("元数据响应过大，停止解析", hint="检查时效查询端点与响应结构")
                     return body
             except urllib.error.HTTPError as exc:
                 try:
                     if exc.fp is not None and not getattr(exc.fp, "closed", False):
-                        self.detector.check(exc.read(65536), "text/html", reject_binary=True)
+                        prefix, _read_error = read_prefix(exc, 65536)
+                        self.detector.check(prefix, "text/html", reject_binary=True)
                 except (OSError, http.client.HTTPException, ValueError):
                     pass
                 finally:

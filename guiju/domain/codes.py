@@ -238,11 +238,36 @@ def _code_stem(code_key: str) -> str:
     return code_key.rsplit("-", 1)[0]
 
 
+def _year4(code_key: str) -> str | None:
+    """取编号末尾 4 位年份；缺失或非 4 位数字返回 None（不把 '0' 当有效年份）。"""
+    if "-" not in code_key:
+        return None
+    tail = code_key.rsplit("-", 1)[-1]
+    return tail if len(tail) == 4 and tail.isdigit() else None
+
+
+def _is_older_same_family(candidate: str, primary: str) -> bool:
+    """同族且候选年份严格更早，才允许把它降级为 superseded_ref。
+
+    2022 提到 2010 是引用旧版，2010 提到 2022 只是提及新版；同年/缺失年/
+    非数字年份都没有"旧版被代替"的证据，一律不降（与 W2-3 的落库规则一致）。
+    """
+    if _code_stem(candidate) != _code_stem(primary):
+        return False
+    candidate_year = _year4(candidate)
+    primary_year = _year4(primary)
+    if candidate_year is None or primary_year is None:
+        return False
+    return int(candidate_year) < int(primary_year)
+
+
 def _demote_older(primary: Mention | None, mentions) -> list[Mention]:
-    """把「与 primary 同族同号但不同年份」的条目降级为 superseded_ref。
+    """把「与 primary 同族同号且年份严格更早」的提及降级为 superseded_ref。
 
     实测场景：公告同页出现 GB/T50362-2022（新）与 GB/T50362-2005（旧）却都没命中
     代替/废止措辞时，同族同号的旧版就不该被当候选 —— 引用它等于引用废止版。
+    降 MENTIONED / TARGET_OF_REVISION / PRIMARY：旧版即使被写成另一个“现批准”
+    也要让位给同族最新 primary；weak_primary（弱证据）与 ambiguous 兜底不降。
     """
     if primary is None:
         return list(mentions)
@@ -250,11 +275,13 @@ def _demote_older(primary: Mention | None, mentions) -> list[Mention]:
     # 同族旧版降成 superseded_ref，等于把"猜"伪装成"判"。
     if primary.role not in (Role.TARGET_OF_REVISION, Role.PRIMARY):
         return list(mentions)
-    stem = _code_stem(primary.code_key)
     out: list[Mention] = []
     for m in mentions:
-        if m.code_key != primary.code_key and m.role is not Role.SUPERSEDED_REF \
-                and _code_stem(m.code_key) == stem:
+        if (
+            m.code_key != primary.code_key
+            and m.role in (Role.MENTIONED, Role.TARGET_OF_REVISION, Role.PRIMARY)
+            and _is_older_same_family(m.code_key, primary.code_key)
+        ):
             m = Mention(m.code_key, m.code_display, Role.SUPERSEDED_REF, m.evidence)
         out.append(m)
     return out

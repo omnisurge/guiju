@@ -1,7 +1,7 @@
 # 规矩 guiju — 交接文档
 
 > 一句话：从官方站点取工程建设标准的**目录 + 正文 + 引用串 + 现行状态**，只搬运与校验，不生产内容。
-> 状态：**v1.2.0-alpha.3 已发布**（2026-11-21；tag v1.2.0-alpha.3，发布提交 `c053ddd`；hk guiju-mcp 已升级到 `1.2.0a3`）。单测 **984 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.3。
+> 状态：**v1.2.0-alpha.4 已发布**（2026-11-22；tag v1.2.0-alpha.4，发布提交为 tag 指向的发布提交；发版记录 [docs/audit/release-1.2.0a4-20261122.md](docs/audit/release-1.2.0a4-20261122.md)）。单测 **1223 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.4。
 > 本文件包含版本历史记录；历史行中的 cmd/mcp、NAS spec-currency 是当时事实，不代表当前运行形态。当前形态见 [docs/README.md](docs/README.md)。
 > ADR 0001 / ADR 0002 均已关闭（历史决策，见 [docs/adr/README.md](docs/adr/README.md)）；当前时效只使用 **native**，`GUIJU_CURRENCY` 只认 `native[:off|dir]` / `off`；hk `guiju-mcp` 已部署，NAS spec-currency 已于 2026-11-01 停用（历史事实，本项目不依赖 NAS）。
 
@@ -18,14 +18,14 @@
 | `docs/adr/0002-merge-into-one-product.md` | 已关闭（历史决策记录；不再作为施工依据） | 维护者 |
 | `docs/adr/0003-catalog-self-refresh.md` | 目录自保鲜（无 cron/launchd）与 `catalog` 反馈契约 | 维护者 |
 | `docs/ACCEPTANCE.md` | 验收记录（可复跑 `scripts/e2e.py`） | 所有人 |
-| `CHANGELOG.md` | 版本变更（1.2.0-alpha.3 及历史） | 所有人 |
+| `CHANGELOG.md` | 版本变更（1.2.0-alpha.4 及历史） | 所有人 |
 | 本文件 | 交接状态与"已验证/别重犯"的事实清单 | 接手人 |
 
 ## 一、现在怎么跑
 
 ```bash
 cd ~/Development/guiju
-GUIJU_CURRENCY=off bash scripts/ci.sh  # 本地离线 CI（ruff → 单测 → 离线 e2e → 入口自检），pre-push 同一套门
+GUIJU_CURRENCY=off bash scripts/ci.sh  # 本地离线 CI（ruff → check-release --docs-only → 单测 → 离线 e2e → 入口自检），pre-push 同一套门
 python3 scripts/e2e.py           # 联网验收（39 项，约 6–8 分钟；权威执行只在本机）
 uv tool install --editable .     # 已装：~/.local/bin/guiju 与 gj，任意目录可用
 
@@ -137,7 +137,7 @@ JTG             → Fallback( csres → jtst )
 
 ## 五、红线（不可绕过，不要加 override 开关）
 
-- **正文/内容抓取**只允许 `*.gov.cn`，且**每一次重定向**都要过白名单（`compliance._GuardedRedirect`）；内容源 POST 走同一道闸门。
+- **正文/内容抓取**只允许 `*.gov.cn`，且**每一次重定向**都要过白名单（`guiju/net` 的 `RedirectGuard`）；内容源 POST 走同一道闸门。
 - 时效元数据仅允许 `currency/httpx.py` 的固定查询端点；不得复用为正文出口，适配器不得落文件。
 - 限速 1.2s/请求/按 host，不调快。
 - 命中验证码/人机校验即放弃（exit 40），**不尝试绕过**。
@@ -148,7 +148,7 @@ JTG             → Fallback( csres → jtst )
 
 | 项 | 值 |
 |---|---|
-| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（v1.2.0-alpha.3） |
+| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（v1.2.0-alpha.4） |
 | 数据 | `~/.guiju/catalog.db`（3255 条公告）+ `library/`（内容寻址 PDF） |
 | 时效服务 | native 路由直连各部委站（GUIJU_CURRENCY 默认即 native；旧 NAS `…:18083/mcp` 的 spec-currency 已退役，2026-11-13） |
 | spec-currency 源码 | `~/Development/spec-currency`（Go 1.26），**已退役归档**；guiju 内不再消费 |

@@ -19,6 +19,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
+      - name: 发版文档一致性（docs-only）
+        run: python scripts/check-release.py --docs-only
+
       - name: 单元测试（离线、零依赖）
         run: python -m unittest discover -s tests -t . -v
 

@@ -53,7 +53,12 @@ def _valid_query(key: str) -> bool:
     return False
 
 
-def _explicit_version(key: str) -> bool:
+def explicit_version(code: str) -> bool:
+    """编号是否显式带版年/子册后缀（DG/TJ08-2007-2026、DB31/T 1010-2024）。
+
+    基础号 DG/TJ08-2007 允许扩展年版；显式版年必须精确匹配，不能混入其他版本。
+    """
+    key = normalize_code(code)
     return key.count("-") >= (1 if key.startswith("DB31/T") else 2)
 
 
@@ -69,7 +74,7 @@ def matches(code: str, candidate: str) -> bool:
     if got == want:
         return True
     # 已明确带版年/子段的完整输入不再追加“新年份”，只能全相等。
-    if _explicit_version(want):
+    if explicit_version(want):
         return False
     if got.startswith(want + "-"):
         suffix = got[len(want) + 1:]
@@ -116,7 +121,7 @@ class ShzjwCurrency:
         key = normalize_code(code)
         if not _valid_query(key):
             return []
-        rows = official.find(key, searcher=self._search, limit=None, prefer_exact=_explicit_version(key))
+        rows = official.find(key, searcher=self._search, limit=None, prefer_exact=explicit_version(key))
         self._check()
         return [Record(code=row["code"], name=row["name"], status=row["status"],
                        publish_date=row["published_on"], implement_date=row["implement_on"], source=self.name)

@@ -66,10 +66,20 @@ def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int | 
         payload = json.loads(resp.text)
     except json.JSONDecodeError as exc:
         raise NeedsHuman("列表接口返回的不是 JSON，站点结构可能已改版") from exc
+    if not isinstance(payload, dict):
+        raise NeedsHuman("列表接口返回结构异常（顶层不是对象），站点结构可能已改版")
     if not payload.get("success"):
         raise NeedsHuman(f"列表接口报错：{payload.get('message') or '空响应'}")
 
-    fragment = (payload.get("data") or {}).get("html") or ""
+    data = payload.get("data")
+    if data is None:
+        fragment = ""
+    elif not isinstance(data, dict):
+        raise NeedsHuman("列表接口返回结构异常（data 不是对象），站点结构可能已改版")
+    else:
+        fragment = data.get("html", "")
+        if fragment is None or not isinstance(fragment, str):
+            raise NeedsHuman("列表接口返回结构异常（html 不是字符串），站点结构可能已改版")
     if not fragment:
         # 空 fragment 不是“明确空目录”：没有计数证据时 total 必须是 None，
         # 否则 syncengine 会把站点改版/WAF 空白页误判成 complete=empty_catalog。

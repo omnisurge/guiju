@@ -30,6 +30,8 @@ class _FakeBackend:
 def _post_raw(port, body, headers, path="/mcp"):
     """裸 socket 发 POST（http.client 没法发"缺 Content-Length"/负值）。"""
     lines = [f"POST {path} HTTP/1.1", f"Host: 127.0.0.1:{port}"]
+    if not any(line.lower().startswith("content-type:") for line in headers):
+        headers = [*headers, "Content-Type: application/json"]
     lines += headers
     raw = ("\r\n".join(lines) + "\r\n\r\n").encode("utf-8") + body
     with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
@@ -164,8 +166,8 @@ class TestSharedAnnouncementStore(unittest.TestCase):
         instances = []
 
         class _FakeStore:
-            def __init__(self, **kw):
-                created.append(kw)
+            def __init__(self, path=None, **kw):
+                created.append({"path": path, **kw})
                 self.db = object()  # _ReadOnlyStore 只转发属性，对象身份能认
                 self.closed = 0
                 instances.append(self)
@@ -176,14 +178,20 @@ class TestSharedAnnouncementStore(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              patch.dict(os.environ, {"GUIJU_HOME": tmp}), \
              patch("guiju.store.sqlite.Store", _FakeStore):
-            # _ann_store 做的是局部 import，patch 的是 store.sqlite 里的名字
+            # _ann_store 做的是局部 import，patch 的是 store.sqlite 里的名字。
+            # 新语义：缺库时先建空 schema（第一个 Store），再以 read_only=True
+            # 打开共享只读连接（第二个 Store），之后所有请求复用同一个。
             server = McpServer(_FakeBackend())
             self._call(server)
             self._call(server)
-            self.assertEqual(len(created), 1)
+            self.assertEqual(len(created), 2)
             self.assertEqual(created[0].get("cross_thread"), True)
+            self.assertNotIn("read_only", created[0])
+            self.assertEqual(created[1].get("cross_thread"), True)
+            self.assertEqual(created[1].get("read_only"), True)
             server.close()
             self.assertEqual(instances[0].closed, 1)
+            self.assertEqual(instances[1].closed, 1)
 
     def test_cross_thread_store_usable_from_other_thread(self):
         # cross_thread=True 的连接在线程间用不再触发 sqlite3.ProgrammingError
@@ -241,7 +249,13 @@ class TestSyncIfStaleCountsOnce(unittest.TestCase):
     """sync --if-stale 命中新鲜目录时 count_announcements 只查一次。"""
 
     def test_single_count_call(self):
+        from guiju.cli import render
         from guiju.cli.commands import sync as sync_mod
+
+        # render 是进程级单例：别的测试若留下 as_json=True，MagicMock 字段会被
+        # json.dumps 撞成 TypeError。这里与执行顺序解耦，只验证 count 只查一次。
+        render.configure(as_json=False, quiet=True)
+        self.addCleanup(render.configure, as_json=False, quiet=False)
 
         args = unittest.mock.MagicMock()
         args.if_stale = 7

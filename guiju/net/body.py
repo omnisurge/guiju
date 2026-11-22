@@ -13,10 +13,11 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from ..errors import NeedsHuman, SourceUnreachable
+from ..errors import ComplianceDenied, NeedsHuman, SourceUnreachable
 from .block import BlockDetector
 from .headers import header_int, parse_content_range
 from .policy import BodyPolicy
+from .read import read_prefix
 from .request import DownloadResult, ProbeInfo, ProbeRecord, Response
 from .throttle import Throttle, default_throttle
 from .transport import Transport
@@ -60,16 +61,31 @@ def _read_meta(part: Path) -> dict:
         return {}
 
 
+def _valid_sidecar_size(value) -> int | None:
+    """A sidecar size is a non-negative integer; booleans and strings are not."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
 def _reload_part_state(part: Path) -> tuple[int, dict]:
     """Re-read the on-disk part/meta pair before every request attempt."""
     if not part.exists():
         return 0, {}
     part_size = part.stat().st_size
     sidecar = _read_meta(part)
-    if sidecar.get("size") not in (None, part_size):
+    size = _valid_sidecar_size(sidecar.get("size"))
+    if size is None or size > part_size:
         part.unlink(missing_ok=True)
         _unlink_meta(part)
         return 0, {}
+    if size < part_size:
+        # The sidecar is checkpointed every 1MiB, so bytes after the last
+        # checkpoint have no auditable size yet.  Truncate back to that
+        # checkpoint instead of discarding the whole partial body.
+        with open(part, "r+b") as fp:
+            fp.truncate(size)
+        part_size = size
     return part_size, sidecar
 
 
@@ -122,6 +138,31 @@ def finalize(part_path: str | Path, dest_path: str | Path) -> None:
     """The sole body-file placement point: atomic rename after caller checks SHA."""
     part = Path(part_path)
     os.replace(part, Path(dest_path))
+    _unlink_meta(part)
+
+
+def _discard_blocked_response(part: Path, *, resume: bool, start_size: int) -> None:
+    """Never leave a block page as the base of a later resume.
+
+    A 200 restart truncates any old partial body before streaming, so the part
+    is disposable.  A 206 resume keeps the previously validated bytes and only
+    rolls back the bytes appended from the blocked response.
+    """
+    if resume and start_size > 0 and part.exists():
+        sidecar = _read_meta(part)
+        try:
+            with open(part, "r+b") as fp:
+                fp.truncate(start_size)
+        except OSError:
+            part.unlink(missing_ok=True)
+            _unlink_meta(part)
+            return
+        with contextlib.suppress(OSError):
+            _write_meta(part, etag=sidecar.get("etag", ""),
+                        last_modified=sidecar.get("last_modified", ""),
+                        total=sidecar.get("total"), size=start_size)
+        return
+    part.unlink(missing_ok=True)
     _unlink_meta(part)
 
 
@@ -180,26 +221,24 @@ class BodyClient:
                         raise SourceUnreachable(f"源返回 HTTP {status}：{url}")
                     content_length = header_int(resp.headers.get("Content-Length"))
                     chunked = "chunked" in resp.headers.get("Transfer-Encoding", "").lower()
-                    chunks: list[bytes] = []
                     remaining = limit + 1
-                    checked = False
+                    prefix, read_error = read_prefix(resp, min(65536, remaining))
+                    self.detector.check(prefix, resp.headers.get("Content-Type", ""))
+                    chunks: list[bytes] = [prefix] if prefix else []
+                    remaining -= len(prefix)
+                    if read_error is not None:
+                        raise read_error
                     while remaining > 0:
                         chunk = resp.read(min(65536, remaining))
                         if not chunk:
                             break
                         chunks.append(chunk)
                         remaining -= len(chunk)
-                        if not checked:
-                            self.detector.check(b"".join(chunks)[:65536],
-                                                resp.headers.get("Content-Type", ""))
-                            checked = True
                     body = b"".join(chunks)
                     if len(body) > limit:
                         raise NeedsHuman("页面响应过大，停止解析", hint="检查页面是否被反爬替换")
                     if chunked and content_length is not None and len(body) != content_length:
                         raise SourceUnreachable(f"Content-Length 与 chunked 实际长度不一致：{url}")
-                    if not checked:
-                        self.detector.check(body[:65536], resp.headers.get("Content-Type", ""))
                     missing = getattr(resp, "length", None)
                     if missing is not None and missing > 0:
                         raise SourceUnreachable(f"响应读取失败（尚缺 {missing} 字节）：{url}")
@@ -445,10 +484,11 @@ class BodyClient:
                 raise SourceUnreachable(f"下载不可达（{url}）：{type(exc).__name__}：{exc}") from exc
 
     def _check_error_body(self, exc: urllib.error.HTTPError, url: str) -> None:
+        body = b""
         try:
-            body = exc.read(65536)
+            body, _read_error = read_prefix(exc, 65536)
         except (OSError, http.client.HTTPException, ValueError):
-            return
+            pass
         finally:
             with contextlib.suppress(Exception):
                 exc.close()
@@ -473,6 +513,27 @@ class BodyClient:
         start_size = part.stat().st_size if resume and part.exists() else 0
         written = start_size
         last_meta_size = start_size
+        content_type = resp.headers.get("Content-Type", "")
+        scan = bytearray()
+
+        def inspect(chunk: bytes) -> None:
+            # The detector only inspects the first 64KiB, but a block page can
+            # arrive in several short reads.  Scan the accumulated prefix so a
+            # marker delivered after the first read() is not missed.
+            if not chunk or len(scan) >= 65536:
+                return
+            scan.extend(chunk[: 65536 - len(scan)])
+            self.detector.check(bytes(scan), content_type)
+
+        def checkpoint(size: int) -> None:
+            nonlocal last_meta_size
+            if size == last_meta_size:
+                return
+            try:
+                _write_meta(part, etag=etag, last_modified=last_modified, total=total, size=size)
+            except OSError as exc:
+                raise _MetaWriteError(str(exc)) from exc
+            last_meta_size = size
 
         def read_chunk():
             try:
@@ -484,8 +545,7 @@ class BodyClient:
         # A block page must never destroy a previously valid partial body, and
         # an empty first chunk is still a valid zero-byte response.
         pending, pending_error = read_chunk()
-        if pending:
-            self.detector.check(pending[:65536], resp.headers.get("Content-Type", ""))
+        inspect(pending)
         # P2-15: persist the sidecar at response-header/first-chunk time, not
         # only after a successful transfer.  If this first write fails, no
         # new part has been opened yet; new part/meta stay absent and an old
@@ -495,64 +555,57 @@ class BodyClient:
                         total=total, size=start_size)
         except OSError as exc:
             raise _MetaWriteError(str(exc)) from exc
-        with open(part, mode) as fp:
-            if pending:
-                if written + len(pending) > max_bytes:
-                    fp.close()
-                    if resume:
-                        with open(part, "r+b") as trunc:
-                            trunc.truncate(start_size)
-                    else:
-                        part.unlink(missing_ok=True)
-                        _unlink_meta(part)
-                    raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
-                fp.write(pending)
-                fp.flush()
-                written += len(pending)
-                try:
-                    _write_meta(part, etag=etag, last_modified=last_modified,
-                                total=total, size=written)
-                except OSError as exc:
-                    raise _MetaWriteError(str(exc)) from exc
-                last_meta_size = written
-            if pending_error is not None:
-                if written > start_size and _has_strong_validator(etag, last_modified):
-                    raise _ResponseTruncated("响应流读取不完整", resumable=True) from pending_error
-                raise pending_error
-            while True:
-                chunk, chunk_error = read_chunk()
-                if chunk:
-                    written += len(chunk)
-                    if written > max_bytes:
+        last_meta_size = start_size
+        try:
+            with open(part, mode) as fp:
+                if pending:
+                    if written + len(pending) > max_bytes:
+                        fp.close()
                         if resume:
-                            fp.flush()
-                            fp.truncate(start_size)
+                            with open(part, "r+b") as trunc:
+                                trunc.truncate(start_size)
                         else:
-                            fp.close()
                             part.unlink(missing_ok=True)
                             _unlink_meta(part)
                         raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
-                    fp.write(chunk)
+                    fp.write(pending)
                     fp.flush()
-                    if written - last_meta_size >= META_CHECKPOINT_BYTES:
-                        try:
-                            _write_meta(part, etag=etag, last_modified=last_modified,
-                                        total=total, size=written)
-                        except OSError as exc:
-                            raise _MetaWriteError(str(exc)) from exc
-                        last_meta_size = written
-                if chunk_error is not None:
+                    written += len(pending)
+                    checkpoint(written)
+                if pending_error is not None:
                     if written > start_size and _has_strong_validator(etag, last_modified):
-                        raise _ResponseTruncated("响应流读取不完整", resumable=True) from chunk_error
-                    raise chunk_error
-                if not chunk:
-                    break
-            if last_meta_size != written:
-                try:
-                    _write_meta(part, etag=etag, last_modified=last_modified,
-                                total=total, size=written)
-                except OSError as exc:
-                    raise _MetaWriteError(str(exc)) from exc
+                        raise _ResponseTruncated("响应流读取不完整", resumable=True) from pending_error
+                    raise pending_error
+                while True:
+                    chunk, chunk_error = read_chunk()
+                    if chunk:
+                        inspect(chunk)
+                        written += len(chunk)
+                        if written > max_bytes:
+                            if resume:
+                                fp.flush()
+                                fp.truncate(start_size)
+                            else:
+                                fp.close()
+                                part.unlink(missing_ok=True)
+                                _unlink_meta(part)
+                            raise NeedsHuman("正文超过 512MiB 上限", hint="拒绝超限正文")
+                        fp.write(chunk)
+                        fp.flush()
+                        if written - last_meta_size >= META_CHECKPOINT_BYTES:
+                            checkpoint(written)
+                    if chunk_error is not None:
+                        if written > start_size and _has_strong_validator(etag, last_modified):
+                            checkpoint(written)
+                            raise _ResponseTruncated("响应流读取不完整", resumable=True) from chunk_error
+                        raise chunk_error
+                    if not chunk:
+                        break
+                if last_meta_size != written:
+                    checkpoint(written)
+        except ComplianceDenied:
+            _discard_blocked_response(part, resume=resume, start_size=start_size)
+            raise
         return written
 
     def download_bytes(

@@ -1,13 +1,28 @@
 # 验收记录
 
-> 最新发布验收：**v1.2.0-alpha.3（2026-11-21，预发布）** —— **984 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与 hk guiju-mcp 部署见下。
-> 上一发布：**v1.1.0（2026-11-09）**；更早 v1.0.0 的 446 项单测 / hk M4 记录保留作历史对照。
+> 最新发布验收：**v1.2.0-alpha.4（2026-11-22，预发布）** —— **1223 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与发布产物见下。
+> 上一发布：**v1.2.0-alpha.3（2026-11-21）**；更早 v1.1.0/v1.0.0 的验收记录保留作历史对照。
 > 默认时效为 **native**；hk 服务与消费者切换沿用 v1.0.0 验证，NAS spec-currency 已停用（文件保留可回退）。后续各版本记录保留作历史对照。
 >
-> **阅读说明（2026-11-21）**：本文件按版本保留验收记录；v1.2.0-alpha.3 之前的 NAS/cmd/mcp 描述是历史事实，不代表当前架构。当前运行形态见 [docs/README.md](README.md) 与 [deploy/README.md](../deploy/README.md)。
+> **阅读说明（2026-11-22）**：本文件按版本保留验收记录；v1.2.0-alpha.4 之前的 NAS/cmd/mcp 描述是历史事实，不代表当前架构。当前运行形态见 [docs/README.md](README.md) 与 [deploy/README.md](../deploy/README.md)。
 >
 > **按语（2026-11-09）**：本地归档注册表已撤销（artifact 表、`verify`/`provenance` 命令删除），
 > 正文归档归 kb-system，幂等靠文件名 sha256 指纹。下文中 verify/provenance 相关行属历史验收记录，不再适用。
+
+## v1.2.0-alpha.4（2026-11-22，预发布）
+
+| 项 | 本次实测 |
+|---|---|
+| 代码基线 | `refactor/root-cause` f98e0d2 + W1-W5/W6 发版修复（发布 tag `v1.2.0-alpha.4` 指向最终发布提交） |
+| 版本 | `1.2.0a4`（发布 tag `v1.2.0-alpha.4`） |
+| 完整单测矩阵 | Python 3.13.5、3.10.21 **各 1223/1223 通过** |
+| 本地 CI | ruff、1223 单测、`check-release.py --docs-only`、离线 e2e **4/4**、version/status/help 入口自检全绿 |
+| 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39 通过**，exit 0（本机权威执行） |
+| 修复范围 | B3（W2/W3/W4 本地合并）+ W1 网络/合规、W2 存储/同步、W3 时效/编号/地标、W4 CLI/pull、W5 MCP；详见 [发版记录](audit/release-1.2.0a4-20261122.md) |
+| 构建烟测 | wheel/sdist 均为 `guiju-1.2.0a4`；临时 venv 安装 wheel 后 `guiju version --json` 返回 `1.2.0a4`（2026-11-22 实测） |
+| 发布产物 | 本地发布包 `dist/`；wheel `guiju-1.2.0a4-py3-none-any.whl` SHA-256 `31352cb545061c19cfa73e60ff20a894cc1fb7b7b1dda950b16b4fb22b12e13e`；sdist `guiju-1.2.0a4.tar.gz` SHA-256 `d1079807e3ef27a360fdb6c13eb8bd0f30151d0b2743379e2f6340e20624d5d2` |
+| 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.4 |
+| hk 生产部署 | 本记录不包含 hk 部署；按所有者闸门另行执行（不碰 NAS） |
 
 ## v1.2.0-alpha.3（2026-11-21，预发布）
 

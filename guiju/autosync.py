@@ -225,13 +225,10 @@ def evaluate(
     age = _age(store, source)
     empty = store.count_announcements() == 0
     meta = store.source_meta(source)
-    needs = empty or age is None or age > MAX_AGE_DAYS
-    # 按源水位判断：别的源完整不能把本源授权成 fresh；显式不完整（0）必须重试。
-    raw_complete = store.get_meta(f"sync:{source}:complete")
-    legacy_complete = store.get_meta("catalog_complete") if source == "mohurd" else ""
-    if ((source != "mohurd" and raw_complete != "1")
-            or (source == "mohurd" and (raw_complete == "0" or (not raw_complete and legacy_complete == "0")))):
-        needs = True
+    # source_meta 已封装 mohurd 旧 catalog_complete=="1" 兼容：缺失 complete 一律不算完整。
+    # v1.1.0 升级库两个键都没有，必须强制一次完整 sync，不能凭 synced_at 年龄当 fresh。
+    # 别的源完整不能把本源授权成 fresh；显式不完整（0）同样必须重试。
+    needs = empty or age is None or age > MAX_AGE_DAYS or not meta["complete"]
 
     if not needs:
         return _snap(store, state="fresh", source=source)
@@ -245,6 +242,8 @@ def evaluate(
             why = "该命令不触发表更新"
         if empty:
             what = "目录为空"
+        elif not meta["complete"]:
+            what = "目录未标记完整（旧版本升级库或上次同步未完成）"
         elif age is None:
             what = "目录从未记录同步时间"
         else:
@@ -286,11 +285,9 @@ def evaluate(
         # 等锁期间别人可能已经同步好了 —— 复查一次再决定要不要花请求
         age = _age(store, source)
         meta = store.source_meta(source)
-        raw_complete = store.get_meta(f"sync:{source}:complete")
-        legacy_complete = store.get_meta("catalog_complete") if source == "mohurd" else ""
-        complete_ok = meta["complete"] if source != "mohurd" else (
-            raw_complete != "0" and not (not raw_complete and legacy_complete == "0")
-        )
+        # 完成证据只认 source_meta（含旧 catalog_complete=="1" 兼容）；
+        # 缺失 complete 不是“未显式标 0”，而是没有完成证据，不能放行 fresh。
+        complete_ok = meta["complete"]
         if store.count_announcements() and age is not None and age <= MAX_AGE_DAYS and complete_ok:
             return _snap(store, state="fresh", source=source)
 

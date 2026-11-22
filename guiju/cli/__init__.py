@@ -13,7 +13,7 @@ import sqlite3
 import sys
 
 from .. import autosync
-from ..errors import EXIT_OK, EXIT_TABLE, GuijuError, NeedsHuman, SourceUnreachable
+from ..errors import EXIT_OK, EXIT_TABLE, BadUsage, GuijuError, NeedsHuman, SourceUnreachable
 from ..store.sqlite import Store
 from . import render
 from .commands import (
@@ -93,11 +93,30 @@ def main(argv: list[str] | None = None) -> int:
         if getattr(args, "version", False):
             return version.run(store, args)
         if not getattr(args, "cmd", False):
-            parser.print_help()
+            # P3/W4-5：--json 是无条件契约，无子命令时也必须给 JSON，不能漏出 help 文本。
+            if render.is_json():
+                render.emit(
+                    {
+                        "ok": True,
+                        "commands": [
+                            module.__name__.rsplit(".", 1)[-1] for module in COMMANDS
+                        ],
+                    }
+                )
+            else:
+                parser.print_help()
             return EXIT_OK
+        source = getattr(args, "source", "mohurd") or "mohurd"
+        if args.cmd == "pull":
+            from ..sources import registry as source_registry
+
+            if source not in source_registry():
+                raise BadUsage(
+                    f"未知数据源：{source}",
+                    hint=f"可用数据源：{'、'.join(source_registry())}",
+                )
         # 进程内目录保鲜：过期就顺手增量刷新，不依赖设备级定时任务（见 ADR 0003）。
         # 刷新状态会注入到每份 JSON 结果，agent 不必猜"结果是不是旧的"。
-        source = getattr(args, "source", "mohurd") or "mohurd"
         catalog = autosync.evaluate(
             store,
             command=args.cmd,

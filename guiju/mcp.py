@@ -1,6 +1,7 @@
 """guiju MCP 服务面：query / verify / batch / announcement 的纯标准库 JSON-RPC。
 
-默认 stdio；--http 时提供 POST /mcp。业务后端只依赖 Currency.lookup，
+默认 stdio；--http 时提供 POST /mcp（仅 application/json；Host/Origin 按可配置
+allowlist 校验，防 DNS rebinding）。业务后端只依赖 Currency.lookup，
 不在这里复制适配器、正文下载或时效路由逻辑（旧 spec-currency 已退役）。
 announcement 只回公告元数据（编号/名称/可得性/附件链接）；会抓公告页解析附件，但不下载正文、不写盘。
 """
@@ -8,6 +9,7 @@ announcement 只回公告元数据（编号/名称/可得性/附件链接）；�
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,13 +19,19 @@ from urllib.parse import urlsplit
 from ._version import __version__
 from .currency.model import Currency, Record
 from .currency.native import NativeCurrency
-from .errors import GuijuError, NeedsHuman
+from .errors import ComplianceDenied, GuijuError, NeedsHuman
 
 PROTOCOL_VERSIONS = ("2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 DEFAULT_PATH = "/mcp"
 # POST body 硬上限：Content-Length 取客户端声明，不设限可被大 body 撑爆内存。
 # JSON-RPC 请求正常只有几 KB，4MB 已是很宽的余量。
 MAX_BODY_BYTES = 4 * 1024 * 1024
+# HTTP 读超时与并发上限：慢连接不能无限占用 handler 线程。
+DEFAULT_REQUEST_TIMEOUT = 30.0
+DEFAULT_MAX_WORKERS = 8
+
+#: announcement 只读库必须完整具备的核心表；缺任何一张都不能假装"目录为空"。
+_CORE_SCHEMA_TABLES = ("announcement", "edition", "mention", "scan", "corpus_meta")
 
 TOOLS = (
     {
@@ -121,7 +129,27 @@ def _rows_text(rows: list[Record], *, verify: bool = False) -> str:
 
 
 def _as_error(exc: GuijuError) -> dict:
-    return _error_result(exc.message)
+    """错误体与 CLI --json 同构：保留 exit/reason/hint/候选等完整 payload。
+
+    只回 message 会让 MCP 消费者拿不到退出码决策表（20 重试 / 34 换路径 / 50 上报）。
+    """
+    return _text_result(json.dumps(exc.payload(), ensure_ascii=False), error=True)
+
+
+def _cache_status(backend: object) -> dict | None:
+    """读取后端的 stale/from_cache 状态；没有这些属性的后端按"新鲜"处理。"""
+    stale = bool(getattr(backend, "stale", False))
+    from_cache = bool(getattr(backend, "from_cache", False))
+    if not stale and not from_cache:
+        return None
+    age = getattr(backend, "cache_age_days", None)
+    if isinstance(age, bool) or not isinstance(age, (int, float)):
+        age = None
+    return {"stale": stale, "from_cache": from_cache, "cache_age_days": age}
+
+
+def _cache_warning_text(status: dict) -> str:
+    return "# 缓存告警 " + json.dumps(status, ensure_ascii=False)
 
 
 class _ReadOnlyStore:
@@ -129,9 +157,10 @@ class _ReadOnlyStore:
 
     契约是"只回元数据、不落盘"：resolve 在读路径上若走到缓存/持久化分支，
     会写 edition / mention / scan / currency_cache / corpus_meta。
-    这里把所有写方法拦成 no-op（或返回"什么都没写"的占位），读方法原样转发，
-    用白名单比黑名单抗未来改动 —— 新出现的写方法默认也被拦。
-    注意：Store() 构造时的建表 DDL 在门面生效前已发生，属共享 schema 初始化，不在拦截范围。
+    这里把所有已知写方法拦成 no-op（或返回"什么都没写"的占位），读方法原样转发；
+    底层 Store 由 _ensure_readonly_catalog 以 mode=ro 打开，形成双保险。
+    注意：缺库/0 字节时 _ensure_readonly_catalog 会先建一次空 schema（只有表结构，
+    不含任何公告数据），之后才启用本门面。
     """
 
     _WRITES = frozenset({
@@ -158,24 +187,118 @@ class _ReadOnlyStore:
         self.close()
 
 
+def _default_catalog_path() -> Path:
+    from .store.sqlite import default_home
+
+    return default_home() / "catalog.db"
+
+
+def _schema_snapshot(path: Path) -> tuple[int, set[str]]:
+    """用 mode=ro 读取 schema 版本与表名；不触发建表/迁移/备份。"""
+    import sqlite3
+
+    uri = path.resolve().as_uri() + "?mode=ro"
+    # 父目录不可写时 SQLite 无法创建 -shm/-wal；与 Store(read_only) 同样使用
+    # immutable=1，但只限于没有未合并 WAL 的情况，否则会静默读旧快照。
+    if not os.access(path.parent, os.W_OK):
+        wal = Path(str(path) + "-wal")
+        if wal.exists() and wal.stat().st_size > 0:
+            raise NeedsHuman(
+                f"只读目录中的数据库仍有未合并的 WAL：{path}",
+                hint="在可写目录把库 checkpoint 后再复制；只读目录无法安全读取未合并 WAL",
+            )
+        uri += "&immutable=1"
+    try:
+        db = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise NeedsHuman(
+            f"数据库无法打开或已损坏：{path}（{type(exc).__name__}: {exc}）",
+            hint="先备份该文件，再让 guiju 在可写目录重建目录；MCP 不会替用户修改数据库",
+        ) from exc
+    try:
+        try:
+            row = db.execute("PRAGMA user_version").fetchone()
+            version = int(row[0]) if row else 0
+            tables = {
+                str(item[0])
+                for item in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+            }
+        except sqlite3.Error as exc:
+            raise NeedsHuman(
+                f"数据库无法读取：{path}（{type(exc).__name__}: {exc}）",
+                hint="先备份该文件，再让 guiju 在可写目录重建目录；MCP 不会替用户修改数据库",
+            ) from exc
+    finally:
+        db.close()
+    return version, tables
+
+
+def _create_empty_catalog(path: Path) -> None:
+    """只建空 schema（announcement 等表），不写任何公告数据。"""
+    from .store.sqlite import Store
+
+    store = Store(path, cross_thread=True)
+    store.close()
+
+
+def _ensure_readonly_catalog(path: Path):
+    """打开 announcement 专用只读 Store。
+
+    分支语义（W5-5）：
+      - 缺库 / 0 字节 / schema v0 且完全无表：先建空 schema，再以 mode=ro 打开；
+      - v2 完整表：直接只读；
+      - v0 且有表、v2 缺核心表、非 v2/损坏：NeedsHuman(50)，绝不替用户备份/重建/补 DDL。
+    """
+    from .store.sqlite import SCHEMA_VERSION, Store
+
+    if not path.exists() or path.stat().st_size == 0:
+        _create_empty_catalog(path)
+    else:
+        version, tables = _schema_snapshot(path)
+        if version == SCHEMA_VERSION:
+            missing = [name for name in _CORE_SCHEMA_TABLES if name not in tables]
+            if missing:
+                raise NeedsHuman(
+                    f"数据库缺少核心表：{path}（缺少 {', '.join(missing)}）",
+                    hint="该库不是完整的 guiju v2 目录库；请用 --db 指向完整库，"
+                         "或让 guiju 在可写 GUIJU_HOME 重新 sync。MCP 不会自动补 DDL",
+                )
+        elif version == 0:
+            if tables:
+                raise NeedsHuman(
+                    f"只读使用遇到旧版（schema v0）数据库：{path}",
+                    hint="MCP 不会替用户备份/重建旧库；请先运行可写的 guiju sync 完成迁移，"
+                         "或用 --db 指向 v2 数据库",
+                )
+            _create_empty_catalog(path)
+        else:
+            raise NeedsHuman(
+                f"数据库 schema 版本 {version} 超出本程序认知（{SCHEMA_VERSION}）：{path}",
+                hint="备份数据库后确认 guiju 版本；需要升级/迁移时联系维护者，勿直接删除数据",
+            )
+    return Store(path, cross_thread=True, read_only=True)
+
+
 class McpServer:
     """与传输无关的 JSON-RPC 处理核心。"""
 
-    def __init__(self, backend: Currency) -> None:
+    def __init__(self, backend: Currency, *, store_path: str | Path | None = None) -> None:
         self.backend = backend
         # announcement 的共享只读存储：避免每请求跑一次建表/迁移 DDL。
         # CPython sqlite3 模块 threadsafety=1，共享连接必须外部串行化 ——
         # self._store_lock 包住"创建 + 每次 _announcement 调用"（含 detail 抓取，
         # announcement 本身低频，串行可接受）。
+        self.store_path = Path(store_path) if store_path is not None else None
         self._store = None
         self._store_lock = threading.Lock()
 
     def _ann_store(self):
-        """惰性创建共享 Store（cross_thread 允许连接跨线程使用）。"""
+        """惰性创建共享的只读 Store（cross_thread 允许连接跨线程使用）。"""
         if self._store is None:
-            from .store.sqlite import Store
-
-            self._store = Store(cross_thread=True)
+            path = self.store_path if self.store_path is not None else _default_catalog_path()
+            self._store = _ReadOnlyStore(_ensure_readonly_catalog(path))
         return self._store
 
     def close(self) -> None:
@@ -190,18 +313,31 @@ class McpServer:
         if not code:
             return _error_result("缺少 code 参数")
         try:
-            return _text_result(_rows_text(self.backend.lookup(code)))
+            text = _rows_text(self.backend.lookup(code))
         except GuijuError as exc:
             return _as_error(exc)
+        status = _cache_status(self.backend)
+        if status is not None:
+            text += "\n" + _cache_warning_text(status)
+        return _text_result(text)
 
     def _verify(self, arguments: dict) -> dict:
         code = str(arguments.get("code") or "").strip()
         if not code:
             return _error_result("缺少 code 参数")
         try:
-            return _text_result(_rows_text(self.backend.lookup(code), verify=True))
+            text = _rows_text(self.backend.lookup(code), verify=True)
         except GuijuError as exc:
             return _as_error(exc)
+        result = _text_result(text)
+        status = _cache_status(self.backend)
+        if status is not None:
+            # content[0] 是调用方严格解析的 code\tstatus 契约，不得混入告警。
+            result["content"].append({
+                "type": "text",
+                "text": json.dumps(status, ensure_ascii=False),
+            })
+        return result
 
     def _batch(self, arguments: dict) -> dict:
         list_path = str(arguments.get("list") or "").strip()
@@ -233,6 +369,9 @@ class McpServer:
         for code in codes:
             try:
                 rows = self.backend.lookup(code)
+            except ComplianceDenied:
+                # 40 是硬停止：不得继续查询后续编号，也不得写盘点表假装"部分完成"。
+                raise
             except GuijuError:
                 failed += 1
                 out_rows.append(f"{code}\t查询失败")
@@ -272,8 +411,8 @@ class McpServer:
         try:
             with self._store_lock:
                 # 契约是"只回元数据、不落盘"：allow_network=False 堵死 resolve 里唯一的写分支
-                # （拉详情页 + persist_codes），只读门面把缓存/持久化调用拦成 no-op 兜底。
-                ro = _ReadOnlyStore(self._ann_store())
+                # （拉详情页 + persist_codes），_ann_store 已是结构只读库 + 写方法 no-op 门面。
+                ro = self._ann_store()
                 target = lookup.resolve(
                     ro, ref, currency=self.backend, allow_network=False)
                 ann = target["ann"]
@@ -348,6 +487,9 @@ class McpServer:
             return _error_result(f"未知工具：{name}")
         except (KeyboardInterrupt, SystemExit):
             raise
+        except GuijuError as exc:
+            # batch 等工具内部的契约错误（尤其是 40）走统一完整 payload。
+            return _as_error(exc)
         except Exception:
             # 工具内部异常（sqlite、网络、解析等任何非 GuijuError）不得
             # 冒到调用方：stdio 会杀死整个服务循环，HTTP 线程会断连。
@@ -439,34 +581,246 @@ def default_backend() -> NativeCurrency:
     return native_currency()
 
 
-def make_http_server(server: McpServer, host: str, port: int, path: str = DEFAULT_PATH) -> ThreadingHTTPServer:
+def _split_allowlist(raw: str) -> list[str]:
+    return [item.strip() for item in (raw or "").split(",") if item.strip()]
+
+
+def _canonical_host(value: str) -> str:
+    """Host/Origin 主机名规范形：小写、IDNA、IPv6 加括号、可选端口。"""
+    import ipaddress
+
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if "://" in value:
+        try:
+            value = urlsplit(value).netloc
+        except ValueError:
+            return ""
+    value = value.strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        if end < 0:
+            return ""
+        host_part = value[: end + 1]
+        rest = value[end + 1 :]
+        if rest and not rest.startswith(":"):
+            return ""
+        port_part = rest[1:] if rest else ""
+    else:
+        try:
+            ip = ipaddress.ip_address(value)
+        except ValueError:
+            host_part, sep, maybe_port = value.rpartition(":")
+            if sep and maybe_port.isdigit():
+                port_part = maybe_port
+            else:
+                host_part, port_part = value, ""
+        else:
+            host_part = f"[{ip.compressed}]" if ip.version == 6 else ip.compressed
+            port_part = ""
+    if not host_part:
+        return ""
+    if not host_part.startswith("["):
+        try:
+            host_part = host_part.encode("idna").decode("ascii")
+        except UnicodeError:
+            return ""
+        host_part = host_part.rstrip(".")
+    return f"{host_part}:{port_part}" if port_part else host_part
+
+
+def _default_allowed_hosts(host: str, port: int) -> set[str]:
+    """默认只接受绑定地址与 localhost 等价形式，防 DNS rebinding。"""
+    entries: set[str] = set()
+    for base in (host, "localhost", "127.0.0.1", "[::1]"):
+        canonical = _canonical_host(base)
+        if canonical:
+            entries.add(canonical)
+            entries.add(f"{canonical}:{port}")
+    return entries
+
+
+def _canonical_origin(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw or raw.lower() == "null":
+        return ""
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return ""
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return ""
+    if parts.path not in ("", "/") or parts.query or parts.fragment:
+        return ""
+    if parts.username or parts.password:
+        return ""
+    host = _canonical_host(parts.netloc)
+    if not host:
+        return ""
+    scheme = parts.scheme.lower()
+    # 默认端口不是 origin 的一部分：https://x:443 与 https://x 等价。
+    if scheme == "https" and host.endswith(":443"):
+        host = host[:-4]
+    elif scheme == "http" and host.endswith(":80"):
+        host = host[:-3]
+    return f"{scheme}://{host}"
+
+
+def _origin_allowed(origin: str, allowed_origins: set[str], allowed_hosts: set[str]) -> bool:
+    """Origin 缺省允许（非浏览器客户端）；存在时必须命中白名单或与允许 Host 同源。"""
+    canonical = _canonical_origin(origin)
+    if not canonical:
+        return False
+    if canonical in allowed_origins:
+        return True
+    try:
+        parts = urlsplit(origin.strip())
+    except ValueError:
+        return False
+    origin_host = _canonical_host(parts.netloc)
+    # 同一 host 已配置了另一种 scheme 的 origin 时，禁止用 Host 兜底做
+    # http<->https 互换（例如只允许 https://x 时 http://x 必须 403）。
+    for allowed in allowed_origins:
+        try:
+            allowed_parts = urlsplit(allowed)
+        except ValueError:
+            continue
+        if (
+            _canonical_host(allowed_parts.netloc) == origin_host
+            and allowed_parts.scheme.lower() != parts.scheme.lower()
+        ):
+            return False
+    # 同源兜底只适用于本服务实际使用的 http；https Origin 必须精确命中
+    # allowed_origins，不能因为 host 相同就放行 http<->https 互换。
+    if parts.scheme != "http":
+        return False
+    host = _canonical_host(parts.netloc)
+    if host in allowed_hosts:
+        return True
+    try:
+        port = parts.port
+    except ValueError:
+        return False
+    if port is None:
+        port = 443 if parts.scheme == "https" else 80
+    hostname = parts.hostname or ""
+    if ":" in hostname:
+        hostname = f"[{hostname}]"
+    return _canonical_host(f"{hostname}:{port}") in allowed_hosts
+
+
+def _configured_allowlist(explicit: list[str] | None, env_name: str) -> list[str]:
+    values = _split_allowlist(os.environ.get(env_name, ""))
+    values.extend(explicit or [])
+    return values
+
+
+class _BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """限制同时处理的请求线程数：慢连接/突发流量不能无限堆线程。"""
+
+    daemon_threads = True
+
+    def __init__(self, server_address, handler_cls, *, max_workers: int = DEFAULT_MAX_WORKERS) -> None:
+        if max_workers < 1:
+            raise ValueError("max_workers 必须 >= 1")
+        super().__init__(server_address, handler_cls)
+        self.max_workers = max_workers
+        self._worker_slots = threading.BoundedSemaphore(max_workers)
+
+    def process_request(self, request, client_address) -> None:
+        # 在 accept 循环里取槽位：没有空闲槽时让连接留在内核 backlog，
+        # 而不是创建无限多的线程。
+        self._worker_slots.acquire()
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._worker_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._worker_slots.release()
+
+
+def make_http_server(
+    server: McpServer,
+    host: str,
+    port: int,
+    path: str = DEFAULT_PATH,
+    *,
+    allowed_hosts: list[str] | None = None,
+    allowed_origins: list[str] | None = None,
+    request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
+    max_workers: int = DEFAULT_MAX_WORKERS,
+) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         server_version = "guiju-mcp"
 
-        def _send(self, code: int, body: bytes, content_type: str = "application/json", *, close: bool = False) -> None:
+        def setup(self) -> None:
+            self.timeout = getattr(self.server, "request_timeout", DEFAULT_REQUEST_TIMEOUT)
+            super().setup()
+
+        def _send(
+            self,
+            code: int,
+            body: bytes,
+            content_type: str = "application/json",
+            *,
+            close: bool = False,
+            headers: dict[str, str] | None = None,
+        ) -> None:
             try:
                 self.send_response(code)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(body)))
+                for key, value in (headers or {}).items():
+                    self.send_header(key, value)
                 if close:
                     self.send_header("Connection", "close")
                 self.end_headers()
                 self.wfile.write(body)
-            except BrokenPipeError:
+            except (BrokenPipeError, ConnectionResetError, TimeoutError):
                 pass
             finally:
                 if close:
                     self.close_connection = True
 
+        def _check_host_origin(self) -> bool:
+            if _canonical_host(self.headers.get("Host", "")) not in self.server.allowed_hosts:
+                self._send(403, b'{"error":"forbidden host"}', close=True)
+                return False
+            origin = self.headers.get("Origin")
+            if origin is not None and not _origin_allowed(
+                    origin, self.server.allowed_origins, self.server.allowed_hosts):
+                self._send(403, b'{"error":"forbidden origin"}', close=True)
+                return False
+            return True
+
         def do_GET(self):
-            if urlsplit(self.path).path == "/health":
+            if not self._check_host_origin():
+                return
+            route = urlsplit(self.path).path
+            if route == "/health":
                 self._send(200, b'{"ok":true}')
+            elif route == path:
+                # MCP Streamable HTTP：不支持 SSE 的服务对 GET /mcp 明确 405。
+                self._send(405, b'{"error":"method not allowed"}', headers={"Allow": "POST"})
             else:
                 self._send(404, b'{"error":"not found"}')
 
         def do_POST(self):
             if urlsplit(self.path).path != path:
                 self._send(404, b'{"error":"not found"}')
+                return
+            if not self._check_host_origin():
+                return
+            content_type = self.headers.get("Content-Type", "")
+            if content_type.split(";", 1)[0].strip().lower() != "application/json":
+                # 浏览器跨站"简单请求"只能发 text/plain 等，要求 JSON 直接挡掉 CSRF 面。
+                self._send(415, b'{"error":"unsupported media type"}')
                 return
             raw_len = self.headers.get("Content-Length")
             if raw_len is None:
@@ -486,7 +840,18 @@ def make_http_server(server: McpServer, host: str, port: int, path: str = DEFAUL
                 self._send(413, b'{"error":"request body too large"}', close=True)
                 return
             try:
-                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+                body = self.rfile.read(length)
+            except TimeoutError:
+                self._send(408, b'{"error":"request timeout"}', close=True)
+                return
+            except OSError:
+                self._send(400, b'{"error":"request read failed"}', close=True)
+                return
+            if len(body) != length:
+                self._send(400, b'{"error":"incomplete request body"}', close=True)
+                return
+            try:
+                payload = json.loads(body.decode("utf-8"))
             except (ValueError, UnicodeDecodeError):
                 self._send(400, b'{"error":"invalid json"}')
                 return
@@ -507,7 +872,22 @@ def make_http_server(server: McpServer, host: str, port: int, path: str = DEFAUL
     if not _is_loopback(host):
         # 不阻断（可能是内网/容器部署），但 MCP 无任何鉴权，必须提示
         print("! MCP HTTP 暴露在非回环地址，确认有网关/鉴权保护", file=sys.stderr, flush=True)
-    return ThreadingHTTPServer((host, port), Handler)
+    httpd = _BoundedThreadingHTTPServer((host, port), Handler, max_workers=max_workers)
+    actual_port = int(httpd.server_address[1])
+    httpd.request_timeout = request_timeout
+    httpd.allowed_hosts = _default_allowed_hosts(host, actual_port)
+    for raw in _configured_allowlist(allowed_hosts, "GUIJU_MCP_ALLOWED_HOSTS"):
+        canonical = _canonical_host(raw)
+        if canonical:
+            httpd.allowed_hosts.add(canonical)
+    httpd.allowed_origins = {
+        f"http://{item}:{actual_port}" for item in ("localhost", "127.0.0.1", "[::1]")
+    }
+    for raw in _configured_allowlist(allowed_origins, "GUIJU_MCP_ALLOWED_ORIGINS"):
+        canonical = _canonical_origin(raw)
+        if canonical:
+            httpd.allowed_origins.add(canonical)
+    return httpd
 
 
 _LOOPBACK_HOSTS = {"localhost"}
@@ -525,8 +905,19 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
-def serve_http(server: McpServer, host: str, port: int, path: str = DEFAULT_PATH) -> int:
-    httpd = make_http_server(server, host, port, path)
+def serve_http(
+    server: McpServer,
+    host: str,
+    port: int,
+    path: str = DEFAULT_PATH,
+    *,
+    allowed_hosts: list[str] | None = None,
+    allowed_origins: list[str] | None = None,
+) -> int:
+    httpd = make_http_server(
+        server, host, port, path,
+        allowed_hosts=allowed_hosts, allowed_origins=allowed_origins,
+    )
     print(f"guiju mcp listening on http://{host}:{port}{path}", file=sys.stderr, flush=True)
     try:
         httpd.serve_forever()

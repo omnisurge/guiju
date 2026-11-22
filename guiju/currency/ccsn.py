@@ -155,4 +155,9 @@ class CcsnCurrency(CompletenessMixin):
                 page += 1
 
         # 先过滤同号族，确实无命中后才按基础号再查一次；不补造旧版本结论。
-        return query_with_base_fallback(code, fetch)
+        return query_with_base_fallback(
+            code,
+            fetch,
+            snapshot=lambda: self._completeness,
+            restore=self._record_completeness,
+        )

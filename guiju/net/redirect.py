@@ -12,6 +12,7 @@ from .block import BlockDetector
 from .endpoints import SHANGHAI_HOST
 from .headers import header_int
 from .policy import BodyPolicy, MetadataPolicy
+from .read import read_prefix
 
 
 class RedirectGuard(urllib.request.HTTPRedirectHandler):
@@ -46,11 +47,13 @@ class RedirectGuard(urllib.request.HTTPRedirectHandler):
                 self.policy.check_headers(headers, req.full_url, redirect=True)
             if fp is not None:
                 declared = header_int(fp.headers.get("Content-Length")) if hasattr(fp, "headers") else None
-                head = fp.read(65536)
-                if declared is not None and declared <= 65536 and len(head) < declared:
-                    raise SourceUnreachable(f"重定向响应读取失败（响应截断）：{req.full_url}")
+                head, read_error = read_prefix(fp, 65536)
                 self.detector.check(head, headers.get("Content-Type", ""),
                                     reject_binary=isinstance(self.policy, MetadataPolicy))
+                if read_error is not None:
+                    raise SourceUnreachable(f"重定向响应读取失败：{req.full_url}") from read_error
+                if declared is not None and declared <= 65536 and len(head) < declared:
+                    raise SourceUnreachable(f"重定向响应读取失败（响应截断）：{req.full_url}")
         except (OSError, http.client.HTTPException) as exc:
             raise SourceUnreachable(f"重定向响应读取失败：{req.full_url}") from exc
         finally:

@@ -1,6 +1,7 @@
-# guiju v1.2.0-alpha.3 安装与自部署
+# guiju v1.2.0-alpha.4 安装与自部署
 
-适用：Linux / macOS；Python 3.10+；运行时零第三方依赖。
+适用：**Linux / macOS（POSIX-only）**；Python 3.10+；运行时零第三方依赖。
+本版本不声明 Windows 支持（Windows 文件锁与路径语义未实现，按 ADR 0004 决策 6 本次 POSIX-only）。
 
 ## 1. 环境
 
@@ -13,19 +14,19 @@
 
 从发布页下载 wheel：
 
-    https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.3
+    https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.4
 
 安装到独立虚拟环境：
 
     python3 -m venv /opt/guiju-venv
-    curl -L -o /tmp/guiju-1.2.0a3-py3-none-any.whl \
-      https://github.com/omnisurge/guiju/releases/download/v1.2.0-alpha.3/guiju-1.2.0a3-py3-none-any.whl
-    /opt/guiju-venv/bin/python -m pip install /tmp/guiju-1.2.0a3-py3-none-any.whl
+    curl -L -o /tmp/guiju-1.2.0a4-py3-none-any.whl \
+      https://github.com/omnisurge/guiju/releases/download/v1.2.0-alpha.4/guiju-1.2.0a4-py3-none-any.whl
+    /opt/guiju-venv/bin/python -m pip install /tmp/guiju-1.2.0a4-py3-none-any.whl
     /opt/guiju-venv/bin/guiju --version
 
 如果使用 uv：
 
-    uv tool install /tmp/guiju-1.2.0a3-py3-none-any.whl
+    uv tool install /tmp/guiju-1.2.0a4-py3-none-any.whl
     guiju --version
 
 ## 3. 源码安装
@@ -78,6 +79,7 @@ cmd:/mcp: 覆盖已随 spec-currency 退役删除（2026-11-13），设置非 na
 `/var/lib/guiju/mcp` 是 MCP `batch` 的专用文件根（list/out 都只能落在它下面）；单元里的 `ExecStartPre` 会兜底创建。
 如果服务器路径/用户不同，编辑 unit 中的 WorkingDirectory、Environment、User 和端口。
 直接对外提供时请在前面加 Caddy/nginx 反向代理和认证，不要把 18083 绑到 0.0.0.0。
+反向代理保留公网 Host 时，必须显式设置 `GUIJU_MCP_ALLOWED_HOSTS` / `GUIJU_MCP_ALLOWED_ORIGINS`（或 `--allowed-host` / `--allowed-origin`），否则 Host/Origin allowlist 会拒绝请求（防 DNS rebinding）。
 
 ### 5.3 验证
 

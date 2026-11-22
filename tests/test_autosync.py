@@ -33,9 +33,13 @@ class AutoSyncTest(unittest.TestCase):
             )
         self.store.commit()
 
-    def _synced(self, days_ago: float) -> None:
+    def _synced(self, days_ago: float, *, complete: bool | None = None) -> None:
+        # 只写全局 synced_at 的形态 = v1.1.0 升级库（没有完成证据），不能当 fresh；
+        # 要构造"新鲜且完整"必须同时给 per-source complete（complete=True）。
         ts = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
         self.store.set_meta("synced_at", ts)
+        if complete is not None:
+            self.store.set_meta("sync:mohurd:complete", "1" if complete else "0")
         self.store.commit()
 
     def _fake_crawl(self, calls: list):
@@ -80,7 +84,7 @@ class AutoSyncTest(unittest.TestCase):
 
     def test_fresh_catalog_makes_no_requests(self):
         self._seed()
-        self._synced(1)
+        self._synced(1, complete=True)
         with mock.patch("guiju.syncengine.crawl", side_effect=AssertionError("不该联网")):
             snap = autosync.evaluate(self.store, command="search")
         self.assertEqual(snap["state"], "fresh")
@@ -150,7 +154,7 @@ class AutoSyncTest(unittest.TestCase):
 
     def test_mohurd_fresh_ignores_incomplete_shzjw(self):
         self._seed()
-        self._synced(1)
+        self._synced(1, complete=True)
         self._synced_source("shzjw", 1, complete=False)
         with mock.patch("guiju.syncengine.crawl", side_effect=AssertionError("不该联网")):
             snap = autosync.evaluate(self.store, command="search")

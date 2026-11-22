@@ -17,7 +17,7 @@ import re
 
 from .. import currency as currency_mod
 from ..currency.model import QueryCancelled
-from ..domain.currency_check import completeness_of
+from ..domain.currency_check import completeness_flags_of, completeness_of, empty_authoritative_of
 from ..domain.search import rank, tokens_of
 from ..errors import (
     AmbiguousCode,
@@ -26,6 +26,7 @@ from ..errors import (
     ComplianceDenied,
     GuijuError,
     NeedsHuman,
+    NoCurrencyRecord,
     NotIndexed,
     SourceUnreachable,
 )
@@ -44,10 +45,17 @@ _SOURCE_HOSTS = (
 )
 
 
+def _host_matches(host: str, needle: str) -> bool:
+    """主机精确匹配：允许子域（www.mohurd.gov.cn），禁止后缀伪装（mohurd.gov.cn.evil.com）。"""
+    return host == needle or host.endswith("." + needle)
+
+
 def source_of(url: str) -> dict:
     host = (url or "").split("//")[-1].split("/")[0].lower()
+    # 去掉端口（bzjg.zjw.sh.gov.cn:9175）；IPv6 不是这些源的主机形态。
+    host = host.split(":")[0]
     for needle, sid, label in _SOURCE_HOSTS:
-        if needle in host:
+        if _host_matches(host, needle):
             return {"id": sid, "label": label}
     return {"id": "unknown", "label": "未知源"}
 
@@ -178,7 +186,7 @@ def _pick_current_version(
     正确做法：先由时效服务确定**现行编号**，再在同一编号的多条公告里取**最新那条**
     （局部修订公告比原发布公告新，正文也更全）。这就是时效服务（native 路由，旧 spec-currency 已并入）存在的理由。
     """
-    from ..domain.codes import classify, normalize_key
+    from ..domain.codes import Confidence, classify, normalize_key
     from ..sources import registry
     from ..store.sqlite import persist_codes
 
@@ -198,7 +206,12 @@ def _pick_current_version(
             continue
         code_key = None
         has_attachment = None
-        cached = [m for m in store.mentions_for(int(ann["id"])) if m["role"] in _DECISIVE_ROLES]
+        # W3-4：只有 parsed 的 decisive mention 才能直接当版本号；ambiguous
+        # 的旧结果必须重新抓详情页（历史缺陷：ambiguous 被当作 parsed 定版）。
+        cached = [
+            m for m in store.mentions_for(int(ann["id"]))
+            if m["role"] in _DECISIVE_ROLES and _confidence_of(m) == "parsed"
+        ]
         if cached:
             code_key = cached[0]["code_key"]
         elif allow_network:
@@ -224,7 +237,10 @@ def _pick_current_version(
             codes = classify(text, ann["doc_name"] or "")
             persist_codes(store, int(ann["id"]), codes, ann["doc_name"] or "")
             store.commit()
-            code_key = codes.primary_key
+            # 只有 parsed 才是"正文明确给出编号"；ambiguous 的兜底 primary
+            # （如正文同时出现两个编号）不能拿来做版本定版。
+            if codes.confidence is Confidence.PARSED:
+                code_key = codes.primary_key
         if not code_key:
             continue
         versions.append(
@@ -246,14 +262,28 @@ def _pick_current_version(
     try:
         for v in versions:
             records = currency.lookup(v["code_key"])
+            # 不完整的时效结果不能定版：没取全时"没有 current"可能是漏记录，
+            # 交给 32 让人工选比静默选错版本安全（W3-4）。
+            complete, insecure, truncated, has_more, _reason = completeness_flags_of(currency)
+            # 明文回退但结果完整（has_more 明确为 False、未截断）可以参与
+            # 同名定版：csres 的 HTTPS 在本机不可用时只能走 HTTP；此时仍不写缓存，
+            # _by_code 对非空明文继续 50。真正不完整（截断/未知 has_more）必须交 32。
+            plaintext_but_complete = (
+                complete is False
+                and insecure
+                and not truncated
+                and has_more is False
+            )
+            if complete is False and not plaintext_but_complete:
+                return None
             mine, _cur = match_currency(records, v["code_key"])
             v["status"] = mine.status if mine else "unknown"
             v["code_display"] = mine.code if mine else v["code_key"]
     except SourceUnreachable:
         # 时效服务挂了不是"歧义"：20 让用户重试，32 会让人对着候选干选
         raise
-    except (NeedsHuman, ComplianceDenied, QueryCancelled):
-        # 同上：50/40/取消按契约上抛，不能吞成"定不了版"再落到 32。
+    except (NoCurrencyRecord, NeedsHuman, ComplianceDenied, QueryCancelled):
+        # 同上：34/50/40/取消按契约上抛，不能吞成"定不了版"再落到 32。
         raise
     except Exception:
         return None
@@ -303,7 +333,9 @@ def _by_code(
     # 只有「本次公告发布的版本」才算这个编号的家。
     # 危险案例（实测）：GB 50016-2014 只出现在《建筑防火通用规范》的"代替…"句里，
     # 若把 mentioned/superseded_ref 也当候选，就会把用户带到代替它的那本规范上去。
-    decisive = [r for r in rows if r["role"] in _DECISIVE_ROLES]
+    # W3-5：只有 parsed 的 decisive 才算本地确定结果；ambiguous mention 可能
+    # 只是"正文同时出现两个编号"，不能拿它替代时效服务。
+    decisive = [r for r in rows if r["role"] in _DECISIVE_ROLES and _confidence_of(r) == "parsed"]
     if decisive:
         keys = {r["code_key"] for r in decisive}
         if len(keys) > 1:
@@ -338,8 +370,17 @@ def _by_code(
             hint="检查时效服务是否可达（GUIJU_CURRENCY 应为 native）；或加 --offline 后改用 guiju search 按名称查",
         ) from None
     complete, incomplete_reason = completeness_of(currency)
+    empty_authoritative = empty_authoritative_of(currency)
     best_record = _pick_record(records, key)
     if best_record is None or not best_record.name:
+        if not records and complete is False and empty_authoritative:
+            # 源明确回答"没有这条记录"（csres pageNum=0），只是传输是明文所以
+            # complete=False；这是"没收录"（31），不是适配器改版（50）。
+            raise NotIndexed(
+                f"编号 {ref} 不在时效源收录范围内（源明确返回 0 条）",
+                hint="确认编号是否完整（含年份）；或 guiju sync 后再试；仍无则本地目录里没有这本规范",
+                currency=[],
+            )
         if complete is False:
             # 空结果可能只是没取全（无总页数证据/翻页截断/明文回退），
             # 不能把它伪装成“本地没收录”的 31；交人复核/重试完整查询。
@@ -429,6 +470,15 @@ def _by_code(
 
 
 # ------------------------------------------------------------------ helpers
+
+
+def _confidence_of(row) -> str:
+    """读 sqlite3.Row / dict 的 confidence；老库缺列时按空串（非 parsed）处理。"""
+    try:
+        value = row["confidence"]
+    except (KeyError, IndexError):
+        return ""
+    return str(value or "")
 
 
 def _wrap(row, *, via: str) -> dict:
@@ -545,8 +595,13 @@ def local_records(ref: str) -> list:
     那一个常量里）；本函数只负责"去问谁"——源名不写死，新增 api_mode 源自动入列。
     网络/解析失败按 GuijuError 上抛，由调用方决定是否降级。
     """
+    from ..currency.shzjw import explicit_version
     from ..sources import registry
 
+    # 基础号（如 DG/TJ08-2007）可能对应多个年版；prefer_exact=False 才能把
+    # 现行的年版一起取回（否则只返回裸号裸旧版，current 反而看不见）。显式
+    # 写了版年（DG/TJ08-2007-2026）仍精确匹配，不混入其他版本。
+    prefer_exact = explicit_version(ref)
     out = []
     for source in registry().values():
         if not getattr(source, "api_mode", False):
@@ -554,7 +609,7 @@ def local_records(ref: str) -> list:
         find = getattr(source, "find", None)
         if find is None:
             continue
-        for hit in find(ref):
+        for hit in find(ref, prefer_exact=prefer_exact):
             out.append(
                 currency_mod.Record(
                     code=hit["code"],

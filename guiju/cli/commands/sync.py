@@ -26,12 +26,10 @@ def run(store: Store, args: argparse.Namespace) -> int:
             if corrupt:
                 render.note(f"! {corrupt}，按未同步处理继续抓取")
         elif age <= args.if_stale:
-            explicit = store.get_meta(f"sync:{args.source}:complete")
-            legacy_complete = store.get_meta("catalog_complete")
-            complete_ok = bool(store.source_meta(args.source)["complete"]) or (
-                args.source == "mohurd" and not explicit and legacy_complete != "0"
-            )
-            if not complete_ok:
+            # 完成证据只认 source_meta（mohurd 旧 catalog_complete=="1" 已封装）。
+            # 缺失 complete 的 v1.1.0 升级库不是“新鲜完整”，必须继续一次完整 sync。
+            meta = store.source_meta(args.source)
+            if not meta["complete"]:
                 render.note("目录未标记完整，忽略 --if-stale，继续同步")
             else:
                 render.emit(
@@ -41,7 +39,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
                         "reason": "fresh",
                         "age_days": round(age, 2),
                         "total_in_db": total_in_db,
-                        "synced_at": store.source_meta(args.source)["synced_at"],
+                        "synced_at": meta["synced_at"],
                         "db": str(store.path),
                     }
                 )

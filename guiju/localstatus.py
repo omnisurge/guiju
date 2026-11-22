@@ -9,17 +9,16 @@
 from __future__ import annotations
 
 from .currency import Record
+from .currency.shzjw import explicit_version, is_shanghai_code
 from .sources import shzjw
 
-#: 地方标准编号前缀（上海口径）。
-#: 注意裸 DGJ/DBJ 不是上海专属：DBJ50 是重庆、DGJ11 是江苏，不能宽匹配。
-#: 上海 DGJ/DBJ 段编号以 08 打头（DGJ08 / DBJ08）；DB 系只认上海 DB31。
-PREFIXES = ("DG/TJ", "DBJT", "DGJ08", "DB31", "DBJ08")
+#: 地方标准编号口径只认 currency.shzjw.is_shanghai_code（单一真相）：
+#: 裸 DGJ/DBJ 不是上海专属（DBJ50 重庆、DGJ11 江苏），DB31/373 这类非 /T
+#: 形式也不归上海路由。
 
 
 def is_local_code(ref: str) -> bool:
-    text = (ref or "").strip().upper().replace(" ", "")
-    return text.startswith(PREFIXES)
+    return is_shanghai_code(ref)
 
 
 def records(ref: str) -> list[Record]:
@@ -32,5 +31,6 @@ def records(ref: str) -> list[Record]:
             implement_date=hit.get("implement_on") or "",
             source="shzjw",
         )
-        for hit in shzjw.find(ref)
+        # 基础号保留全部年版（current 优先）；显式版年仍精确匹配。
+        for hit in shzjw.find(ref, prefer_exact=explicit_version(ref))
     ]
