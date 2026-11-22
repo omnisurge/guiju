@@ -1,6 +1,6 @@
 # guiju 文档索引与状态
 
-> 更新时间：2026-11-21
+> 更新时间：2026-11-22
 
 目的：把“当前文档”和“历史证据”分开，避免历史迁移记录被误当成当前运行说明。历史文档不重写事实，也不删除；ADR 接受后只增状态索引，不改写决策原文。
 
@@ -16,7 +16,7 @@
 | [docs/ARCHITECTURE.md](ARCHITECTURE.md) | 当前（B2/W1 已收口；完整重写待 B4） | 产品架构；第四节按 ADR 0004 重写 |
 | [docs/sources.md](sources.md) | 当前基线（2026-10-31 实测） | 数据源现状；当前目录 3255 条见页首说明 |
 | [docs/ACCEPTANCE.md](ACCEPTANCE.md) | 当前发布记录 + 历史验收 | 验收记录；顶部为最新发布，以下按版本保留 |
-| [docs/remediation-2026-11-18.md](remediation-2026-11-18.md) | 当前计划 | 1.2.0 契约整改与后续 B2-B5 跟踪 |
+| [docs/remediation-2026-11-18.md](remediation-2026-11-18.md) | 当前计划（B3 实施完成，待独立 review） | 1.2.0 契约整改与后续 B2-B5 跟踪 |
 | [docs/adr/README.md](adr/README.md) | 当前索引 | 本项目 ADR 0001–0004 的唯一状态入口 |
 | [CHANGELOG.md](../CHANGELOG.md) | 当前 | 版本变更 |
 
