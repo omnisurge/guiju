@@ -137,6 +137,18 @@ class AutoSyncW2Test(unittest.TestCase):
         self.assertFalse(snap["aggregate"]["complete"])
         self.assertEqual(snap["aggregate"]["reason"], "shzjw=empty_page_before_total")
 
+    def test_aggregate_honors_current_stale_state(self):
+        self._set_source("mohurd", complete=True, days_ago=1)
+        self._set_source("shzjw", complete=True, days_ago=1)
+        snap = autosync._snap(self.store, state="stale", source="mohurd")
+        self.assertEqual(snap["state"], "stale")
+        self.assertTrue(snap["aggregate"]["stale"])
+        self.assertEqual(snap["aggregate"]["state"], "stale")
+        current = next(
+            item for item in snap["sources_all"] if item["source"] == "mohurd"
+        )
+        self.assertTrue(current["stale"])
+
     def test_aggregate_reason_empty_source_uses_unknown(self):
         self._set_source("mohurd", complete=True, days_ago=1)
         self._set_source("shzjw", complete=False, days_ago=1, reason="")

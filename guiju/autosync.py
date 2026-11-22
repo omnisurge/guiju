@@ -126,7 +126,11 @@ def _source_entry(
         or age > MAX_AGE_DAYS
     )
     entry = dict(meta)
-    entry["stale"] = stale
+    # 当前源的 stale 也可能是本轮判定（目录为空/离线/关闭自动刷新），
+    # 不能只看 meta；否则 sources_all 与 aggregate 会把当前 stale 洗成 fresh。
+    entry["stale"] = stale or (
+        source_id == current_source and current_state == "stale"
+    )
     if source_id == current_source:
         entry["state"] = current_state
     else:
