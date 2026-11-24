@@ -62,7 +62,7 @@ class PullApiModeTest(unittest.TestCase):
         return code, (json.loads(buf.getvalue()) if buf.getvalue().strip() else {})
 
     def _fake_download(self, part_path):
-        def download_to(_url, path, referer=None):
+        def download_to(_url, path, referer=None, probe_sink=None):
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             Path(path).write_bytes(PDF)
             return len(PDF), "pdf", 0

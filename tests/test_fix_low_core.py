@@ -1,7 +1,7 @@
 """Low 批次回归测试（2026-11-12 code review 第 3 轮）。
 
 覆盖：mcp do_POST 的 Content-Length 防线、announcement 未知源显式报错、
-非回环绑定告警、catalog meta 损坏信号、sync --if-stale 单次 count、
+非回环绑定必须 --allow-remote + Bearer、catalog meta 损坏信号、sync --if-stale 单次 count、
 announcement 共享只读 Store（惰性 + 跨线程 + 关闭）。
 """
 
@@ -15,6 +15,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
+from guiju import cli
 from guiju import mcp as mcp_mod
 from guiju.mcp import McpServer, make_http_server
 from guiju.store.sqlite import Store
@@ -98,18 +99,69 @@ class TestContentLengthGuard(unittest.TestCase):
         self.assertEqual(status, 200)
 
 
-class TestNonLoopbackWarning(unittest.TestCase):
-    """绑定非回环地址时 stderr 必须有一行告警（不阻断）。"""
+class TestNonLoopbackGate(unittest.TestCase):
+    """B4：非回环绑定必须 --allow-remote + Bearer，不能再只 warning。"""
 
-    def _make(self, host):
+    def _make(self, host, **kwargs):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            httpd = make_http_server(McpServer(_FakeBackend()), host, 0)
+            httpd = make_http_server(McpServer(_FakeBackend()), host, 0, **kwargs)
         httpd.server_close()
         return err.getvalue()
 
-    def test_non_loopback_warns(self):
-        self.assertIn("非回环", self._make("0.0.0.0"))
+    def test_non_loopback_requires_explicit_remote_gate(self):
+        with self.assertRaisesRegex(ValueError, "allow-remote"):
+            self._make("0.0.0.0")
+        with self.assertRaisesRegex(ValueError, "GUIJU_MCP_BEARER_TOKEN"):
+            self._make("0.0.0.0", allow_remote=True)
+        with patch.dict(os.environ, {"GUIJU_MCP_BEARER_TOKEN": "secret"}):
+            httpd = make_http_server(McpServer(_FakeBackend()), "127.0.0.1", 0,
+                                     allow_remote=True)
+            port = httpd.server_address[1]
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            try:
+                self.assertTrue(httpd.require_bearer)
+                self.assertEqual(httpd.bearer_token, "secret")
+                body = json.dumps(
+                    {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+                ).encode("utf-8")
+                length = f"Content-Length: {len(body)}"
+                self.assertEqual(_post_raw(port, body, [length]), 401)
+                self.assertEqual(
+                    _post_raw(port, body, [length, "Authorization: Bearer wrong"]),
+                    401,
+                )
+                self.assertEqual(
+                    _post_raw(port, body, [length, "Authorization: Bearer secret"]),
+                    200,
+                )
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+
+        # 真实非回环绑定（0.0.0.0）+ Bearer：401/200 必须走同一条 Handler。
+        with patch.dict(os.environ, {"GUIJU_MCP_BEARER_TOKEN": "secret"}):
+            httpd = make_http_server(
+                McpServer(_FakeBackend()), "0.0.0.0", 0, allow_remote=True)
+            port = httpd.server_address[1]
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            try:
+                body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}).encode()
+                length = f"Content-Length: {len(body)}"
+                self.assertEqual(_post_raw(port, body, [length]), 401)
+                self.assertEqual(
+                    _post_raw(port, body, [length, "Authorization: Bearer secret"]), 200)
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+
+        # CLI 路径同样必须 exit 2，且不能泄露 traceback。
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.dict(os.environ, {"GUIJU_HOME": tmp, "GUIJU_MCP_BEARER_TOKEN": ""}):
+            rc = cli.main(["mcp", "--http", "--allow-remote", "--host", "0.0.0.0"])
+            self.assertEqual(rc, 2)
 
     def test_loopback_quiet(self):
         self.assertNotIn("非回环", self._make("127.0.0.1"))
@@ -133,7 +185,7 @@ class TestAnnouncementUnknownSource(unittest.TestCase):
                "published_on": "2026-01-01"}
         fake_target = {"ann": ann, "code_display": "GB 1", "status": "", "confidence": ""}
         fake_source = unittest.mock.Mock()
-        with patch("guiju.cli.lookup.resolve", return_value=fake_target), \
+        with patch("guiju.application.resolve.resolve", return_value=fake_target), \
              patch("guiju.sources.registry", return_value={"mohurd": fake_source}), \
              tempfile.TemporaryDirectory() as tmp, \
              patch.dict(os.environ, {"GUIJU_HOME": tmp}):
@@ -157,7 +209,7 @@ class TestSharedAnnouncementStore(unittest.TestCase):
                "published_on": "2026-01-01"}
         fake_target = {"ann": ann, "code_display": "GB 1", "status": "", "confidence": ""}
         fake_source = unittest.mock.Mock(api_mode=True)
-        with patch("guiju.cli.lookup.resolve", return_value=fake_target), \
+        with patch("guiju.application.resolve.resolve", return_value=fake_target), \
              patch("guiju.sources.registry", return_value={"mohurd": fake_source}):
             return server._announcement({"ref": "1"})
 

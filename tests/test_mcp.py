@@ -72,7 +72,7 @@ class McpProtocolTest(unittest.TestCase):
             self.assertTrue(response["result"]["isError"], name)
 
     def test_announcement_returns_metadata_without_download(self):
-        from guiju.cli import lookup as lookup_mod
+        from guiju.application import resolve as lookup_mod
 
         ann = {
             "id": 7,

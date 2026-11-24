@@ -5,8 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=guiju
+Group=guiju
 WorkingDirectory=/opt/guiju
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=GUIJU_HOME=/var/lib/guiju
 Environment=GUIJU_CURRENCY=native
 Environment=GUIJU_CURRENCY_CACHE=/var/lib/guiju/currency-cache
@@ -23,6 +26,11 @@ RestartSec=3
 TimeoutStopSec=8
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/guiju
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
 
 [Install]
 WantedBy=multi-user.target

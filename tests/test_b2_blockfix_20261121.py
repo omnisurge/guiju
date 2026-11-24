@@ -81,7 +81,7 @@ class SignedDownloadUrlTest(unittest.TestCase):
     def test_download_sends_signed_url_and_referer(self) -> None:
         captured: dict[str, object] = {}
 
-        def fake_download_bytes(url: str, *, referer=None, timeout=180):
+        def fake_download_bytes(url: str, *, referer=None, timeout=180, probe_sink=None):
             captured["url"] = url
             captured["referer"] = referer
             return self.PDF, "application/pdf"
@@ -99,7 +99,7 @@ class SignedDownloadUrlTest(unittest.TestCase):
     def test_download_request_full_url_contains_query(self) -> None:
         captured: dict[str, str] = {}
 
-        def run_body(url: str, *, referer=None, timeout=180):
+        def run_body(url: str, *, referer=None, timeout=180, probe_sink=None):
             transport = FakeTransport([FakeResponse(self.PDF)])
             client = BodyClient(
                 policy=BodyPolicy(check_url_fn=lambda value: value),
@@ -123,7 +123,7 @@ class SignedDownloadUrlTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             part = Path(tmp) / "body.part"
 
-            def fake_download(url: str, part_path: str, *, referer=None, timeout=180):
+            def fake_download(url: str, part_path: str, *, referer=None, timeout=180, probe_sink=None):
                 captured["url"] = url
                 Path(part_path).write_bytes(self.PDF)
                 return {"bytes": len(self.PDF), "resumed_from": 0}
@@ -141,7 +141,7 @@ class SignedDownloadUrlTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             part = Path(tmp) / "body.part"
 
-            def run_body(url: str, part_path: str, *, referer=None, timeout=180):
+            def run_body(url: str, part_path: str, *, referer=None, timeout=180, probe_sink=None):
                 transport = FakeTransport([FakeResponse(self.PDF)])
                 client = BodyClient(
                     policy=BodyPolicy(check_url_fn=lambda value: value),
@@ -166,11 +166,11 @@ class SignedDownloadUrlTest(unittest.TestCase):
             part = Path(tmp) / "body.part"
             captured: list[str] = []
 
-            def fake_download_bytes(url: str, *, referer=None, timeout=180):
+            def fake_download_bytes(url: str, *, referer=None, timeout=180, probe_sink=None):
                 captured.append(url)
                 return self.PDF, "application/pdf"
 
-            def fake_download(url: str, part_path: str, *, referer=None, timeout=180):
+            def fake_download(url: str, part_path: str, *, referer=None, timeout=180, probe_sink=None):
                 captured.append(url)
                 Path(part_path).write_bytes(self.PDF)
                 return {"bytes": len(self.PDF), "resumed_from": 0}

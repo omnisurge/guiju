@@ -33,7 +33,8 @@ class NetBoundaryTest(unittest.TestCase):
         self.assertEqual(hits, allowed)
 
     def test_pull_has_no_direct_replace_and_uses_finalize(self):
-        text = (ROOT / "guiju/cli/commands/pull.py").read_text("utf-8")
+        # B4：pull 编排已迁到 application；CLI 只剩兼容 alias，结构门禁看真实实现。
+        text = (ROOT / "guiju/application/pull.py").read_text("utf-8")
         self.assertNotIn("os.replace", text)
         self.assertIn("finalize_body", text)
 

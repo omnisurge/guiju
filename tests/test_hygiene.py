@@ -209,6 +209,28 @@ class ReleaseWorkflowConstraintTest(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
+        # B5 稳定版：ACCEPTANCE 段可能没有「预发布」字样，发版检查也必须识别。
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("check_release", script)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        stable_section = module._release_section("## v1.2.0（2026-11-23）\n\n正文\n", "1.2.0")
+        self.assertIn("正文", stable_section)
+
+        # B4 systemd 边界：unit 文件必须保留专用用户/只读根/写路径/地址族约束。
+        unit = _read("deploy/guiju-mcp.service")
+        for directive in (
+            "User=guiju",
+            "Group=guiju",
+            "ProtectSystem=strict",
+            "ReadWritePaths=/var/lib/guiju",
+            "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+            "CapabilityBoundingSet=",
+        ):
+            self.assertIn(directive, unit, f"deploy/guiju-mcp.service 缺少 {directive}")
+
 
 class IndexCommandRemovedTest(unittest.TestCase):
     """ADR 0001 的 index 已彻底移除（v0.13.0）：既不暴露命令，也不残留推荐文案。"""

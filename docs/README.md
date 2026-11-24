@@ -19,8 +19,9 @@
 | [docs/sources.md](sources.md) | 当前基线（2026-10-31 实测） | 数据源现状；当前目录 3255 条见页首说明 |
 | [docs/ACCEPTANCE.md](ACCEPTANCE.md) | 当前发布记录 + 历史验收 | 验收记录；顶部为最新发布，以下按版本保留 |
 | [docs/audit/release-1.2.0a4-20261122.md](audit/release-1.2.0a4-20261122.md) | 当前发版记录 | 1.2.0a4（v1.2.0-alpha.4）发版事实与产物 |
+| [docs/audit/external-review-2026-11-22.md](audit/external-review-2026-11-22.md) | 当前复核记录 | 外部评审逐条验证、证据与错误反驳 |
 | [docs/remediation-2026-11-18.md](remediation-2026-11-18.md) | 当前计划（B3 实施完成；1.2.0a4 发版记录见新记录） | 1.2.0 契约整改与后续 B2-B5 跟踪 |
-| [docs/adr/README.md](adr/README.md) | 当前索引 | 本项目 ADR 0001–0004 的唯一状态入口 |
+| [docs/adr/README.md](adr/README.md) | 当前索引 | 本项目 ADR 0001–0005 的唯一状态入口 |
 | [CHANGELOG.md](../CHANGELOG.md) | 当前 | 版本变更 |
 
 ## 历史文档（只读证据，不再更新）
@@ -43,6 +44,10 @@ kb-system/ADR0048 是 kb-system 的知识库 v2 决策，不是 guiju 的 ADR，
 
 1. 当前文档只写当前运行形态：native 时效、hk guiju-mcp、GUIJU_CURRENCY=native[:off|dir] / off。
 2. 提到已退役的 cmd/mcp、NAS spec-currency 时必须标“历史”，并链接 ADR 0002 或审计记录。
-3. ADR 0001–0004 原文保留；状态变化只改本索引和 ADR 顶部提示，不重写决策正文。
+3. ADR 0001–0005 原文保留；状态变化只改本索引和 ADR 顶部提示，不重写决策正文。
 4. 审计/验收记录保留证据链，不删除、不改写当时读数；新结论写在新的记录里。
 5. 需要淘汰整份文档时，先在本索引标记“历史/归档”，再由所有者决定是否物理删除；不静默删除历史材料。
+
+- [B5 稳定版门禁评估](audit/b5-release-gate-20261123.md)
+
+- [1.2.0 发版记录](audit/release-1.2.0-20261124.md)

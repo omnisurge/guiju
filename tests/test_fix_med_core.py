@@ -151,7 +151,7 @@ class AnnouncementReadOnlyTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home, mock.patch.dict(
             "os.environ", {"GUIJU_HOME": home}
         ), mock.patch(
-            "guiju.cli.lookup.resolve", return_value=target
+            "guiju.application.resolve.resolve", return_value=target
         ) as resolve_mock, mock.patch(
             "guiju.sources.registry", return_value={"mohurd": FakeSource()}
         ):

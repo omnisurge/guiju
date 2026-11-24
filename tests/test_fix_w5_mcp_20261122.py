@@ -24,6 +24,7 @@ from unittest import mock
 
 from guiju import cli
 from guiju.currency.model import Record
+from guiju.currency.native import Outcome
 from guiju.errors import ComplianceDenied, NeedsHuman, NoCurrencyRecord
 from guiju.mcp import McpServer, make_http_server
 from guiju.store.sqlite import Store
@@ -35,8 +36,8 @@ SHZJW_URL = "https://bzjg.zjw.sh.gov.cn/api/notice/{}"
 # --------------------------------------------------------------------------- helpers
 
 
-def _record(code="GB 50011-2010", status="current"):
-    return Record(code, status, "建筑抗震设计标准", "2010-12-01", "csres")
+def _record(code="GB 50011-2010", status="current", *, source="csres", fallback=""):
+    return Record(code, status, "建筑抗震设计标准", "2010-12-01", source, fallback=fallback)
 
 
 class _FakeBackend:
@@ -50,6 +51,67 @@ class _FakeBackend:
         if isinstance(value, Exception):
             raise value
         return list(value)
+
+
+class _OutcomeBackend:
+    """只有 query() 的新后端；lookup()/共享状态属性一旦被读就失败。"""
+
+    def __init__(self, outcomes):
+        self.outcomes = outcomes
+        self.calls = []
+
+    def query(self, code):
+        self.calls.append(code)
+        return self.outcomes[code]
+
+    def lookup(self, code):
+        raise AssertionError("MCP 不应在 query() 可用时回退到 lookup()")
+
+    @property
+    def stale(self):
+        raise AssertionError("MCP 不应读取共享 backend.last_outcome")
+
+    @property
+    def from_cache(self):
+        raise AssertionError("MCP 不应读取共享 backend.last_outcome")
+
+    @property
+    def cache_age_days(self):
+        raise AssertionError("MCP 不应读取共享 backend.last_outcome")
+
+
+class _RacingOutcomeBackend:
+    """两个 query 交错，故意让共享 last_outcome 指向后返回的一方。"""
+
+    def __init__(self):
+        self.last_outcome = None
+        self.a_set = threading.Event()
+        self.b_set = threading.Event()
+
+    def query(self, code):
+        if code == "A":
+            outcome = Outcome((_record("A"),), "csres", stale=True, from_cache=True, cache_age=3 * 86400)
+            self.last_outcome = outcome
+            self.a_set.set()
+            self.b_set.wait(2)
+        else:
+            self.a_set.wait(2)
+            outcome = Outcome((_record("B"),), "csres")
+            self.last_outcome = outcome
+            self.b_set.set()
+        return outcome
+
+    @property
+    def stale(self):
+        return bool(self.last_outcome and self.last_outcome.stale)
+
+    @property
+    def from_cache(self):
+        return bool(self.last_outcome and self.last_outcome.from_cache)
+
+    @property
+    def cache_age_days(self):
+        return self.last_outcome.cache_age / 86400 if self.last_outcome else None
 
 
 def _serve(server, **kwargs):
@@ -148,6 +210,18 @@ class BatchComplianceStopTest(unittest.TestCase):
         self.assertIn("合规", payload["error"])
         self.assertEqual(self.server.backend.calls, ["A"])
         self.assertFalse((self.mcp_root / "out.tsv").exists(), "40 之后不得写盘点表")
+        # 内联 codes 也必须硬停止：B 不得被查询，更不得借 out 写半份结果。
+        self.server.backend = _FakeBackend({
+            "A": ComplianceDenied("命中合规护栏", hint="立即停止"),
+            "B": [_record()],
+        })
+        result = self.server._call("batch", {"codes": ["A", "B"], "out": "codes-out.tsv"})
+        self.assertTrue(result["isError"])
+        self.assertEqual(self.server.backend.calls, ["A"])
+        self.assertFalse((self.mcp_root / "codes-out.tsv").exists())
+        # 非法/空 codes 不得静默返回空成功。
+        self.assertTrue(self.server._call("batch", {"codes": []})["isError"])
+        self.assertTrue(self.server._call("batch", {"codes": "A"})["isError"])
 
     def test_non_compliance_error_still_counted_and_continues(self):
         self.server.backend = _FakeBackend({
@@ -163,6 +237,17 @@ class BatchComplianceStopTest(unittest.TestCase):
         self.assertIn("完成 1", text)
         self.assertIn("失败 2", text)
         self.assertEqual(self.server.backend.calls, ["A", "B", "C"])
+        # B4：内联 codes[] 与过渡期 list 走同一套逐项语义，不需要任何文件路径。
+        result = self.server._call("batch", {"codes": ["A", "B", "C"]})
+        self.assertFalse(result["isError"])
+        text = result["content"][0]["text"]
+        self.assertIn("总数 3", text)
+        self.assertIn("完成 1", text)
+        self.assertIn("失败 2", text)
+        # codes 与 out 可以同时使用：只允许写盘点表，不要求文件清单。
+        result = self.server._call("batch", {"codes": ["A"], "out": "codes-out.tsv"})
+        self.assertFalse(result["isError"])
+        self.assertTrue((self.mcp_root / "codes-out.tsv").is_file())
 
     def test_compliance_from_tool_call_has_json_error_payload(self):
         self.server.backend = _FakeBackend({"A": ComplianceDenied("blocked")})
@@ -249,6 +334,31 @@ class CacheWarningTest(unittest.TestCase):
         self.assertTrue(meta["from_cache"])
         self.assertEqual(meta["cache_age_days"], 9.5)
 
+        # Outcome 路径：完整性和备源告警也必须随 content[1] 透传。
+        outcome = Outcome(
+            (_record(source="csres", fallback="ccsn"),),
+            "csres",
+            complete=False,
+            incomplete_reason="明文回退，结果不完整",
+        )
+        outcome_server = McpServer(_OutcomeBackend({"GB50011": outcome}))
+        self.addCleanup(outcome_server.close)
+        outcome_result = _call(outcome_server, "verify", {"code": "GB50011"})["result"]
+        self.assertEqual(outcome_result["content"][0]["text"], "GB 50011-2010\tcurrent\n")
+        outcome_meta = json.loads(outcome_result["content"][1]["text"])
+        self.assertFalse(outcome_meta["complete"])
+        self.assertEqual(outcome_meta["incomplete_reason"], "明文回退，结果不完整")
+        self.assertEqual(outcome_meta["fallback_source"], "ccsn")
+        # batch 也必须把同一 Outcome 的完整性/备源状态作为第二条 JSON content。
+        batch_server = McpServer(_OutcomeBackend({"GB50011": outcome}))
+        self.addCleanup(batch_server.close)
+        batch_result = _call(batch_server, "batch", {"codes": ["GB50011"]})["result"]
+        self.assertFalse(batch_result["isError"])
+        batch_meta = json.loads(batch_result["content"][1]["text"])
+        self.assertEqual(batch_meta["warnings"][0]["code"], "GB50011")
+        self.assertFalse(batch_meta["warnings"][0]["complete"])
+        self.assertEqual(batch_meta["warnings"][0]["fallback_source"], "ccsn")
+
     def test_query_appends_warning_at_end(self):
         server = McpServer(self.CacheBackend())
         self.addCleanup(server.close)
@@ -259,6 +369,33 @@ class CacheWarningTest(unittest.TestCase):
         self.assertIn("stale", last)
         self.assertIn("9.5", last)
 
+        # Outcome 路径：从不可变对象读取，不碰共享 backend 状态。
+        outcome = Outcome((_record(),), "csres", from_cache=True, cache_age=9.5 * 86400)
+        outcome_server = McpServer(_OutcomeBackend({"GB50011": outcome}))
+        self.addCleanup(outcome_server.close)
+        outcome_text = _call(outcome_server, "query", {"code": "GB50011"})["result"]["content"][0]["text"]
+        self.assertIn("# 缓存告警", outcome_text)
+        outcome_meta = json.loads(outcome_text.split("# 缓存告警 ", 1)[1])
+        self.assertTrue(outcome_meta["from_cache"])
+        self.assertEqual(outcome_meta["cache_age_days"], 9.5)
+
+        # 两请求交错：A 的 stale 不能被 B 的 fresh 覆盖。
+        racing = McpServer(_RacingOutcomeBackend())
+        self.addCleanup(racing.close)
+        results = {}
+
+        def query(code):
+            results[code] = _call(racing, "query", {"code": code})["result"]["content"][0]["text"]
+
+        first = threading.Thread(target=query, args=("A",))
+        second = threading.Thread(target=query, args=("B",))
+        first.start()
+        second.start()
+        first.join(2)
+        second.join(2)
+        self.assertIn("# 缓存告警", results["A"])
+        self.assertNotIn("# 缓存告警", results["B"])
+
     def test_backend_without_cache_attributes_has_no_warning(self):
         server = McpServer(_FakeBackend({"GB50011": [_record()]}))
         self.addCleanup(server.close)
@@ -267,6 +404,12 @@ class CacheWarningTest(unittest.TestCase):
         self.assertEqual(verify["content"][0]["text"], "GB 50011-2010\tcurrent\n")
         query = _call(server, "query", {"code": "GB50011"})["result"]
         self.assertNotIn("stale", query["content"][0]["text"])
+
+        clean = McpServer(_OutcomeBackend({"GB50011": Outcome((_record(),), "csres")}))
+        self.addCleanup(clean.close)
+        clean_query = _call(clean, "query", {"code": "GB50011"})["result"]
+        self.assertEqual(len(clean_query["content"]), 1)
+        self.assertNotIn("# 缓存告警", clean_query["content"][0]["text"])
 
 
 # --------------------------------------------------------------------------- W5-4

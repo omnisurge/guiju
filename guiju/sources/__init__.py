@@ -7,38 +7,10 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from ..ports.source import CatalogItem as CatalogItem
+from ..ports.source import SourcePort as Source
 
-from ..domain.attachment import Attachment
-
-
-class CatalogItem(Protocol):
-    date: str
-    url: str
-    title: str
-
-
-class Source(Protocol):
-    """一个数据源必须能回答的四个问题。"""
-
-    id: str
-    display_name: str
-
-    def catalog_page(self, page_no: int, page_size: int) -> tuple[list[dict], int | None]:
-        """返回 (条目列表, 总数或 None)。条目字段：date / url / title。
-
-        总数为 None 表示源没有给出可证明的计数（不等于空目录）；
-        只有明确计数 0 才是空目录。
-        """
-
-    def detail(self, url: str) -> tuple[str, str]:
-        """返回 (原始 HTML, 纯文本)。"""
-
-    def attachments(self, html: str) -> list[Attachment]:
-        """列出公告页上的附件。"""
-
-    def download(self, file_url: str, referer: str) -> tuple[bytes, str]:
-        """取正文二进制，返回 (内容, 魔数标识)。"""
+__all__ = ["CatalogItem", "Source", "registry"]
 
 
 def registry() -> dict[str, Source]:

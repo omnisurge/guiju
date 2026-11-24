@@ -39,16 +39,17 @@ class _CompatThrottle:
         _throttle(host)
 
 
-def _body_client() -> BodyClient:
+def _body_client(probe_sink=None) -> BodyClient:
     return BodyClient(
         policy=BodyPolicy(check_url_fn=check_url),
         throttle=_CompatThrottle(),
         detector=BlockDetector(),
+        probe_sink=probe_sink,
     )
 
 
-def get(url: str, referer: str | None = None, timeout: int = 60, attempts: int = 2) -> Response:
-    return _body_client().get_page(url, referer=referer, timeout=timeout, attempts=attempts)
+def get(url: str, referer: str | None = None, timeout: int = 60, attempts: int = 2, probe_sink=None) -> Response:
+    return _body_client(probe_sink).get_page(url, referer=referer, timeout=timeout, attempts=attempts)
 
 
 def post_json(
@@ -76,8 +77,9 @@ def download(
     timeout: int = 180,
     attempts: int = 2,
     chunk_size: int = 1 << 16,
+    probe_sink=None,
 ) -> dict:
-    result = _body_client().download(
+    result = _body_client(probe_sink).download(
         url, part_path, referer=referer, timeout=timeout, attempts=attempts, chunk_size=chunk_size
     )
     return {
@@ -96,8 +98,9 @@ def download_bytes(
     referer: str | None = None,
     timeout: int = 180,
     max_bytes: int = 128 * 1024 * 1024,
+    probe_sink=None,
 ) -> tuple[bytes, str]:
-    return _body_client().download_bytes(url, referer=referer, timeout=timeout, max_bytes=max_bytes)
+    return _body_client(probe_sink).download_bytes(url, referer=referer, timeout=timeout, max_bytes=max_bytes)
 
 
 

@@ -24,7 +24,7 @@
 
 | 项 | 状态 |
 |---|---|
-| 版本 | `1.2.0-alpha.4`（schema v2） |
+| 版本 | `1.2.0`（schema v2） |
 | 目录同步 | ✅ 实测全量 **3255 条 / 33 页**，本次 e2e 与上游对账一致 |
 | 编号解析 | ✅ 实测覆盖 61%（其余公告正文确实无编号） |
 | 正文下载 | ✅ 单条与批量均实测可用（含 2000 年的早期公告） |
@@ -50,7 +50,7 @@ guiju --version
 gj --version                     # 等价别名
 ```
 
-> v1.2.0-alpha.4 发布包：https://github.com/omnisurge/guiju/releases/tag/v1.2.0-alpha.4；完整自部署步骤：[INSTALL.md](INSTALL.md)
+> v1.2.0 发布包：https://github.com/omnisurge/guiju/releases/tag/v1.2.0；完整自部署步骤：[INSTALL.md](INSTALL.md)
 
 数据默认放 `~/.guiju/`（目录库 `catalog.db` + 下载目录 `library/`，只是文件缓存不是档案库）。用 `GUIJU_HOME` 或 `--db` 覆盖。
 

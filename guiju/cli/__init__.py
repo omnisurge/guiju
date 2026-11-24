@@ -13,8 +13,9 @@ import sqlite3
 import sys
 
 from .. import autosync
+from ..adapters.store.sqlite import Store
+from ..application import AppContext
 from ..errors import EXIT_OK, EXIT_TABLE, BadUsage, GuijuError, NeedsHuman, SourceUnreachable
-from ..store.sqlite import Store
 from . import render
 from .commands import (
     cite,
@@ -106,6 +107,21 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 parser.print_help()
             return EXIT_OK
+        # 只在真正执行子命令时构造 AppContext；--version/无子命令不触碰默认适配器。
+        # pull/cite/which 需要带落库缓存的时效端口：入口构造一次，应用层不再自建。
+        ctx_currency = None
+        if args.cmd in ("pull", "cite", "which", "show") and not (
+            args.cmd == "cite" and bool(getattr(args, "offline", False))
+        ):
+            from ..currency import CachedCurrency
+
+            ctx_currency = CachedCurrency(store=store)
+        from ..sources import registry as source_registry
+
+        args.app_context = AppContext.from_args(
+            store, args, currency=ctx_currency, sources=source_registry()
+        )
+        args._sources = args.app_context.sources
         source = getattr(args, "source", "mohurd") or "mohurd"
         if args.cmd == "pull":
             from ..sources import registry as source_registry
@@ -127,6 +143,10 @@ def main(argv: list[str] | None = None) -> int:
         render.set_catalog(catalog)
         if catalog.get("message"):
             render.note(catalog["message"])
+        if args.cmd == "pull":
+            from ..sources import registry as source_registry
+
+            return int(pull.run(store, args, sources=source_registry()))
         return int(args.func(store, args))
     except GuijuError as exc:
         return _fail(exc)

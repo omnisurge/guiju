@@ -6,6 +6,8 @@
 - 影响：出站网络、目录同步、时效空值、存储错误路径、应用层、MCP 契约、引用语义、部署单元、1.2.0 发布
 - 关系：补充 ADR 0002（合并为一个产品）、ADR 0003（目录自保鲜），不推翻；问题清单见 `docs/audit/code-review-2026-11-18.md`；实施计划见 `docs/remediation-2026-11-18.md`
 
+> **执行状态提示（2026-11-22，2026-11-23 rev2）**：D1-D6 仍是现行实施依据；截至 `v1.2.0-alpha.4`，W1/W2/W3/W4 已落地。B4 应用层/MCP/IPC 收口已于 2026-11-23 rev2 通过 reviewer-domain-mcp 与 reviewer-cli 双 APPROVE：`application/ports/adapters` 已建立并接通，pull/cite 完整编排迁入 application，MCP batch 内联 `codes[]`、非回环 Bearer 门禁和 systemd 最小权限已落地。B5/1.2.0 稳定版与回退演练仍待执行。2026-11-22 外部评审复核、P1-1 增量修复与后续顺序见 [ADR 0005](0005-external-review-2026-11-22.md)；B4 证据见 [b4-application-mcp-20261123.md](../audit/b4-application-mcp-20261123.md)。
+
 ---
 
 ## 一、背景：为什么"再修一轮"不够

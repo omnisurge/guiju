@@ -1,6 +1,6 @@
 # 验收记录
 
-> 最新发布验收：**v1.2.0-alpha.4（2026-11-22，预发布）** —— **1223 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与发布产物见下。
+> 最新发布验收：**v1.2.0（2026-11-24）** —— **1223 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与发布产物见下。
 > 上一发布：**v1.2.0-alpha.3（2026-11-21）**；更早 v1.1.0/v1.0.0 的验收记录保留作历史对照。
 > 默认时效为 **native**；hk 服务与消费者切换沿用 v1.0.0 验证，NAS spec-currency 已停用（文件保留可回退）。后续各版本记录保留作历史对照。
 >
@@ -8,6 +8,17 @@
 >
 > **按语（2026-11-09）**：本地归档注册表已撤销（artifact 表、`verify`/`provenance` 命令删除），
 > 正文归档归 kb-system，幂等靠文件名 sha256 指纹。下文中 verify/provenance 相关行属历史验收记录，不再适用。
+
+## v1.2.0（2026-11-24）
+
+| 项 | 值 |
+|---|---|
+| 代码基线 | `refactor/root-cause` + B4/B5 收口（发布 tag `v1.2.0` 指向最终发布提交） |
+| 版本 | `1.2.0`（发布 tag `v1.2.0`） |
+| 单测 | Python 3.10/3.13 各 1223/1223 通过；`scripts/ci.sh` exit 0（含 ruff、docs-only 44 项、离线 e2e 4/4） |
+| 完整联网 e2e | `python3 scripts/e2e.py --require-currency` 39/39 通过，exit 0；日志 `/tmp/guiju-e2e-20261124-release.log`，2781 bytes，SHA-256 `e5baf8f1848f3a3d5c0cb1e5211536f67b9cbb4d36f494a3047468da834e331e` |
+| 发布产物 | wheel `guiju-1.2.0-py3-none-any.whl` SHA-256 `bf94c340ca66135747bbf7e2d33d92fd05d1274d410a0e74948fc0bec5db7b04`；sdist `guiju-1.2.0.tar.gz` SHA-256 `62bc9ec32ca4fff61d56cd9cc1b609f8c0e78a43790a75474ffbe1ea4c6cca86` |
+| 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.2.0 |
 
 ## v1.2.0-alpha.4（2026-11-22，预发布）
 

@@ -41,6 +41,7 @@ from guiju.errors import (
     NotIndexed,
 )
 from guiju.files import sha256_bytes
+from guiju.net.request import ProbeRecord
 from guiju.store.sqlite import Store
 
 PDF = b"%PDF-1.7\n" + b"x" * 500
@@ -485,7 +486,7 @@ class _FakeApiSource:
     def find(self, ref):
         return [self.rec]
 
-    def download_to(self, url, part_path, referer=None):
+    def download_to(self, url, part_path, referer=None, probe_sink=None):
         Path(part_path).parent.mkdir(parents=True, exist_ok=True)
         Path(part_path).write_bytes(PDF)
         self.downloaded.append(url)
@@ -620,7 +621,7 @@ class ReadRefsBomTest(unittest.TestCase):
 
 
 class PullOneCachedShapeTest(unittest.TestCase):
-    def test_cached_10_keeps_success_metadata(self):
+    def test_cached_10_keeps_success_metadata_and_finalize_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             digest = sha256_bytes(PDF)
@@ -630,6 +631,47 @@ class PullOneCachedShapeTest(unittest.TestCase):
             source.api_mode = False
             with mock.patch.object(pull, "resolve", return_value=_target()):
                 payload = _pull_one(mock.Mock(), _args(force=False), "某标准", source, out)
+
+            # 真实落盘路径：下载成功后必须经唯一 finalize 点改名，不能再出现
+            # `_finalize_body` 未定义/双下划线 helper 的 NameError（rev2 P0）。
+            source.detail.return_value = ("<html></html>", "发布 GB 1-2020")
+            source.attachments.return_value = [
+                att_domain.Attachment(url="https://x/a.pdf", label="某标准.pdf", kind="pdf")
+            ]
+            choice = att_domain.Attachment(url="https://x/a.pdf", label="某标准.pdf", kind="pdf")
+            pick = att_domain.Pick(
+                att_domain.Verdict.OK, choice=choice, candidates=(choice,), reason="唯一附件"
+            )
+            codes = Codes(
+                mentions=(Mention("GB1-2020", "GB 1-2020", Role.PRIMARY, "发布GB 1-2020"),),
+                primary_key="GB1-2020",
+                primary_display="GB 1-2020",
+                confidence=Confidence.PARSED,
+            )
+
+            def _download(url, part, referer=None, probe_sink=None):
+                Path(part).parent.mkdir(parents=True, exist_ok=True)
+                Path(part).write_bytes(PDF)
+                if probe_sink is not None:
+                    probe_sink(ProbeRecord(url=url, status=200, bytes=len(PDF), outcome="ok"))
+                return len(PDF), "pdf", 0
+
+            source.download_to.side_effect = _download
+            store = mock.Mock()
+            with (
+                mock.patch.object(pull, "resolve", return_value=_target()),
+                mock.patch.object(pull, "classify", return_value=codes),
+                mock.patch.object(pull.att_domain, "pick", return_value=pick),
+                mock.patch.object(pull, "find_cached", return_value=None),
+                mock.patch.object(pull, "persist_codes"),
+            ):
+                payload2 = _pull_one(store, _args(force=True), "某标准", source, out)
+            self.assertEqual(payload2["exit"], 0)
+            store.log_probe.assert_any_call(source.id, "https://x/a.pdf", 200, len(PDF), "ok")
+            self.assertTrue(Path(payload2["path"]).exists())
+            self.assertEqual(Path(payload2["path"]).read_bytes(), PDF)
+            self.assertFalse((out / ".partial").exists() and any((out / ".partial").iterdir()))
+
         self.assertEqual(payload["exit"], 10)
         self.assertTrue(payload["already"])
         for key in (

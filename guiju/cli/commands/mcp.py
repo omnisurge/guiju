@@ -5,21 +5,32 @@ from __future__ import annotations
 import argparse
 
 from ... import mcp as mcp_service
+from ...errors import BadUsage
 from ...store.sqlite import Store
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
     # --db 必须贯通到 MCP：announcement 读的应是同一个目录库，而不是默认 GUIJU_HOME。
-    server = mcp_service.McpServer(mcp_service.default_backend(), store_path=store.path)
+    # 入口已有 AppContext 时复用同一 currency，避免命令层再建一份。
+    ctx = getattr(args, "app_context", None)
+    backend = ctx.currency_or_default() if ctx is not None else mcp_service.default_backend()
+    server = mcp_service.McpServer(backend, store_path=store.path)
     if args.http:
-        return mcp_service.serve_http(
-            server,
-            args.host,
-            args.port,
-            args.path,
-            allowed_hosts=getattr(args, "allowed_host", None),
-            allowed_origins=getattr(args, "allowed_origin", None),
-        )
+        try:
+            return mcp_service.serve_http(
+                server,
+                args.host,
+                args.port,
+                args.path,
+                allowed_hosts=getattr(args, "allowed_host", None),
+                allowed_origins=getattr(args, "allowed_origin", None),
+                allow_remote=bool(getattr(args, "allow_remote", False)),
+            )
+        except ValueError as exc:
+            raise BadUsage(
+                str(exc),
+                hint="非回环绑定需同时传 --allow-remote 与 GUIJU_MCP_BEARER_TOKEN；本机部署用 127.0.0.1",
+            ) from exc
     return mcp_service.serve_stdio(server)
 
 
@@ -29,6 +40,11 @@ def add_parser(sub, parents) -> None:
     p.add_argument("--host", default="127.0.0.1", help="HTTP 监听地址")
     p.add_argument("--port", type=int, default=18083, help="HTTP 端口")
     p.add_argument("--path", default="/mcp", help="HTTP MCP 路径")
+    p.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="允许绑定非回环地址；必须同时设置 GUIJU_MCP_BEARER_TOKEN，否则拒绝启动",
+    )
     p.add_argument(
         "--allowed-host",
         action="append",

@@ -1,13 +1,15 @@
 """guiju MCP 服务面：query / verify / batch / announcement 的纯标准库 JSON-RPC。
 
 默认 stdio；--http 时提供 POST /mcp（仅 application/json；Host/Origin 按可配置
-allowlist 校验，防 DNS rebinding）。业务后端只依赖 Currency.lookup，
-不在这里复制适配器、正文下载或时效路由逻辑（旧 spec-currency 已退役）。
+allowlist 校验，防 DNS rebinding）。业务后端优先使用 NativeCurrency.query() 的不可变 Outcome（旧适配器保留
+Currency.lookup 兼容路径），不在这里复制适配器、正文下载或时效路由逻辑
+（旧 spec-currency 已退役）。
 announcement 只回公告元数据（编号/名称/可得性/附件链接）；会抓公告页解析附件，但不下载正文、不写盘。
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import sys
@@ -17,9 +19,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ._version import __version__
-from .currency.model import Currency, Record
-from .currency.native import NativeCurrency
+from .domain.currency import Record
 from .errors import ComplianceDenied, GuijuError, NeedsHuman
+from .ports.currency import CurrencyPort
 
 PROTOCOL_VERSIONS = ("2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 DEFAULT_PATH = "/mcp"
@@ -54,11 +56,14 @@ TOOLS = (
     },
     {
         "name": "batch",
-        "description": "批量盘点规范清单：list/out 都限制在 GUIJU_HOME/mcp 下（相对路径按该根解析），执行批量查询并返回统计。",
+        "description": "批量盘点规范清单：优先传 codes 内联编号数组；list/out 文件路径仅为过渡兼容（限制在 GUIJU_HOME/mcp 下，1.3.0 删除）。",
         "inputSchema": {
             "type": "object",
-            "properties": {"list": {"type": "string"}, "out": {"type": "string"}},
-            "required": ["list"],
+            "properties": {
+                "codes": {"type": "array", "items": {"type": "string"}},
+                "list": {"type": "string", "description": "deprecated：过渡期文件清单"},
+                "out": {"type": "string", "description": "deprecated：过渡期盘点表输出"},
+            },
         },
     },
     {
@@ -136,20 +141,57 @@ def _as_error(exc: GuijuError) -> dict:
     return _text_result(json.dumps(exc.payload(), ensure_ascii=False), error=True)
 
 
-def _cache_status(backend: object) -> dict | None:
-    """读取后端的 stale/from_cache 状态；没有这些属性的后端按"新鲜"处理。"""
-    stale = bool(getattr(backend, "stale", False))
-    from_cache = bool(getattr(backend, "from_cache", False))
-    if not stale and not from_cache:
-        return None
-    age = getattr(backend, "cache_age_days", None)
-    if isinstance(age, bool) or not isinstance(age, (int, float)):
+def _cache_status(source: object) -> dict | None:
+    """读取一次查询结果的状态，返回 null 表示没有需要上报的告警。
+
+    source 可以是 NativeCurrency.query() 返回的不可变 Outcome，也可以是
+    旧适配器/测试替身（提供 stale/from_cache 等属性）。MCP 不再从共享
+    backend 实例上摸 last_outcome，避免 HTTP 并发请求互相覆盖状态。
+    """
+    stale = bool(getattr(source, "stale", False))
+    from_cache = bool(getattr(source, "from_cache", False))
+    age = getattr(source, "cache_age_days", None)
+    if age is None:
+        age_seconds = getattr(source, "cache_age", None)
+        if isinstance(age_seconds, (int, float)) and not isinstance(age_seconds, bool):
+            age = round(age_seconds / 86400.0, 2)
+    if isinstance(age, bool) or not isinstance(age, (int, float)) or not from_cache:
         age = None
-    return {"stale": stale, "from_cache": from_cache, "cache_age_days": age}
+    complete = getattr(source, "complete", None)
+    incomplete_reason = getattr(source, "incomplete_reason", "") or ""
+    fallback_source = getattr(source, "fallback_source", "") or ""
+    if not stale and not from_cache and complete is not False and not fallback_source:
+        return None
+    status: dict = {"stale": stale, "from_cache": from_cache, "cache_age_days": age}
+    if complete is False:
+        status["complete"] = False
+        if incomplete_reason:
+            status["incomplete_reason"] = str(incomplete_reason)
+    if fallback_source:
+        status["fallback_source"] = str(fallback_source)
+    return status
 
 
 def _cache_warning_text(status: dict) -> str:
-    return "# 缓存告警 " + json.dumps(status, ensure_ascii=False)
+    # 兼容既有 MCP 消费者的 "缓存告警" 前缀；纯完整性/备源告警用"结果告警"，
+    # 两者都是同一条机器可读 content，不静默丢掉。
+    prefix = "# 缓存告警" if (status.get("stale") or status.get("from_cache")) else "# 结果告警"
+    return prefix + " " + json.dumps(status, ensure_ascii=False)
+
+
+def _query_result(backend: object, code: str) -> tuple[list[Record], object]:
+    """优先用 query() 的不可变 Outcome，旧后端保留 lookup() 兼容路径。
+
+    NativeCurrency.query() 返回 Outcome；旧测试替身可能只有 lookup()。
+    只要拿到 Outcome，就绝不能再回头读 backend.last_outcome。
+    """
+    query = getattr(backend, "query", None)
+    if callable(query):
+        outcome = query(code)
+        rows = getattr(outcome, "results", None)
+        if rows is not None:
+            return list(rows), outcome
+    return backend.lookup(code), backend  # type: ignore[attr-defined]
 
 
 class _ReadOnlyStore:
@@ -284,7 +326,7 @@ def _ensure_readonly_catalog(path: Path):
 class McpServer:
     """与传输无关的 JSON-RPC 处理核心。"""
 
-    def __init__(self, backend: Currency, *, store_path: str | Path | None = None) -> None:
+    def __init__(self, backend: CurrencyPort, *, store_path: str | Path | None = None) -> None:
         self.backend = backend
         # announcement 的共享只读存储：避免每请求跑一次建表/迁移 DDL。
         # CPython sqlite3 模块 threadsafety=1，共享连接必须外部串行化 ——
@@ -313,10 +355,11 @@ class McpServer:
         if not code:
             return _error_result("缺少 code 参数")
         try:
-            text = _rows_text(self.backend.lookup(code))
+            rows, state = _query_result(self.backend, code)
+            text = _rows_text(rows)
         except GuijuError as exc:
             return _as_error(exc)
-        status = _cache_status(self.backend)
+        status = _cache_status(state)
         if status is not None:
             text += "\n" + _cache_warning_text(status)
         return _text_result(text)
@@ -326,11 +369,12 @@ class McpServer:
         if not code:
             return _error_result("缺少 code 参数")
         try:
-            text = _rows_text(self.backend.lookup(code), verify=True)
+            rows, state = _query_result(self.backend, code)
+            text = _rows_text(rows, verify=True)
         except GuijuError as exc:
             return _as_error(exc)
         result = _text_result(text)
-        status = _cache_status(self.backend)
+        status = _cache_status(state)
         if status is not None:
             # content[0] 是调用方严格解析的 code\tstatus 契约，不得混入告警。
             result["content"].append({
@@ -340,20 +384,25 @@ class McpServer:
         return result
 
     def _batch(self, arguments: dict) -> dict:
+        codes: list[str] = []
+        raw_codes = arguments.get("codes")
+        if raw_codes is not None:
+            if not isinstance(raw_codes, list) or any(not isinstance(c, str) for c in raw_codes):
+                return _error_result("codes 必须是字符串数组")
+            codes.extend(c.strip() for c in raw_codes if c.strip())
         list_path = str(arguments.get("list") or "").strip()
-        if not list_path:
-            return _error_result("缺少 list 参数")
-        try:
-            list_file = _safe_mcp_path(list_path, label="清单")
-            lines = list_file.read_text(encoding="utf-8").splitlines()
-        except ValueError as exc:
-            return _error_result(str(exc))
-        except OSError as exc:
-            return _error_result(f"清单不可读：{exc}")
-        codes = [line.split("#", 1)[0].strip() for line in lines]
+        if list_path:
+            try:
+                list_file = _safe_mcp_path(list_path, label="清单")
+                lines = list_file.read_text(encoding="utf-8").splitlines()
+            except ValueError as exc:
+                return _error_result(str(exc))
+            except OSError as exc:
+                return _error_result(f"清单不可读：{exc}")
+            codes.extend(line.split("#", 1)[0].strip() for line in lines)
         codes = [code for code in codes if code]
         if not codes:
-            return _error_result("清单为空")
+            return _error_result("缺少 list 或 codes 参数" if not list_path else "清单为空")
         # 先校验 out，再查后端：越界 out 不应先消耗一批上游请求。
         out_path = str(arguments.get("out") or "").strip()
         out_file = None
@@ -366,9 +415,10 @@ class McpServer:
                 return _error_result(f"盘点表不可写：{exc}")
         completed = skipped = failed = unmatched = 0
         out_rows: list[str] = []
+        warnings: list[dict] = []
         for code in codes:
             try:
-                rows = self.backend.lookup(code)
+                rows, state = _query_result(self.backend, code)
             except ComplianceDenied:
                 # 40 是硬停止：不得继续查询后续编号，也不得写盘点表假装"部分完成"。
                 raise
@@ -376,6 +426,9 @@ class McpServer:
                 failed += 1
                 out_rows.append(f"{code}\t查询失败")
                 continue
+            status = _cache_status(state)
+            if status:
+                warnings.append({"code": code, **status})
             if not rows:
                 unmatched += 1
                 continue
@@ -394,16 +447,22 @@ class McpServer:
                 )
             except OSError as exc:
                 return _error_result(f"盘点表写入失败：{exc}")
-        return _text_result(
+        result = _text_result(
             f"总数 {len(codes)} | 完成 {completed} | 跳过 {skipped} | 失败 {failed} | 无源 {unmatched} | 盘点表 {out_path or '(未输出文件，仅统计)'}"
         )
+        if warnings:
+            result["content"].append({
+                "type": "text",
+                "text": json.dumps({"warnings": warnings}, ensure_ascii=False),
+            })
+        return result
 
     def _announcement(self, arguments: dict) -> dict:
         """公告元数据解析：与 pull 同源定位，但只回链接，不下文件、不写盘。"""
         ref = str(arguments.get("ref") or "").strip()
         if not ref:
             return _error_result("缺少 ref 参数")
-        from .cli import lookup
+        from .application import resolve as lookup
         from .domain import announcement, availability
         from .domain import attachment as att_domain
         from .sources import registry
@@ -414,7 +473,8 @@ class McpServer:
                 # （拉详情页 + persist_codes），_ann_store 已是结构只读库 + 写方法 no-op 门面。
                 ro = self._ann_store()
                 target = lookup.resolve(
-                    ro, ref, currency=self.backend, allow_network=False)
+                    ro, ref, currency=self.backend, allow_network=False,
+                    sources=registry())
                 ann = target["ann"]
                 window = availability.state(ann["published_on"])
                 source_id = lookup.source_of(ann["url"])["id"]
@@ -424,7 +484,7 @@ class McpServer:
                     # 也不能静默拿 mohurd 去解析一个根本不是它的页面结构。
                     raise NeedsHuman(
                         f"公告页归属站点无法识别（source_id={source_id}，url={ann['url']}）",
-                        hint="若站点改了域名请在 guiju/cli/lookup.py 的 _SOURCE_HOSTS 补映射，"
+                        hint="若站点改了域名请在 guiju/application/resolve.py 的 _SOURCE_HOSTS 补映射，"
                              "或为新站点补适配器",
                     )
                 names = announcement.names_of(ann["title"], ann["doc_name"])
@@ -575,7 +635,7 @@ def serve_stdio(server: McpServer) -> int:
     return 0
 
 
-def default_backend() -> NativeCurrency:
+def default_backend() -> object:
     from .currency import native_currency
 
     return native_currency()
@@ -755,6 +815,8 @@ def make_http_server(
     allowed_origins: list[str] | None = None,
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
     max_workers: int = DEFAULT_MAX_WORKERS,
+    allow_remote: bool = False,
+    bearer_token: str | None = None,
 ) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         server_version = "guiju-mcp"
@@ -799,8 +861,25 @@ def make_http_server(
                 return False
             return True
 
+        def _check_auth(self) -> bool:
+            if not getattr(self.server, "require_bearer", False):
+                return True
+            header = self.headers.get("Authorization", "")
+            prefix = "Bearer "
+            if not header.startswith(prefix):
+                self._send(401, b'{"error":"unauthorized"}',
+                           headers={"WWW-Authenticate": "Bearer"}, close=True)
+                return False
+            if not hmac.compare_digest(header[len(prefix):], self.server.bearer_token):
+                self._send(401, b'{"error":"unauthorized"}',
+                           headers={"WWW-Authenticate": "Bearer"}, close=True)
+                return False
+            return True
+
         def do_GET(self):
             if not self._check_host_origin():
+                return
+            if not self._check_auth():
                 return
             route = urlsplit(self.path).path
             if route == "/health":
@@ -816,6 +895,8 @@ def make_http_server(
                 self._send(404, b'{"error":"not found"}')
                 return
             if not self._check_host_origin():
+                return
+            if not self._check_auth():
                 return
             content_type = self.headers.get("Content-Type", "")
             if content_type.split(";", 1)[0].strip().lower() != "application/json":
@@ -869,10 +950,20 @@ def make_http_server(
         def log_message(self, format, *args):
             return
 
+    bearer = (bearer_token or os.environ.get("GUIJU_MCP_BEARER_TOKEN", "")).strip()
+    allow_bearer = bool(bearer)
     if not _is_loopback(host):
-        # 不阻断（可能是内网/容器部署），但 MCP 无任何鉴权，必须提示
-        print("! MCP HTTP 暴露在非回环地址，确认有网关/鉴权保护", file=sys.stderr, flush=True)
+        if not allow_remote:
+            raise ValueError(
+                "MCP HTTP 绑定非回环地址必须显式传 --allow-remote"
+            )
+        if not allow_bearer:
+            raise ValueError(
+                "MCP HTTP 远程绑定必须设置 GUIJU_MCP_BEARER_TOKEN（Bearer 鉴权）"
+            )
     httpd = _BoundedThreadingHTTPServer((host, port), Handler, max_workers=max_workers)
+    httpd.require_bearer = allow_bearer
+    httpd.bearer_token = bearer
     actual_port = int(httpd.server_address[1])
     httpd.request_timeout = request_timeout
     httpd.allowed_hosts = _default_allowed_hosts(host, actual_port)
@@ -913,10 +1004,13 @@ def serve_http(
     *,
     allowed_hosts: list[str] | None = None,
     allowed_origins: list[str] | None = None,
+    allow_remote: bool = False,
+    bearer_token: str | None = None,
 ) -> int:
     httpd = make_http_server(
         server, host, port, path,
         allowed_hosts=allowed_hosts, allowed_origins=allowed_origins,
+        allow_remote=allow_remote, bearer_token=bearer_token,
     )
     print(f"guiju mcp listening on http://{host}:{port}{path}", file=sys.stderr, flush=True)
     try:

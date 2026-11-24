@@ -420,6 +420,10 @@ class Store:
         ).fetchall()
 
     # ---------------------------------------------------------------- probe / meta
+    def persist_codes(self, ann_id: int, codes: Codes, doc_name: str, status: str | None = None) -> None:
+        """应用层端口：落一次 classify 结果；SQL 只留在适配器内。"""
+        persist_codes(self, ann_id, codes, doc_name, status=status)
+
     def log_probe(self, source: str, url: str, status: int | None, size: int | None,
                   outcome: str, note: str = "") -> None:
         self.db.execute(
@@ -512,6 +516,18 @@ class Store:
         return row["v"] if row else default
 
     # ---------------------------------------------------------------- stats
+    @property
+    def schema_version(self) -> int:
+        """对应用层暴露 schema 版本，不让 application 依赖模块常量。"""
+        return SCHEMA_VERSION
+
+    def probe_counts(self) -> dict[str, int]:
+        """时效探测台账的 outcome 计数（status 用），封装 SQL 留在适配器。"""
+        rows = self.db.execute(
+            "SELECT outcome, COUNT(*) c FROM probe GROUP BY outcome ORDER BY c DESC"
+        ).fetchall()
+        return {row["outcome"]: row["c"] for row in rows}
+
     def stats(self) -> dict:
         q = self.db.execute
         # published_on 可能为 NULL：不 WHERE 掉、用 COALESCE 归入 ""，

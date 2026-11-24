@@ -1,7 +1,7 @@
 # 根源性修复方案（2026-11-18）
 
 - 状态：**已批准，A1/B1 已通过独立复验（A1 2026-11-18，B1 2026-11-19）；B2/W1 已发布，B3 实施完成并通过独立 review（2026-11-22，已本地合并到 refactor/root-cause）**；与 ADR 0004 配套
-- **后续状态见新记录（2026-11-22）**：1.2.0a4 发版记录见 [docs/audit/release-1.2.0a4-20261122.md](audit/release-1.2.0a4-20261122.md)；本文件中的历史读数（如 B3 的 1010 tests）保留不改写。
+- **后续状态见新记录（2026-11-22）**：1.2.0a4 发版记录见 [docs/audit/release-1.2.0a4-20261122.md](audit/release-1.2.0a4-20261122.md)；本文件中的历史读数（如 B3 的 1010 tests）保留不改写。1.2.0 正式发版记录见 [docs/audit/release-1.2.0-20261124.md](audit/release-1.2.0-20261124.md)。
 - 关系：问题清单见 `docs/audit/code-review-2026-11-18.md`；架构决策见 `docs/adr/0004-contract-first-hardening.md`
 - 目标：不是"把 10 条 P1 修一遍"，而是把产生这 10 条的六个根因收口，做到"修一类、不留同类"。
 - 交付：1.1.1（安全热修，不改退出码/DB/工具形状；MCP 路径收紧是安全例外）+ 1.2.0（契约与架构收口）。
@@ -470,7 +470,7 @@ B1 非阻塞残余清理（2026-11-20）：显式 sync 与 autosync 共用 flock
 
 - [x] W1 net 收口（v1.2.0-alpha.3，2026-11-21；证据 `docs/audit/net-layer-b2-w1-20261121.md`）
 - [x] W2/W3/W4 状态/空值/存储收口（B3 实施完成并通过独立 review；证据 `docs/audit/b3-w2-w3-w4-20261122.md`）
-- [ ] W5 application/MCP 收口
-- [ ] W6 领域收口
-- [ ] W7 文档/CI/发布
-- [ ] 1.2.0 回退演练
+- [x] W5 application/MCP 收口（B4 rev2，2026-11-23 双审 APPROVE；证据 `docs/audit/b4-application-mcp-20261123.md`）
+- [x] W6 领域收口（B3 已完成；见 `docs/audit/b3-w2-w3-w4-20261122.md`）
+- [ ] W7 文档/CI/发布（B5 工程门禁已演练，正式 1.2.0 发版待所有者 tag/push/部署窗口；见 `docs/audit/b5-release-gate-20261123.md`）
+- [ ] 1.2.0 回退演练（wheel+DB 本地演练已通过；hk 真实 systemd 重启/回滚待所有者窗口）

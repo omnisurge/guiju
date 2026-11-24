@@ -382,7 +382,7 @@ class SidecarE2ETest(unittest.TestCase):
                     "download_url": self.download_url,
                 }]
 
-            def download_to(self, url, part, referer=None):
+            def download_to(self, url, part, referer=None, probe_sink=None):
                 return mohurd.download_to(url, part, referer or "")
 
         source = LocalSource()

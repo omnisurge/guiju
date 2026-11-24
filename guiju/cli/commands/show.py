@@ -13,7 +13,13 @@ from ..lookup import resolve
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
-    target = resolve(store, args.ref)
+    ctx = getattr(args, "app_context", None)
+    target = resolve(
+        store,
+        args.ref,
+        currency=getattr(ctx, "currency", None),
+        sources=getattr(ctx, "sources", None),
+    )
     ann = target["ann"]
     ann_id = int(ann["id"])
     mentions = store.mentions_for(ann_id)
@@ -25,7 +31,8 @@ def run(store: Store, args: argparse.Namespace) -> int:
     local = None
     for key in dict.fromkeys(keys):
         for readable in (False, True):
-            found = find_cached(default_out_dir(), key, ann["doc_name"] or "", readable=readable, ann_id=ann_id)
+            out_dir = getattr(ctx, "out_dir", None) or default_out_dir()
+            found = find_cached(out_dir, key, ann["doc_name"] or "", readable=readable, ann_id=ann_id)
             if found:
                 path, digest = found
                 local = {

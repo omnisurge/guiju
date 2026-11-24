@@ -224,7 +224,7 @@ class _FakeSource:
     def attachments(self, html):
         return list(self.atts)
 
-    def download_to(self, url, part_path, referer=None):
+    def download_to(self, url, part_path, referer=None, probe_sink=None):
         self.downloads.append(url)
         return 2048, "pdf", None
 
@@ -438,7 +438,7 @@ class McpAnnouncementSurfaceTest(unittest.TestCase):
     """
 
     def test_mcp_announcement_reports_ambiguous_for_multi_name_title(self):
-        from guiju.cli import lookup as lookup_mod
+        from guiju.application import resolve as lookup_mod
         from guiju.mcp import McpServer
 
         class Backend:
@@ -491,7 +491,7 @@ class McpAnnouncementSurfaceTest(unittest.TestCase):
 
     def test_mcp_announcement_name_path_uses_second_book(self):
         # P1-3 跨面：按第二本名称查 MCP，也必须用第二本做附件匹配，不能回退 doc_name。
-        from guiju.cli import lookup as lookup_mod
+        from guiju.application import resolve as lookup_mod
         from guiju.mcp import McpServer
 
         class Backend:

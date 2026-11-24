@@ -79,7 +79,12 @@ def _currency_upstream_error(cur) -> str | None:
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
-    base_currency = currency_mod.CachedCurrency(store=store)
+    ctx = getattr(args, "app_context", None)
+    base_currency = (
+        ctx.currency
+        if ctx is not None and getattr(ctx, "currency", None) is not None
+        else currency_mod.CachedCurrency(store=store)
+    )
     cur = _ReplayCurrency(base_currency)
     # 名称（CJK）输入时效服务必然"没收录"：只有编号形态才问时效。
     # W3-6：地标代码的 20/34 不是命令失败 —— 时效路由可能没覆盖上海体系，
@@ -111,6 +116,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
             args.ref,
             currency=currency_mod.NullCurrency() if args.offline else cur,
             allow_network=not args.offline,
+            sources=getattr(ctx, "sources", None),
         )
     except (NotIndexed, AmbiguousTarget) as exc:
         # 本地定位失败不算命令失败：时效结论仍然要输出，错误只在提示里说明

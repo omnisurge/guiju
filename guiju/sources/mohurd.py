@@ -144,9 +144,9 @@ def magic_of(body: bytes) -> str:
     return MAGIC_UNKNOWN
 
 
-def download(file_url: str, referer: str) -> tuple[bytes, str]:
+def download(file_url: str, referer: str, probe_sink=None) -> tuple[bytes, str]:
     """下载附件并做魔数判定。非 PDF 一律报错，绝不落盘。"""
-    body, content_type = compliance.download_bytes(file_url, referer=referer, timeout=180)
+    body, content_type = compliance.download_bytes(file_url, referer=referer, timeout=180, probe_sink=probe_sink)
     magic = magic_of(body)
     if magic == MAGIC_PDF:
         return body, magic
@@ -158,9 +158,9 @@ def download(file_url: str, referer: str) -> tuple[bytes, str]:
     raise BadAttachment(detail_msg)
 
 
-def download_to(file_url: str, part_path: str, referer: str) -> tuple[int, str, int]:
+def download_to(file_url: str, part_path: str, referer: str, probe_sink=None) -> tuple[int, str, int]:
     """流式下载到 `part_path`（断点续传），返回 (bytes, magic, resumed_from)。"""
-    info = compliance.download(file_url, part_path, referer=referer, timeout=180)
+    info = compliance.download(file_url, part_path, referer=referer, timeout=180, probe_sink=probe_sink)
     with open(part_path, "rb") as fp:
         head = fp.read(64)
     magic = magic_of(head)

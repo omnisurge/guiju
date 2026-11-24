@@ -96,8 +96,8 @@ def _section(text: str, title: str) -> str:
 
 
 def _release_section(text: str, pretty: str) -> str:
-    """按 '## v<pretty>（<date>，预发布）' 取当前版本段，不绑定具体日期。"""
-    pattern = re.compile(rf"^##\s+v{re.escape(pretty)}（[^）]*，预发布）\s*$", flags=re.MULTILINE)
+    """按 '## v<pretty>（<date>[，预发布]）' 取当前版本段，不绑定日期/状态。"""
+    pattern = re.compile(rf"^##\s+v{re.escape(pretty)}（[^）]*）\s*$", flags=re.MULTILINE)
     match = pattern.search(text)
     if not match:
         return ""

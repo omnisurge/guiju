@@ -104,10 +104,10 @@ def find(ref: str, *, prefer_exact: bool = True) -> list[dict]:
     return core.find(ref, searcher=search, prefer_exact=prefer_exact)
 
 
-def download_to(file_url: str, part_path: str, referer: str = REFERER) -> tuple[int, str, int]:
+def download_to(file_url: str, part_path: str, referer: str = REFERER, probe_sink=None) -> tuple[int, str, int]:
     """流式下载（支持断点续传）。令牌按当前时间现算，所以归档的 URL 不会带过期令牌。"""
     signed = _signed_download_url(file_url)
-    info = compliance.download(signed, part_path, referer=referer, timeout=180)
+    info = compliance.download(signed, part_path, referer=referer, timeout=180, probe_sink=probe_sink)
     with open(part_path, "rb") as fp:
         head = fp.read(64)
     magic = magic_of(head)
@@ -117,9 +117,11 @@ def download_to(file_url: str, part_path: str, referer: str = REFERER) -> tuple[
     return int(info["bytes"]), magic, int(info["resumed_from"])
 
 
-def download(file_url: str, referer: str = REFERER) -> tuple[bytes, str]:
+def download(file_url: str, referer: str = REFERER, probe_sink=None) -> tuple[bytes, str]:
     signed = _signed_download_url(file_url)
-    body, _content_type = compliance.download_bytes(signed, referer=referer, timeout=180)
+    body, _content_type = compliance.download_bytes(
+        signed, referer=referer, timeout=180, probe_sink=probe_sink
+    )
     magic = magic_of(body)
     if magic != MAGIC_PDF:
         raise BadAttachment("上海标准接口返回的不是 PDF（可能是错误页或文件已撤下）")
