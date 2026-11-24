@@ -18,6 +18,7 @@
 | 单测 | Python 3.10/3.13 各 1223/1223 通过；`scripts/ci.sh` exit 0（含 ruff、docs-only 44 项、离线 e2e 4/4） |
 | 完整联网 e2e | `python3 scripts/e2e.py --require-currency` 39/39 通过，exit 0；日志 `/tmp/guiju-e2e-20261124-release.log`，2781 bytes，SHA-256 `e5baf8f1848f3a3d5c0cb1e5211536f67b9cbb4d36f494a3047468da834e331e` |
 | 发布产物 | wheel `guiju-1.2.0-py3-none-any.whl` SHA-256 `bf94c340ca66135747bbf7e2d33d92fd05d1274d410a0e74948fc0bec5db7b04`；sdist `guiju-1.2.0.tar.gz` SHA-256 `62bc9ec32ca4fff61d56cd9cc1b609f8c0e78a43790a75474ffbe1ea4c6cca86` |
+| hk 生产部署 | 2026-11-24 已升级 1.2.0（/opt/guiju，Python 3.11.2）；强化 unit SHA-256 `187d3bb33b7b2be72fb06b728376e0120214b362d0a82abd7c816e2bfaaefb73`，`User=guiju` / `Group=guiju` / `ProtectSystem=strict` / `ReadWritePaths=/var/lib/guiju`；本地 health `{"ok":true}`，MCP query `GB 55037-2022` 返回 current，公网无 Bearer 401；完成 1.2.0a4↔1.2.0 真实 systemd 回退/再部署。备份 `/opt/guiju/backup-1.2.0a4-20261124-222402/`；未访问 NAS |
 | 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.2.0 |
 
 ## v1.2.0-alpha.4（2026-11-22，预发布）

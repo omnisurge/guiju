@@ -6,13 +6,11 @@
 - 影响：MCP HTTP 并发、MCP 查询结果完整性、B4 application/ports/adapters、MCP 服务面、csres 缓存、M4 观察、测试与 1.2.0 稳定版
 - 关系：补充 ADR 0004，不取代；ADR 0004 的 D1-D6 仍是长期契约。本文记录 2026-11-22 复核后的增量结论、优先级和明确反驳。详细证据见 [external-review-2026-11-22.md](../audit/external-review-2026-11-22.md)。
 
-> **实施进度（2026-11-23 rev2，待独立复审）**：I1（D1/D2 的 MCP Outcome 修复）已完成并通过聚焦测试；
-> I2 已建立并接通 `application/ports/adapters`：resolve/status/sync/pull/cite 主编排进入 application，
-> CLI 只保留 parser/alias/render；MCP batch 已支持内联 `codes[]`（`list/out` 仅过渡兼容），非回环绑定
-> 已强制 `--allow-remote` + Bearer，systemd unit 已加 `User/Group/ProtectSystem/ReadWritePaths/
-> RestrictAddressFamilies`。rev2 修掉 `_finalize_body` 未定义回归并补真实落盘测试。
-> 独立复审 APPROVE 前，**D4 的 B4 仍不标完成，a4 不能当稳定版**。
-> 细节与验证记录见 [b4-application-mcp-20261123.md](../audit/b4-application-mcp-20261123.md)。
+> **实施进度（2026-11-24 最终）**：I1（D1/D2 的 MCP Outcome 修复）与 I2（B4 application/ports/adapters、MCP 服务面、systemd 强化）已完成，B4 于 2026-11-23 通过独立双 APPROVE。
+> P2-4 由所有者 2026-11-24 确认保持安全默认（csres 明文结果不权威、不落缓存）；P2-5 probe_sink 已接线，`body_sha256` 仍未进入 pull 成功 JSON。
+> **1.2.0 已于 2026-11-24 正式发布（tag `v1.2.0`）**：全量 1223×2、CI、docs-only 44、artifacts 58、离线 e2e 4/4、完整联网 e2e 39/39；wheel/DB/systemd 回退演练完成；hk 已部署 1.2.0 与强化 unit，并完成真实 1.2.0a4↔1.2.0 回退/再部署。
+> I3 中 P2-4/P2-5 的处置已按本 ADR 关闭；`CachedCurrency` 旧分支与测试命名收敛仍作为非阻塞后续技术债，不影响 1.2.0 发布。
+> 细节见 [b4-application-mcp-20261123.md](../audit/b4-application-mcp-20261123.md)、[p2-4-p2-5-decision-20261123.md](../audit/p2-4-p2-5-decision-20261123.md)、[b5-release-gate-20261123.md](../audit/b5-release-gate-20261123.md)、[release-1.2.0-20261124.md](../audit/release-1.2.0-20261124.md)。
 
 > 编号说明：本文 P1/P2/P3 采用 2026-11-22 外部评审编号，不是 ADR 0004 的旧问题编号。
 

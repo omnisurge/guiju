@@ -6,10 +6,10 @@
 > **文档状态（2026-11-20）**：本文是当前架构说明；历史 ADR 0001/0002 与 `docs/audit/*` 只作背景，不代表当前实现。
 >
 > **修订状态（2026-11-23）**：B2/W1 已完成 `guiju/net/` 出站收口（见 `docs/audit/net-layer-b2-w1-20261121.md`）；
-> B4 实现已完成，等待独立复审：`application/`、`ports/`、`adapters/` 已建立并接通，
+> B4 已通过独立双审（2026-11-23 APPROVE）：`application/`、`ports/`、`adapters/` 已建立并接通，
 > `resolve`/`status`/`sync`/`pull`/`cite` 的编排已迁入应用层，AppContext 已贯通 CLI 入口，
 > MCP 只读 Store 与 batch 内联 `codes[]` 已就位（`list/out` 仅 1.1.1-1.2.0 过渡）。
-> 独立复审 APPROVE 前不把 B4 标成完成；B5/1.2.0 稳定版与回退演练仍待执行。ADR 0004（已批准，2026-11-18）仍是实施依据，
+> B5/1.2.0 已于 2026-11-24 发布，hk 强化 unit 与 1.2.0 已部署并完成真实回退/再部署。ADR 0004（已批准，2026-11-18）仍是实施依据，
 > `docs/remediation-2026-11-18.md` 跟踪 B2-B5。
 
 > **修订（2026-11-09）**：归档责任划给 kb-system 后，本地不再有正文注册表：
@@ -26,7 +26,7 @@
 | 产品是什么 | 一个**只做三件事**的命令行工具：把政府已公开的工程建设标准**目录**同步到本地、把**正文**按编号取到本地、把**引用串**交给监理文书。 |
 | 实现语言 | **Python 3.10+（CI 矩阵 3.10/3.12/3.13），仅标准库**，不引任何第三方运行时依赖。 |
 | 产品界面语言 | **中文文案 + 英文机器字段**：命令、帮助、人读输出全中文；`--json` 的 key 全英文。主路径是 JSON。 |
-| 架构形态 | 当前：`cli → application → domain/ports → adapters`（B4 实现完成，待独立复审）；全部出站经唯一 `guiju/net` 层；`compliance` 是兼容 facade。`application/ports/adapters` 已建立，Pull/Cite 主编排与 MCP 内联 batch 已接通。 |
+| 架构形态 | 当前：`cli → application → domain/ports → adapters`（B4 已收口，双审通过）；全部出站经唯一 `guiju/net` 层；`compliance` 是兼容 facade。`application/ports/adapters` 已建立，Pull/Cite 主编排与 MCP 内联 batch 已接通。 |
 | 数据主体 | **公告**（现实存在物）与**版本号**（引用主体）分层，M:N + 角色；绝不把编号当主键。 |
 | 最核心竞争力 | 不是"能抓"，是**"不抓错"**与**"改版后 24 小时修好"**。 |
 
@@ -183,7 +183,7 @@ stderr : 全部日志、进度、警告
 
 **依赖方向铁律（现状）**：`guiju/net` 是唯一出站层；`guiju.compliance` 只是保留公共名字的兼容 facade（真正的白名单、限速、重定向与 block 判定都在 `guiju.net`）；`domain` 不碰网络与 DB；`sources` 只把 HTML 变成 DTO，绝不写库；`currency` 适配器不落文件；`store` 不负责网络。违反即评审不通过。
 
-**B4 进度（2026-11-23，实现完成待复审）**：`application/`、`ports/`、`adapters/` 已建立；`application.resolve` 承接编号/名称解析，`application.status` 承接状态投影，`application.sync` 承接同步用例（CLI 注入 crawl/lock），`application.pull`/`application.cite` 承接完整编排，`application.cite.check_currency` 承接时效校验。CLI 的 `lookup.py` 是兼容 shim；MCP 已改用只读 Store，batch 支持内联 `codes[]`，`list/out` 仅保留 1.1.1-1.2.0 过渡。独立复审 APPROVE 前，本节仍按“待确认”对待。
+**B4 进度（2026-11-23 实现，2026-11-23 双审 APPROVE；2026-11-24 随 1.2.0 发布）**：`application/`、`ports/`、`adapters/` 已建立；`application.resolve` 承接编号/名称解析，`application.status` 承接状态投影，`application.sync` 承接同步用例（CLI 注入 crawl/lock），`application.pull`/`application.cite` 承接完整编排，`application.cite.check_currency` 承接时效校验。CLI 的 `lookup.py` 是兼容 shim；MCP 已改用只读 Store，batch 支持内联 `codes[]`，`list/out` 仅保留 1.1.1-1.2.0 过渡。独立双审已 APPROVE，B4 已完成；本节按已落地结构描述。
 
 ### 目标目录（B4 已落地方向）
 
