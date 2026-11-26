@@ -1,10 +1,9 @@
 """guiju MCP 服务面：query / verify / batch / announcement 的纯标准库 JSON-RPC。
 
 默认 stdio；--http 时提供 POST /mcp（仅 application/json；Host/Origin 按可配置
-allowlist 校验，防 DNS rebinding）。业务后端优先使用 NativeCurrency.query() 的不可变 Outcome（旧适配器保留
-Currency.lookup 兼容路径），不在这里复制适配器、正文下载或时效路由逻辑
-（旧 spec-currency 已退役）。
-announcement 只回公告元数据（编号/名称/可得性/附件链接）；会抓公告页解析附件，但不下载正文、不写盘。
+allowlist 校验，防 DNS rebinding）。业务后端强制要求实现并发安全的 query(code) -> Outcome，
+不在这里复制适配器、正文下载或时效路由逻辑（旧 spec-currency 已退役）；
+batch 仅接受内联 codes[] 数组（不读写服务端文件），announcement 只回公告元数据（不落盘）。
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from urllib.parse import urlsplit
 from ._version import __version__
 from .domain.currency import Record
 from .errors import ComplianceDenied, GuijuError, NeedsHuman
-from .ports.currency import CurrencyPort
+from .ports.currency import McpCurrencyPort
 
 PROTOCOL_VERSIONS = ("2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 DEFAULT_PATH = "/mcp"
@@ -56,14 +55,13 @@ TOOLS = (
     },
     {
         "name": "batch",
-        "description": "批量盘点规范清单：优先传 codes 内联编号数组；list/out 文件路径仅为过渡兼容（限制在 GUIJU_HOME/mcp 下，1.3.0 删除）。",
+        "description": "批量盘点规范清单：仅接受内联 codes[] 编号数组（1.3.0 起已移除服务端文件路径模式）。",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "codes": {"type": "array", "items": {"type": "string"}},
-                "list": {"type": "string", "description": "deprecated：过渡期文件清单"},
-                "out": {"type": "string", "description": "deprecated：过渡期盘点表输出"},
             },
+            "required": ["codes"],
         },
     },
     {
@@ -76,41 +74,6 @@ TOOLS = (
         },
     },
 )
-
-
-def _mcp_io_root() -> Path:
-    """MCP batch 的唯一文件根：GUIJU_HOME/mcp。
-
-    服务面不再拥有 CLI 的任意路径能力。根不存在时按需创建（batch 本来就要
-    落 out 文件）；但拒绝把根本身做成 symlink/普通文件，避免部署时把
-    "专用根"指到 `/` 或其他宽目录后重新放开任意路径。
-    """
-    from .store.sqlite import default_home
-
-    raw = default_home() / "mcp"
-    if raw.is_symlink():
-        raise ValueError(f"MCP 文件根不能是 symlink：{raw}")
-    if raw.exists() and not raw.is_dir():
-        raise ValueError(f"MCP 文件根不是目录：{raw}")
-    raw.mkdir(parents=True, exist_ok=True)
-    return raw.resolve()
-
-
-def _safe_mcp_path(raw: str, *, label: str) -> Path:
-    """把 batch 的 list/out 限制在 GUIJU_HOME/mcp 下，跟随 symlink 后仍须在根内。"""
-    path = Path(raw).expanduser()
-    root = _mcp_io_root()
-    if not path.is_absolute():
-        # 相对路径按 MCP 专用根解析，避免服务进程 cwd（/opt/guiju）把合法清单挡在外面。
-        path = root / path
-    resolved = path.resolve()
-    try:
-        resolved.relative_to(root)
-    except ValueError as exc:
-        raise ValueError(
-            f"{label}必须位于 {root} 下（收到 {raw}）；MCP 不接受任意文件路径"
-        ) from exc
-    return resolved
 
 
 def _text_result(text: str, *, error: bool = False) -> dict:
@@ -142,12 +105,7 @@ def _as_error(exc: GuijuError) -> dict:
 
 
 def _cache_status(source: object) -> dict | None:
-    """读取一次查询结果的状态，返回 null 表示没有需要上报的告警。
-
-    source 可以是 NativeCurrency.query() 返回的不可变 Outcome，也可以是
-    旧适配器/测试替身（提供 stale/from_cache 等属性）。MCP 不再从共享
-    backend 实例上摸 last_outcome，避免 HTTP 并发请求互相覆盖状态。
-    """
+    """从 query() 返回的不可变 Outcome 读取缓存/完整性状态；null 表示无告警。"""
     stale = bool(getattr(source, "stale", False))
     from_cache = bool(getattr(source, "from_cache", False))
     age = getattr(source, "cache_age_days", None)
@@ -180,48 +138,57 @@ def _cache_warning_text(status: dict) -> str:
 
 
 def _query_result(backend: object, code: str) -> tuple[list[Record], object]:
-    """优先用 query() 的不可变 Outcome，旧后端保留 lookup() 兼容路径。
-
-    NativeCurrency.query() 返回 Outcome；旧测试替身可能只有 lookup()。
-    只要拿到 Outcome，就绝不能再回头读 backend.last_outcome。
-    """
+    """强制通过并发安全的 query(code) -> Outcome 获取结果。"""
     query = getattr(backend, "query", None)
-    if callable(query):
-        outcome = query(code)
-        rows = getattr(outcome, "results", None)
-        if rows is not None:
-            return list(rows), outcome
-    return backend.lookup(code), backend  # type: ignore[attr-defined]
+    if not callable(query):
+        raise TypeError(
+            f"MCP 后端 {type(backend).__name__} 必须实现 query(code) -> Outcome"
+            "（1.3.0 已移除 lookup() 兼容路径）"
+        )
+    outcome = query(code)
+    rows = getattr(outcome, "results", None)
+    if rows is None:
+        raise TypeError(
+            f"MCP 后端 {type(backend).__name__}.query() 必须返回含 results 的 Outcome"
+        )
+    return list(rows), outcome
 
 
 class _ReadOnlyStore:
-    """announcement 工具专用的只读存储门面。
+    """announcement 工具专用的白名单只读存储代理。
 
-    契约是"只回元数据、不落盘"：resolve 在读路径上若走到缓存/持久化分支，
-    会写 edition / mention / scan / corpus_meta。
-    这里把所有已知写方法拦成 no-op（或返回"什么都没写"的占位），读方法原样转发；
-    底层 Store 由 _ensure_readonly_catalog 以 mode=ro 打开，形成双保险。
-    注意：缺库/0 字节时 _ensure_readonly_catalog 会先建一次空 schema（只有表结构，
-    不含任何公告数据），之后才启用本门面。
+    契约是"只回元数据、不落盘"：仅放行显式登记的只读查询方法与路径元数据；
+    任何已知或未来新增的写方法、未知属性以及底层 .db 句柄一律拒绝访问，
+    并与 _ensure_readonly_catalog 打开的 mode=ro SQLite 连接形成双保险。
     """
 
-    _WRITES = frozenset({
-        "upsert_announcement", "upsert_edition", "add_mention", "mark_scanned",
-        "log_probe", "record_body_hash", "set_meta", "commit",
+    _ALLOWED_READS = frozenset({
+        "path",
+        "schema_version",
+        "get_ann",
+        "get_ann_by_url",
+        "count_announcements",
+        "max_published_on",
+        "catalog_entries",
+        "mentions_for",
+        "find_by_code",
+        "get_meta",
+        "catalog_age_days",
+        "catalog_meta_corrupt",
+        "source_meta",
+        "probe_counts",
+        "probe_summary_by_source",
+        "body_hash_coverage",
+        "stats",
     })
 
     def __init__(self, inner) -> None:
         self._inner = inner
 
-    def __getattr__(self, name):
-        if name in self._WRITES:
-            # upsert_announcement 期望返回 (row_id, inserted)，record_body_hash 返回 bool；其余一律 no-op。
-            if name == "upsert_announcement":
-                return lambda *a, **k: (0, False)
-            if name == "record_body_hash":
-                return lambda *a, **k: False
-            return lambda *a, **k: None
-        return getattr(self._inner, name)
+    def __getattr__(self, name: str):
+        if name in self._ALLOWED_READS:
+            return getattr(self._inner, name)
+        raise AttributeError(f"_ReadOnlyStore 拒绝访问非只读白名单属性：{name}")
 
     def close(self) -> None:
         self._inner.close()
@@ -330,7 +297,12 @@ def _ensure_readonly_catalog(path: Path):
 class McpServer:
     """与传输无关的 JSON-RPC 处理核心。"""
 
-    def __init__(self, backend: CurrencyPort, *, store_path: str | Path | None = None) -> None:
+    def __init__(self, backend: McpCurrencyPort, *, store_path: str | Path | None = None) -> None:
+        if not callable(getattr(backend, "query", None)):
+            raise TypeError(
+                f"MCP 后端 {type(backend).__name__} 必须实现 query(code) -> Outcome"
+                "（1.3.0 已移除 lookup() 兼容路径）"
+            )
         self.backend = backend
         # announcement 的共享只读存储：避免每请求跑一次建表/迁移 DDL。
         # CPython sqlite3 模块 threadsafety=1，共享连接必须外部串行化 ——
@@ -388,47 +360,29 @@ class McpServer:
         return result
 
     def _batch(self, arguments: dict) -> dict:
-        codes: list[str] = []
+        if "list" in arguments or "out" in arguments:
+            return _error_result(
+                "1.3.0 已移除 MCP batch 的 list/out 文件路径模式，请改用内联 codes[] 数组"
+            )
+        if "codes" not in arguments or arguments.get("codes") is None:
+            return _error_result("缺少 codes 参数")
         raw_codes = arguments.get("codes")
-        if raw_codes is not None:
-            if not isinstance(raw_codes, list) or any(not isinstance(c, str) for c in raw_codes):
-                return _error_result("codes 必须是字符串数组")
-            codes.extend(c.strip() for c in raw_codes if c.strip())
-        list_path = str(arguments.get("list") or "").strip()
-        if list_path:
-            try:
-                list_file = _safe_mcp_path(list_path, label="清单")
-                lines = list_file.read_text(encoding="utf-8").splitlines()
-            except ValueError as exc:
-                return _error_result(str(exc))
-            except OSError as exc:
-                return _error_result(f"清单不可读：{exc}")
-            codes.extend(line.split("#", 1)[0].strip() for line in lines)
-        codes = [code for code in codes if code]
+        if not isinstance(raw_codes, list) or any(not isinstance(c, str) for c in raw_codes):
+            return _error_result("codes 必须是字符串数组")
+        codes = [c.strip() for c in raw_codes if c.strip()]
         if not codes:
-            return _error_result("缺少 list 或 codes 参数" if not list_path else "清单为空")
-        # 先校验 out，再查后端：越界 out 不应先消耗一批上游请求。
-        out_path = str(arguments.get("out") or "").strip()
-        out_file = None
-        if out_path:
-            try:
-                out_file = _safe_mcp_path(out_path, label="盘点表")
-            except ValueError as exc:
-                return _error_result(str(exc))
-            except OSError as exc:
-                return _error_result(f"盘点表不可写：{exc}")
+            return _error_result("codes 不能为空")
+
         completed = skipped = failed = unmatched = 0
-        out_rows: list[str] = []
         warnings: list[dict] = []
         for code in codes:
             try:
                 rows, state = _query_result(self.backend, code)
             except ComplianceDenied:
-                # 40 是硬停止：不得继续查询后续编号，也不得写盘点表假装"部分完成"。
+                # 40 是硬停止：不得继续查询后续编号。
                 raise
             except GuijuError:
                 failed += 1
-                out_rows.append(f"{code}\t查询失败")
                 continue
             status = _cache_status(state)
             if status:
@@ -441,18 +395,8 @@ class McpServer:
                     skipped += 1
                 else:
                     completed += 1
-                out_rows.append("\t".join((code, row.code, row.status, row.name, row.implement_date, row.source)))
-        if out_file is not None:
-            try:
-                out_file.write_text(
-                    "# format: guiju-mcp-batch-v1\n# 输入\t规范号\t状态\t名称\t实施日期\t数据源\n"
-                    + "\n".join(out_rows) + ("\n" if out_rows else ""),
-                    encoding="utf-8",
-                )
-            except OSError as exc:
-                return _error_result(f"盘点表写入失败：{exc}")
         result = _text_result(
-            f"总数 {len(codes)} | 完成 {completed} | 跳过 {skipped} | 失败 {failed} | 无源 {unmatched} | 盘点表 {out_path or '(未输出文件，仅统计)'}"
+            f"总数 {len(codes)} | 完成 {completed} | 跳过 {skipped} | 失败 {failed} | 无源 {unmatched}"
         )
         if warnings:
             result["content"].append({

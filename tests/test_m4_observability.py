@@ -71,7 +71,9 @@ class BodyHashTest(unittest.TestCase):
 
             with Store(db_path, read_only=True) as ro_inner:
                 ro = _ReadOnlyStore(ro_inner)
-                self.assertFalse(ro.record_body_hash(ann_id, h1, source="mohurd"))
+                with self.assertRaises(AttributeError):
+                    _ = ro.record_body_hash
+                self.assertIsNone(getattr(ro, "record_body_hash", None))
             with Store(db_path) as verify_store:
                 self.assertEqual(verify_store.get_ann(ann_id)["body_sha256"], h2)
 

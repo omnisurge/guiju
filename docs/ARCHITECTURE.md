@@ -8,7 +8,7 @@
 > **修订状态（2026-11-23）**：B2/W1 已完成 `guiju/net/` 出站收口（见 `docs/audit/net-layer-b2-w1-20261121.md`）；
 > B4 已通过独立双审（2026-11-23 APPROVE）：`application/`、`ports/`、`adapters/` 已建立并接通，
 > `resolve`/`status`/`sync`/`pull`/`cite` 的编排已迁入应用层，AppContext 已贯通 CLI 入口，
-> MCP 只读 Store 与 batch 内联 `codes[]` 已就位（`list/out` 仅 1.1.1-1.2.0 过渡）。
+> MCP 只读 Store 与 batch 内联 `codes[]` 已就位（`list/out` 已于 v1.3.0-S4 移除，服务面纯只读）。
 > B5/1.2.0 已于 2026-11-24 发布，hk 强化 unit 与 1.2.0 已部署并完成真实回退/再部署。ADR 0004（已批准，2026-11-18）仍是实施依据，
 > `docs/remediation-2026-11-18.md` 跟踪 B2-B5。
 
@@ -183,7 +183,7 @@ stderr : 全部日志、进度、警告
 
 **依赖方向铁律（现状）**：`guiju/net` 是唯一出站层（白名单、限速、重定向与 block 判定都在 `guiju.net`，`guiju.compliance` 已于 v1.3.0-S3a 退场，`guiju/currency/httpx.py` 已于 S3b 退场）；`domain` 不碰网络与 DB；`sources` 只把 HTML 变成 DTO，绝不写库；`currency` 适配器不落文件；`store` 不负责网络。违反即评审不通过。
 
-**B4 进度与 S3c 收口**：`application/`、`ports/`、`adapters/` 已建立；`application.resolve` 承接编号/名称解析，`application.status` 承接状态投影，`application.sync` 承接同步用例（CLI 注入 crawl/lock），`application.pull`/`application.cite` 承接完整编排，`application.cite.check_currency` 承接时效校验。v1.3.0-S3c 起，过渡期的 `cli/lookup.py`、`cli/render.py` 与 `cli/commands/{pull,cite}.py` 的 `sys.modules` alias 已全部删除，`application/` 不再隐式构造 `Store` / `CachedCurrency` / `registry()`，统一由入口 `AppContext` 显式装配；MCP 已改用只读 Store，batch 支持内联 `codes[]`，`list/out` 仅保留到 S4 前过渡。
+**B4 进度与 S3c/S4 收口**：`application/`、`ports/`、`adapters/` 已建立；`application.resolve` 承接编号/名称解析，`application.status` 承接状态投影，`application.sync` 承接同步用例（CLI 注入 crawl/lock），`application.pull`/`application.cite` 承接完整编排，`application.cite.check_currency` 承接时效校验。v1.3.0-S3c 起，过渡期的 `cli/lookup.py`、`cli/render.py` 与 `cli/commands/{pull,cite}.py` 的 `sys.modules` alias 已全部删除，`application/` 不再隐式构造 `Store` / `CachedCurrency` / `registry()`，统一由入口 `AppContext` 显式装配；v1.3.0-S4 起，MCP 服务面完成纯净化——删除 `batch` 的 `list/out` 服务端文件路径模式与 `backend.lookup()` 兼容路径，强制后端提供并发安全的 `query(code) -> Outcome`，并将 `_ReadOnlyStore` 收敛为显式只读白名单代理。
 
 ### 目录结构（v1.3.0-S3c 现状对齐）
 

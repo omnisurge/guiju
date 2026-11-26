@@ -24,7 +24,7 @@
     ssh hk 'install -d -o root -g root -m 0755 /opt/guiju'
     tar --exclude='__pycache__' --exclude='*.pyc' -C . -cf - guiju \
       | ssh hk 'tar -C /opt/guiju -xf -'
-    ssh hk 'install -d -o guiju -g guiju -m 0750 /var/lib/guiju /var/lib/guiju/mcp /var/lib/guiju/currency-cache'
+    ssh hk 'install -d -o guiju -g guiju -m 0750 /var/lib/guiju /var/lib/guiju/currency-cache'
     ssh hk 'chown -R guiju:guiju /var/lib/guiju'
     scp deploy/guiju-mcp.service hk:/etc/systemd/system/guiju-mcp.service
     # enable --now 对已在运行的旧 unit 不会重启；必须 restart 才让 User/Group/ProtectSystem 生效。
@@ -47,4 +47,4 @@
 - 公网 Caddy 保留原始 Host 转发到 127.0.0.1:18083：GUIJU_MCP_ALLOWED_HOSTS / GUIJU_MCP_ALLOWED_ORIGINS 必须包含公网域名（Unicode 与 punycode 都写）；命令行可用 `--allowed-host` / `--allowed-origin`（可重复）追加。
 - 消费者已于 2026-11-01 切换：desktop/web 的 guiju MCP URL 指向 https://guiju.守夜人.中国/mcp，并带 Bearer header；desktop 的 MCP id/serverName 已改为 mcp-guiju/guiju。
 - 切换后已做 hk health + GB/JGJ/CJJ/JTG/DB 冒烟；重启 DSH 后以 hk 端点生效。
-- 本服务不读取 ~/.tencentcloud 凭据，不做正文下载。
+- 本服务不读取 ~/.tencentcloud 凭据，不做正文下载；`batch` 仅接受内联 `codes[]`（1.3.0 起已移除服务端文件路径读写）。

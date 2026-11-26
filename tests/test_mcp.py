@@ -8,17 +8,23 @@ import urllib.request
 from unittest import mock
 
 from guiju.currency.model import Record
+from guiju.currency.native import Outcome
 from guiju.mcp import McpServer, make_http_server
 
 
 class FakeBackend:
+    name = "fake"
+
     def __init__(self, rows):
         self.rows = rows
         self.calls = []
 
-    def lookup(self, code):
+    def query(self, code):
         self.calls.append(code)
-        return list(self.rows.get(code, []))
+        return Outcome(tuple(self.rows.get(code, ())), self.name)
+
+    def lookup(self, code):
+        return list(self.query(code).results)
 
 
 class McpProtocolTest(unittest.TestCase):
@@ -45,6 +51,9 @@ class McpProtocolTest(unittest.TestCase):
         self.assertEqual(init["result"]["serverInfo"]["name"], "guiju")
         tools = self.call("tools/list")["result"]["tools"]
         self.assertEqual([tool["name"] for tool in tools], ["query", "verify", "batch", "announcement"])
+        batch_tool = next(tool for tool in tools if tool["name"] == "batch")
+        self.assertEqual(set(batch_tool["inputSchema"]["properties"]), {"codes"})
+        self.assertEqual(batch_tool["inputSchema"]["required"], ["codes"])
 
     def test_query_and_verify_text_contract(self):
         query = self.call("tools/call", {"name": "query", "arguments": {"code": "GB50011"}})

@@ -205,6 +205,6 @@
 - [x] **S3a**：`guiju/compliance.py` 退场（`sources` 直连 `guiju/net`）
 - [x] **S3b**：`guiju/currency/httpx.py` 退场（`currency` 直连 `guiju/net/metadata.py` + `jsonutil`）
 - [x] **S3c**：`cli/lookup.py` 等 shim 与 `application/` 隐式构造兜底退场
-- [ ] **S4**：MCP 服务面纯净化（上游核验后删 `batch` `list`/`out`、删 `lookup()` 兼容路径、`_ReadOnlyStore` 白名单化）
+- [x] **S4**：MCP 服务面纯净化（已核验本机 DSH / `kb-system` / `jl-docx` 上游无 `list`/`out` 依赖后，删 `batch` `list`/`out`、删 `lookup()` 兼容路径、`_ReadOnlyStore` 白名单化）
 - [ ] **S5**：测试体系收敛（27 个 `test_fix_*.py` 按领域归并）
 - [ ] **S6**：`v1.3.0` 冻结、联网 e2e、产物构建、本地与 hk 回退演练及 ADR 0006 归档

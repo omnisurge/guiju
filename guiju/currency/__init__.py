@@ -56,6 +56,11 @@ class NullCurrency:
 
     name = "none"
 
+    def query(self, code: str):
+        from .native import Outcome
+
+        return Outcome((), self.name)
+
     def lookup(self, code: str) -> list[Record]:
         return []
 
@@ -70,6 +75,12 @@ class MisconfiguredCurrency:
     def __init__(self, name: str, reason: str) -> None:
         self.name = name
         self.reason = reason
+
+    def query(self, code: str):
+        raise SourceUnreachable(
+            self.reason,
+            hint="GUIJU_CURRENCY 可用值：native[:off|缓存目录] / off（spec-currency 已退役）",
+        )
 
     def lookup(self, code: str) -> list[Record]:
         raise SourceUnreachable(

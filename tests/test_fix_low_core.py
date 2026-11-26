@@ -17,12 +17,18 @@ from unittest.mock import patch
 
 from guiju import cli
 from guiju import mcp as mcp_mod
+from guiju.currency.native import Outcome
 from guiju.mcp import McpServer, make_http_server
 from guiju.store.sqlite import Store
 
 
 class _FakeBackend:
-    """McpServer 只需一个 lookup()，announcement 不真正调用它。"""
+    """McpServer 需 query() -> Outcome；announcement 通过 resolve() 调 lookup()。"""
+
+    name = "fake"
+
+    def query(self, code):
+        return Outcome((), self.name)
 
     def lookup(self, code):
         return []
@@ -220,7 +226,7 @@ class TestSharedAnnouncementStore(unittest.TestCase):
         class _FakeStore:
             def __init__(self, path=None, **kw):
                 created.append({"path": path, **kw})
-                self.db = object()  # _ReadOnlyStore 只转发属性，对象身份能认
+                self.db = object()  # 底层连接对象（_ReadOnlyStore 白名单代理不会暴露 .db）
                 self.closed = 0
                 instances.append(self)
 

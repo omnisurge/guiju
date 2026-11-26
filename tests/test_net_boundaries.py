@@ -331,6 +331,45 @@ class NetBoundaryTest(unittest.TestCase):
                             leftovers.append(f"{rel}:{node.lineno}:{target.id}")
         self.assertEqual(leftovers, [])
 
+    def test_mcp_service_surface_purified(self):
+        from guiju import mcp as mcp_mod
+
+        tree = ast.parse((ROOT / "guiju/mcp.py").read_text("utf-8"))
+        defs = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        ]
+        def_names = {node.name for node in defs}
+        self.assertNotIn("_mcp_io_root", def_names)
+        self.assertNotIn("_safe_mcp_path", def_names)
+
+        ro_cls = next(node for node in defs if isinstance(node, ast.ClassDef) and node.name == "_ReadOnlyStore")
+        ro_assigns = {
+            target.id
+            for node in ast.walk(ro_cls)
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        self.assertIn("_ALLOWED_READS", ro_assigns)
+        self.assertNotIn("_WRITES", ro_assigns)
+
+        qr_fn = next(node for node in defs if isinstance(node, ast.FunctionDef) and node.name == "_query_result")
+        lookup_calls = [
+            node
+            for node in ast.walk(qr_fn)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "lookup"
+        ]
+        self.assertEqual(lookup_calls, [])
+
+        batch_tool = next(t for t in mcp_mod.TOOLS if t["name"] == "batch")
+        props = set(batch_tool["inputSchema"]["properties"])
+        self.assertEqual(props, {"codes"})
+        self.assertEqual(batch_tool["inputSchema"]["required"], ["codes"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -457,10 +457,14 @@ class McpAnnouncementSurfaceTest(unittest.TestCase):
 
     def test_mcp_announcement_reports_ambiguous_for_multi_name_title(self):
         from guiju.application import resolve as lookup_mod
+        from guiju.currency.native import Outcome
         from guiju.mcp import McpServer
 
         class Backend:
             name = "fake"
+
+            def query(self, code):
+                return Outcome((), self.name)
 
             def lookup(self, code):
                 return []
@@ -510,10 +514,14 @@ class McpAnnouncementSurfaceTest(unittest.TestCase):
     def test_mcp_announcement_name_path_uses_second_book(self):
         # P1-3 跨面：按第二本名称查 MCP，也必须用第二本做附件匹配，不能回退 doc_name。
         from guiju.application import resolve as lookup_mod
+        from guiju.currency.native import Outcome
         from guiju.mcp import McpServer
 
         class Backend:
             name = "fake"
+
+            def query(self, code):
+                return Outcome((), self.name)
 
             def lookup(self, code):
                 return []

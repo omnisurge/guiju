@@ -23,10 +23,11 @@ from pathlib import Path
 from unittest import mock
 
 from guiju import cli
+from guiju.currency import MisconfiguredCurrency, NullCurrency
 from guiju.currency.model import Record
 from guiju.currency.native import Outcome
 from guiju.errors import ComplianceDenied, NeedsHuman, NoCurrencyRecord
-from guiju.mcp import McpServer, make_http_server
+from guiju.mcp import McpServer, _query_result, make_http_server
 from guiju.store.sqlite import Store
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -41,16 +42,21 @@ def _record(code="GB 50011-2010", status="current", *, source="csres", fallback=
 
 
 class _FakeBackend:
+    name = "fake"
+
     def __init__(self, rows=None):
         self.rows = rows or {}
         self.calls = []
 
-    def lookup(self, code):
+    def query(self, code):
         self.calls.append(code)
         value = self.rows.get(code, [])
         if isinstance(value, Exception):
             raise value
-        return list(value)
+        return Outcome(tuple(value), self.name)
+
+    def lookup(self, code):
+        return list(self.query(code).results)
 
 
 class _OutcomeBackend:
@@ -182,14 +188,12 @@ def _error_payload(result):
 
 
 class BatchComplianceStopTest(unittest.TestCase):
-    """batch 命中 40 必须立即整批停止：B/C 不得再被调用，out 不得落盘。"""
+    """batch 命中 40 必须立即整批停止，且 1.3.0 彻底拒收 list/out 文件路径。"""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
-        self.mcp_root = self.home / "mcp"
-        self.mcp_root.mkdir()
         self.addCleanup(mock.patch.stopall)
         mock.patch.dict(os.environ, {"GUIJU_HOME": str(self.home)}).start()
         self.server = McpServer(_FakeBackend())
@@ -201,24 +205,20 @@ class BatchComplianceStopTest(unittest.TestCase):
             "B": [_record()],
             "C": [_record()],
         })
-        (self.mcp_root / "list.txt").write_text("A\nB\nC\n", encoding="utf-8")
-        result = self.server._call("batch", {"list": "list.txt", "out": "out.tsv"})
+        result = self.server._call("batch", {"codes": ["A", "B", "C"]})
         self.assertTrue(result["isError"])
         payload = _error_payload(result)
         self.assertEqual(payload["exit"], 40)
         self.assertEqual(payload["reason"], "compliance")
         self.assertIn("合规", payload["error"])
         self.assertEqual(self.server.backend.calls, ["A"])
-        self.assertFalse((self.mcp_root / "out.tsv").exists(), "40 之后不得写盘点表")
-        # 内联 codes 也必须硬停止：B 不得被查询，更不得借 out 写半份结果。
-        self.server.backend = _FakeBackend({
-            "A": ComplianceDenied("命中合规护栏", hint="立即停止"),
-            "B": [_record()],
-        })
-        result = self.server._call("batch", {"codes": ["A", "B"], "out": "codes-out.tsv"})
-        self.assertTrue(result["isError"])
-        self.assertEqual(self.server.backend.calls, ["A"])
-        self.assertFalse((self.mcp_root / "codes-out.tsv").exists())
+        # 混传 out 必须在任何后端调用前被拒绝，更不能借 out 建 mcp 目录。
+        self.server.backend = _FakeBackend({"A": [_record()], "B": [_record()]})
+        rejected = self.server._call("batch", {"codes": ["A", "B"], "out": "codes-out.tsv"})
+        self.assertTrue(rejected["isError"])
+        self.assertIn("1.3.0", rejected["content"][0]["text"])
+        self.assertEqual(self.server.backend.calls, [])
+        self.assertFalse((self.home / "mcp").exists())
         # 非法/空 codes 不得静默返回空成功。
         self.assertTrue(self.server._call("batch", {"codes": []})["isError"])
         self.assertTrue(self.server._call("batch", {"codes": "A"})["isError"])
@@ -229,33 +229,77 @@ class BatchComplianceStopTest(unittest.TestCase):
             "B": [_record()],
             "C": NoCurrencyRecord("时效未覆盖"),
         })
-        (self.mcp_root / "list.txt").write_text("A\nB\nC\n", encoding="utf-8")
-        result = self.server._call("batch", {"list": "list.txt"})
-        self.assertFalse(result["isError"])
-        text = result["content"][0]["text"]
-        self.assertIn("总数 3", text)
-        self.assertIn("完成 1", text)
-        self.assertIn("失败 2", text)
-        self.assertEqual(self.server.backend.calls, ["A", "B", "C"])
-        # B4：内联 codes[] 与过渡期 list 走同一套逐项语义，不需要任何文件路径。
         result = self.server._call("batch", {"codes": ["A", "B", "C"]})
         self.assertFalse(result["isError"])
         text = result["content"][0]["text"]
         self.assertIn("总数 3", text)
         self.assertIn("完成 1", text)
         self.assertIn("失败 2", text)
-        # codes 与 out 可以同时使用：只允许写盘点表，不要求文件清单。
-        result = self.server._call("batch", {"codes": ["A"], "out": "codes-out.tsv"})
-        self.assertFalse(result["isError"])
-        self.assertTrue((self.mcp_root / "codes-out.tsv").is_file())
+        self.assertEqual(self.server.backend.calls, ["A", "B", "C"])
 
     def test_compliance_from_tool_call_has_json_error_payload(self):
         self.server.backend = _FakeBackend({"A": ComplianceDenied("blocked")})
-        (self.mcp_root / "list.txt").write_text("A\n", encoding="utf-8")
-        response = _call(self.server, "batch", {"list": "list.txt"})
+        response = _call(self.server, "batch", {"codes": ["A"]})
         self.assertTrue(response["result"]["isError"])
         payload = _error_payload(response["result"])
         self.assertEqual(payload["exit"], 40)
+
+    def test_list_or_out_arguments_are_rejected_without_backend_calls(self):
+        self.server.backend = _FakeBackend({"A": [_record()]})
+        for args in (
+            {"list": "list.txt"},
+            {"out": "out.tsv"},
+            {"codes": ["A"], "list": "list.txt"},
+        ):
+            with self.subTest(args=args):
+                res = _call(self.server, "batch", args)["result"]
+                self.assertTrue(res["isError"])
+                self.assertIn("codes[]", res["content"][0]["text"])
+        self.assertEqual(self.server.backend.calls, [])
+        self.assertFalse((self.home / "mcp").exists())
+
+
+class StrictOutcomeBackendContractTest(unittest.TestCase):
+    """S4：删除 lookup() 兼容路径，强制后端提供 query(code) -> Outcome。"""
+
+    def test_lookup_only_backend_rejected_everywhere(self):
+        class LookupOnly:
+            def lookup(self, code):
+                return [_record()]
+
+        with self.assertRaises(TypeError):
+            McpServer(LookupOnly())
+        with self.assertRaises(TypeError):
+            _query_result(LookupOnly(), "GB50011")
+
+    def test_query_without_results_attribute_rejected(self):
+        class NonOutcomeBackend:
+            def query(self, code):
+                return [_record()]
+
+        with self.assertRaises(TypeError):
+            _query_result(NonOutcomeBackend(), "GB50011")
+        server = McpServer(NonOutcomeBackend())
+        self.addCleanup(server.close)
+        resp = _call(server, "query", {"code": "GB50011"})["result"]
+        self.assertTrue(resp["isError"])
+
+    def test_null_and_misconfigured_currencies_work_under_strict_contract(self):
+        null_server = McpServer(NullCurrency())
+        self.addCleanup(null_server.close)
+        q = _call(null_server, "query", {"code": "GB50011"})["result"]
+        self.assertFalse(q["isError"])
+        self.assertEqual(q["content"][0]["text"], "无命中")
+        v = _call(null_server, "verify", {"code": "GB50011"})["result"]
+        self.assertEqual(v["content"][0]["text"], "unknown")
+        b = _call(null_server, "batch", {"codes": ["GB50011"]})["result"]
+        self.assertIn("无源 1", b["content"][0]["text"])
+
+        bad_server = McpServer(MisconfiguredCurrency("broken", "配置损坏"))
+        self.addCleanup(bad_server.close)
+        err = _call(bad_server, "query", {"code": "GB50011"})["result"]
+        self.assertTrue(err["isError"])
+        self.assertEqual(_error_payload(err)["exit"], 20)
 
 
 # --------------------------------------------------------------------------- W5-3
@@ -316,12 +360,14 @@ class CacheWarningTest(unittest.TestCase):
     """stale/from_cache 必须上报，但 verify 的 content[0] 必须保持精确 code\\tstatus。"""
 
     class CacheBackend:
-        stale = True
-        from_cache = True
-        cache_age_days = 9.5
-
-        def lookup(self, code):
-            return [_record()]
+        def query(self, code):
+            return Outcome(
+                (_record(),),
+                "csres",
+                stale=True,
+                from_cache=True,
+                cache_age=9.5 * 86400,
+            )
 
     def test_verify_content_zero_exact_and_second_item_reports_cache(self):
         server = McpServer(self.CacheBackend())
@@ -578,7 +624,7 @@ class HttpSecurityTest(unittest.TestCase):
         lock = threading.Lock()
 
         class SlowBackend:
-            def lookup(self, code):
+            def query(self, code):
                 nonlocal active, peak
                 with lock:
                     active += 1
@@ -586,7 +632,7 @@ class HttpSecurityTest(unittest.TestCase):
                 time.sleep(0.15)
                 with lock:
                     active -= 1
-                return [_record()]
+                return Outcome((_record(),), "slow")
 
         port = self._start(McpServer(SlowBackend()), max_workers=2)
         results = []
@@ -880,18 +926,32 @@ class ReadOnlyAnnouncementStoreTest(unittest.TestCase):
     def test_direct_delete_on_underlying_db_is_rejected(self):
         self._seed()
         ro = self.server._ann_store()
+        with self.assertRaises(AttributeError):
+            _ = ro.db
         with self.assertRaises(sqlite3.OperationalError):
-            ro.db.execute("DELETE FROM announcement")
+            ro._inner.db.execute("DELETE FROM announcement")
         self.assertEqual(ro.count_announcements(), 1)
 
     def test_readonly_facade_keeps_blocking_known_writes(self):
         ann_id = self._seed()
         ro = self.server._ann_store()
-        rid, inserted = ro.upsert_announcement(
-            "https://bzjg.zjw.sh.gov.cn/api/notice/99", "2024-01-05", "t", "d", "other")
-        self.assertEqual((rid, inserted), (0, False))
+        for attr in (
+            "upsert_announcement",
+            "upsert_edition",
+            "add_mention",
+            "mark_scanned",
+            "persist_codes",
+            "log_probe",
+            "record_body_hash",
+            "set_meta",
+            "commit",
+            "delete_all",
+        ):
+            with self.assertRaises(AttributeError, msg=attr):
+                getattr(ro, attr)
         self.assertEqual(ro.count_announcements(), 1)
         self.assertIsNotNone(ro.get_ann(ann_id))
+        self.assertEqual(len(ro.mentions_for(ann_id)), 1)
 
     def test_readonly_parent_directory_uses_immutable(self):
         # 父目录 0555 时 SQLite 无法建 -shm；_schema_snapshot 必须用 immutable=1，

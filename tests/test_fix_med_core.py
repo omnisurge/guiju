@@ -17,6 +17,7 @@ from unittest import mock
 
 from guiju import report as render
 from guiju.cli.commands import which as which_mod
+from guiju.currency.native import Outcome
 from guiju.domain.codes import Confidence, Role, classify
 from guiju.mcp import McpServer, _ReadOnlyStore
 from guiju.store.sqlite import Store
@@ -114,6 +115,9 @@ class StatsNoDoubleCountTest(unittest.TestCase):
 class _FakeBackend:
     name = "fake"
 
+    def query(self, code):
+        return Outcome((), self.name)
+
     def lookup(self, code):
         return []
 
@@ -165,7 +169,7 @@ class AnnouncementReadOnlyTest(unittest.TestCase):
             store_arg = resolve_mock.call_args.args[0]
             self.assertIsInstance(store_arg, _ReadOnlyStore)
 
-    def test_readonly_store_noops_writes(self):
+    def test_readonly_store_blocks_non_whitelist_attributes(self):
         with tempfile.TemporaryDirectory() as home, mock.patch.dict(
             "os.environ", {"GUIJU_HOME": home}
         ):
@@ -173,19 +177,25 @@ class AnnouncementReadOnlyTest(unittest.TestCase):
             real.upsert_announcement("https://x/keep.html", "2024-01-01", "t", "d", "national")
             real.commit()
             ro = _ReadOnlyStore(real)
-            # 只读读通：读方法原样转发
+            # 只读读通：白名单内的读方法原样转发
             self.assertEqual(ro.count_announcements(), 1)
-            # 写路径全部吃掉：upsert_announcement 还要回 (id, inserted) 形状
-            _rid, inserted = ro.upsert_announcement(
-                "https://x/new.html", "2024-01-02", "t", "d", "national")
-            self.assertFalse(inserted)
-            ro.upsert_edition("GB1-2020", "GB 1-2020", "t", "parsed")
-            ro.add_mention(1, "GB1-2020", "primary", "ev")
-            ro.mark_scanned(1, 1)
-            ro.log_probe("mohurd", "https://x", 200, 1, "ok")
-            ro.set_meta("k", "v")
-            self.assertFalse(ro.record_body_hash(1, "deadbeef", source="mohurd"))
-            ro.commit()
+            self.assertIsNotNone(ro.get_ann(1))
+            # 写路径、底层 .db 及任意未列名属性全部拒绝
+            for attr in (
+                "upsert_announcement",
+                "upsert_edition",
+                "add_mention",
+                "mark_scanned",
+                "persist_codes",
+                "log_probe",
+                "record_body_hash",
+                "set_meta",
+                "commit",
+                "db",
+                "future_write_method",
+            ):
+                with self.assertRaises(AttributeError, msg=attr):
+                    getattr(ro, attr)
             # 底层库纹丝不动
             self.assertEqual(real.count_announcements(), 1)
             self.assertIsNone(real.get_ann_by_url("https://x/new.html"))

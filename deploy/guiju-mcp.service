@@ -18,8 +18,6 @@ Environment=GUIJU_CURRENCY_CACHE=/var/lib/guiju/currency-cache
 # 兼容浏览器实际发送的 ASCII Host 与服务端配置检查。
 Environment=GUIJU_MCP_ALLOWED_HOSTS=guiju.守夜人.中国,guiju.xn--gmqx6we1b.xn--fiqs8s
 Environment=GUIJU_MCP_ALLOWED_ORIGINS=https://guiju.守夜人.中国,https://guiju.xn--gmqx6we1b.xn--fiqs8s
-# MCP batch 的 list/out 只能落在 GUIJU_HOME/mcp；升级后先建好专用根。
-ExecStartPre=/bin/mkdir -p /var/lib/guiju/mcp
 ExecStart=/usr/bin/python3 -m guiju mcp --http --host 127.0.0.1 --port 18083 --path /mcp
 Restart=on-failure
 RestartSec=3

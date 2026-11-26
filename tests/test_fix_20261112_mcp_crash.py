@@ -13,15 +13,16 @@ from guiju.mcp import McpServer, make_http_server
 
 
 class CrashingBackend:
-    """lookup 直接抛运行时错误（模拟 sqlite3.Error / RuntimeError 等）。"""
+    """query 直接抛运行时错误（模拟 sqlite3.Error / RuntimeError 等）。"""
 
-    def lookup(self, code):
+    def query(self, code):
         raise RuntimeError("simulated backend crash")
 
 
 class McpCrashIsolationTest(unittest.TestCase):
     def setUp(self):
         self.server = McpServer(CrashingBackend())
+        self.addCleanup(self.server.close)
 
     def _call(self, name, arguments):
         payload = {"jsonrpc": "2.0", "method": "tools/call", "id": 7,
