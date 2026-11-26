@@ -1,5 +1,11 @@
 # 变更记录
 
+## Unreleased
+
+> 目标版本：1.4.0（开发进行中，详见 `docs/spec-1.4.0.md` 与 ADR 0007）。
+
+- S0：立 ADR 0007 与 `docs/spec-1.4.0.md` 规划标准图集有效期校验/完整索引与 MCP `atlas_search`；`pyproject.toml` 升级 PEP 639 元数据（消除 `SetuptoolsDeprecationWarning`）；归档国标电子书库离线黄金 HTML 夹具。
+
 ## 1.3.0 — 2026-11-26（1.3.0 正式发布）
 
 - **新增能力（M4 改版观测闭环）**：`announcement.body_sha256` 落库并在页面内容指纹变化时记录 `body_changed` 与提示、`pull` 成功 JSON 附带 `body_sha256`/`body_changed`（HTML 公告页）、`MetadataClient` 接入 `probe_sink`、新增 `guiju sources [--probe] [--json]`（默认零联网汇总本地目录水位与探针台账，`--probe` 按 `1.2s/host` 限速发只读探活）。

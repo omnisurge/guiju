@@ -2,3 +2,4 @@
 tests/fixtures/currency/*.gbk binary
 tests/fixtures/currency/*.json -text
 tests/fixtures/currency/*.html binary
+tests/fixtures/atlas/*.html binary
