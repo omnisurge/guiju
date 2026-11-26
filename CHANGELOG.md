@@ -5,6 +5,7 @@
 > 目标版本：1.4.0（开发进行中，详见 `docs/spec-1.4.0.md` 与 ADR 0007）。
 
 - S0：立 ADR 0007 与 `docs/spec-1.4.0.md` 规划标准图集有效期校验/完整索引与 MCP `atlas_search`；`pyproject.toml` 升级 PEP 639 元数据（消除 `SetuptoolsDeprecationWarning`）；归档国标电子书库离线黄金 HTML 夹具。
+- S1：新增纯领域模块 `guiju/domain/atlas.py`（国标/中南标/省标图集号识别、严格防串号/防与上海地标及国行标混淆匹配，以及 `search`/`detail`/`conciseCatalogueList` 纯 HTML 解析器）及全套离线黄金夹具单测 `tests/test_atlas_domain.py`。
 
 ## 1.3.0 — 2026-11-26（1.3.0 正式发布）
 

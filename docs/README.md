@@ -24,7 +24,7 @@
 | [docs/audit/external-review-2026-11-22.md](audit/external-review-2026-11-22.md) | 当前复核记录 | 外部评审逐条验证、证据与错误反驳 |
 | [docs/remediation-2026-11-18.md](remediation-2026-11-18.md) | 历史计划（B2-B5 已完成；1.2.0 发版） | 1.2.0 契约整改的过程记录 |
 | [docs/spec-1.3.0.md](spec-1.3.0.md) | 已完成（v1.3.0 已发布，S0–S6 全部闭环） | v1.3.0 迭代 Spec（M4 观测、去冗余、兼容门面退场、MCP 纯净化、测试收敛） |
-| [docs/spec-1.4.0.md](spec-1.4.0.md) | 实施中（v1.4.0 分步执行，S0 完成） | v1.4.0 迭代 Spec（标准图集时效/替代链、`guiju atlas`、MCP `atlas_search`、PEP 639） |
+| [docs/spec-1.4.0.md](spec-1.4.0.md) | 实施中（v1.4.0 分步执行，S0–S1 完成） | v1.4.0 迭代 Spec（标准图集时效/替代链、`guiju atlas`、MCP `atlas_search`、PEP 639） |
 | [docs/adr/README.md](adr/README.md) | 当前索引 | 本项目 ADR 0001–0007 的唯一状态入口 |
 | [CHANGELOG.md](../CHANGELOG.md) | 当前 | 版本变更 |
 
