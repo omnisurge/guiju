@@ -24,6 +24,7 @@ GOLDEN = {
         "replaces": "GB50011-2010（2016年版）",
         "raw": "现行",
         "fallback": "",
+        "replaced_by": "",
     }],
     "ccsn_jgj147.json": [{
         "code": "JGJ147-2016",
@@ -35,6 +36,7 @@ GOLDEN = {
         "replaces": "JGJ147-2004",
         "raw": "现行",
         "fallback": "",
+        "replaced_by": "",
     }],
 }
 
@@ -119,6 +121,7 @@ class CcsnParseTest(OfflineTestCase):
             "code": "GB/T 1-2000（2024年版）", "name": "标准 名称", "status": "unknown",
             "publish_date": "2024-04-24", "implement_date": "2024-08-01",
             "source": "ccsn", "replaces": "GB 1-1980、GB 1-1990", "raw": " \t局修完成 \n", "fallback": "",
+            "replaced_by": "",
         })
 
     def test_unrecognised_dates_are_preserved_without_invention(self):
@@ -129,7 +132,7 @@ class CcsnParseTest(OfflineTestCase):
         record = parse_ccsn(response({"StandardCode": "GB1", "StandardCNName": None, "StandardState": None}))[0]
         self.assertEqual(asdict(record), {
             "code": "GB1", "name": "", "status": "unknown", "publish_date": "", "implement_date": "",
-            "source": "ccsn", "replaces": "", "raw": "", "fallback": "",
+            "source": "ccsn", "replaces": "", "raw": "", "fallback": "", "replaced_by": "",
         })
         # W3/P1-4：缺 Total、或有行但 0 条可解析，都不是「源明确回答没有」，必须 50。
         for raw in (b"{}", b'{"List":null}', response(None), response({}, {"StandardCode": " \t"})):

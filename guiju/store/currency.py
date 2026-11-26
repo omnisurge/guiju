@@ -32,6 +32,8 @@ _MAX_CACHE_BYTES = 4 * 1024 * 1024
 _ENVELOPE_FIELDS = frozenset({"schema", "namespace", "query", "queried_at", "results"})
 _RECORD_FIELDS = tuple(field.name for field in fields(Record))
 _RECORD_FIELD_SET = frozenset(_RECORD_FIELDS)
+_OPTIONAL_LEGACY_RECORD_FIELDS = frozenset({"replaced_by"})
+_REQUIRED_RECORD_FIELDS = _RECORD_FIELD_SET - _OPTIONAL_LEGACY_RECORD_FIELDS
 _STATUSES = frozenset({"current", "superseded", "upcoming", "withdrawn", "unknown"})
 
 
@@ -46,13 +48,16 @@ def _timestamp(value: object) -> float | None:
     return stamp if math.isfinite(stamp) and stamp > 0 else None
 
 
-def _valid_record(row: object) -> bool:
-    return (
-        isinstance(row, dict)
-        and row.keys() == _RECORD_FIELD_SET
-        and all(isinstance(row[key], str) for key in _RECORD_FIELDS)
-        and row["status"] in _STATUSES
-    )
+def _valid_record(row: object, *, allow_legacy_missing: bool = False) -> bool:
+    if not isinstance(row, dict):
+        return False
+    keys = row.keys()
+    if allow_legacy_missing:
+        if not (_REQUIRED_RECORD_FIELDS <= keys <= _RECORD_FIELD_SET):
+            return False
+    elif keys != _RECORD_FIELD_SET:
+        return False
+    return all(isinstance(row[key], str) for key in keys) and row["status"] in _STATUSES
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict:
@@ -110,7 +115,7 @@ class DiskCurrencyCache:
         stamp = _timestamp(data["queried_at"])
         if stamp is None or stamp > now or not isinstance(data["results"], list):
             return None
-        if not all(_valid_record(row) for row in data["results"]):
+        if not all(_valid_record(row, allow_legacy_missing=True) for row in data["results"]):
             return None
         return CacheEntry(stamp, tuple(Record(**row) for row in data["results"]))
 

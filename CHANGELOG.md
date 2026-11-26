@@ -6,6 +6,7 @@
 
 - S0：立 ADR 0007 与 `docs/spec-1.4.0.md` 规划标准图集有效期校验/完整索引与 MCP `atlas_search`；`pyproject.toml` 升级 PEP 639 元数据（消除 `SetuptoolsDeprecationWarning`）；归档国标电子书库离线黄金 HTML 夹具。
 - S1：新增纯领域模块 `guiju/domain/atlas.py`（国标/中南标/省标图集号识别、严格防串号/防与上海地标及国行标混淆匹配，以及 `search`/`detail`/`conciseCatalogueList` 纯 HTML 解析器）及全套离线黄金夹具单测 `tests/test_atlas_domain.py`。
+- S2：新增 `guiju/currency/chinabuilding.py` 国标电子书库图集时效适配器（方案 A：列表检索 + 精确废止追查 `detail/show` 获取 `代替标准号`）并接入 `default_registry`；为 `MetadataPolicy`/`MetadataClient` 增加按端点字节上限（8 MB 仅限 `/zbooklib/conciseCatalogueList`，防止重定向放宽）；`Record` 增 `replaced_by` 且 `DiskCurrencyCache` 向下兼容存量 `v1.3.0` 缓存；收紧无年份专业前缀白名单并通过全套内存 HTTPS 与缓存契约测试。
 
 ## 1.3.0 — 2026-11-26（1.3.0 正式发布）
 

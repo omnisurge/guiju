@@ -20,23 +20,28 @@ class Record:
     publish_date: str = ""
     raw: str = ""
     fallback: str = ""  # 备源名；缓存重放也不能丢掉这条来源告警
+    replaced_by: str = ""
 
     @property
     def is_current(self) -> bool:
         return self.status == "current"
 
     def as_payload(self) -> dict:
-        # CLI/TSV 五字段投影（which/cite/lookup 的 currency[]），契约不变。
-        return {
+        # CLI/TSV 五字段投影（which/cite/lookup 的 currency[]），契约不变；
+        # 仅当 replaced_by 非空时增量透传替代号（例如废止图集的代替标准号）。
+        payload = {
             "code": self.code,
             "status": self.status,
             "name": self.name,
             "implement_date": self.implement_date,
             "source": self.source,
         }
+        if self.replaced_by:
+            payload["replaced_by"] = self.replaced_by
+        return payload
 
     def cache_payload(self) -> dict:
-        # 缓存落库投影（M2）：在 CLI 投影之上补 replaces/fallback。
+        # 缓存落库投影（M2）：在 CLI 投影之上补 replaces/replaced_by/fallback。
         # 备源应答重放时不许伪装成主源——fallback 告警必须随记录存活。
         return {
             "code": self.code,
@@ -45,6 +50,7 @@ class Record:
             "implement_date": self.implement_date,
             "source": self.source,
             "replaces": self.replaces,
+            "replaced_by": self.replaced_by,
             "fallback": self.fallback,
         }
 

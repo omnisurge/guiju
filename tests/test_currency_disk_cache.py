@@ -232,7 +232,13 @@ class DiskCurrencyCacheTest(unittest.TestCase):
                 data = copy.deepcopy(good)
                 del data["results"][0][field]
                 path.write_text(json.dumps(data), encoding="utf-8")
-                self.assert_miss()
+                if field == "replaced_by":
+                    self.assertEqual(
+                        self.cache.get(QUERY),
+                        CacheEntry(self.now, (replace(RECORD, replaced_by=""),)),
+                    )
+                else:
+                    self.assert_miss()
         for status in ("", "CURRENT", "现行", "invalid"):
             data = copy.deepcopy(good)
             data["results"][0]["status"] = status
@@ -242,6 +248,27 @@ class DiskCurrencyCacheTest(unittest.TestCase):
         data["results"][0]["extra"] = "unknown schema field"
         path.write_text(json.dumps(data), encoding="utf-8")
         self.assert_miss()
+
+    def test_legacy_v1_3_record_without_replaced_by_is_readable_and_replaced_by_roundtrips(self):
+        # 存量 hk v1.3.0 缓存不含 replaced_by 键：升级后仍可直接命中，写入新记录则带全字段。
+        legacy_row = asdict(RECORD)
+        del legacy_row["replaced_by"]
+        path, data = self.seed(records=[])
+        data["results"] = [legacy_row]
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(self.cache.get(QUERY), CacheEntry(self.now, (replace(RECORD, replaced_by=""),)))
+
+        atlas_record = Record(
+            code="16G101-1",
+            status="superseded",
+            name="混凝土结构施工图平面整体表示方法制图规则和构造详图",
+            implement_date="2016-09-01",
+            source="chinabuilding",
+            replaced_by="22G101-1",
+        )
+        self.cache.put("16G101-1", [atlas_record], namespace="chinabuilding:official-single-v1:scheme-a")
+        loaded = self.cache.get("16G101-1", namespace="chinabuilding:official-single-v1:scheme-a")
+        self.assertEqual(loaded, CacheEntry(self.now, (atlas_record,)))
 
     def test_one_bad_record_rejects_whole_entry_not_partial_or_negative(self):
         path, good = self.seed()

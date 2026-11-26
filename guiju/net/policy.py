@@ -7,7 +7,14 @@ import urllib.parse
 from collections.abc import Callable, Mapping
 
 from ..errors import ComplianceDenied, SourceUnreachable
-from .endpoints import DEFAULT_METADATA_ENDPOINTS, DEFAULT_METADATA_FORM_HOSTS, SHANGHAI_HOST, SHANGHAI_PORT
+from .endpoints import (
+    CHINABUILDING_HOST,
+    DEFAULT_METADATA_ENDPOINTS,
+    DEFAULT_METADATA_FORM_HOSTS,
+    DEFAULT_METADATA_MAX_BYTES,
+    SHANGHAI_HOST,
+    SHANGHAI_PORT,
+)
 
 
 class BodyPolicy:
@@ -84,6 +91,7 @@ class MetadataPolicy:
         *,
         max_bytes: int = 2_000_000,
         form_hosts: frozenset[str] | None = None,
+        max_bytes_by_endpoint: Mapping[tuple[str, str], int] | None = None,
     ) -> None:
         self.endpoints: dict[str, dict[str, frozenset[str]]] = {
             host: dict(paths) for host, paths in (endpoints or DEFAULT_METADATA_ENDPOINTS).items()
@@ -92,6 +100,20 @@ class MetadataPolicy:
         self.form_hosts: frozenset[str] = (
             DEFAULT_METADATA_FORM_HOSTS if form_hosts is None else frozenset(form_hosts)
         )
+        raw_limits = DEFAULT_METADATA_MAX_BYTES if max_bytes_by_endpoint is None else max_bytes_by_endpoint
+        self.max_bytes_by_endpoint: dict[tuple[str, str], int] = {
+            (host.lower(), normalize_path(path)): int(limit)
+            for (host, path), limit in raw_limits.items()
+        }
+
+    def max_bytes_for(self, url: str) -> int:
+        try:
+            parts = urllib.parse.urlsplit(url)
+        except ValueError:
+            return self.max_bytes
+        host = (parts.hostname or "").lower()
+        path = normalize_path(parts.path)
+        return self.max_bytes_by_endpoint.get((host, path), self.max_bytes)
 
     def check_url(self, url: str) -> str:
         try:
@@ -109,7 +131,11 @@ class MetadataPolicy:
             or parts.username is not None
             or parts.password is not None
             or (host == SHANGHAI_HOST and (parts.scheme != "https" or port != SHANGHAI_PORT))
-            or (host != SHANGHAI_HOST and port not in (None, 80 if parts.scheme == "http" else 443))
+            or (host == CHINABUILDING_HOST and (parts.scheme != "https" or port not in (None, 443)))
+            or (
+                host not in (SHANGHAI_HOST, CHINABUILDING_HOST)
+                and port not in (None, 80 if parts.scheme == "http" else 443)
+            )
             or parts.fragment
         ):
             raise ComplianceDenied(f"非已批准元数据查询端点，拒绝访问：{url}")

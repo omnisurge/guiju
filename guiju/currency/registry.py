@@ -88,7 +88,9 @@ class Registry:
 def default_registry(client: MetadataClient | None = None, *, cancelled: Callable[[], bool] | None = None,
                      admit: Callable[[str], None] | None = None) -> Registry:
     # 延迟导入只为避免兼容门面在启动旧 CLI 时装配所有原生源；这里没有网络动作。
+    from ..domain import atlas
     from .ccsn import CcsnCurrency
+    from .chinabuilding import ChinaBuildingCurrency
     from .dbba import DbbaCurrency
     from .jtst import JtstCurrency
     from .shzjw import (
@@ -99,6 +101,11 @@ def default_registry(client: MetadataClient | None = None, *, cancelled: Callabl
         owns_shanghai_namespace,
     )
     from .stdsamr import StdSamrCurrency
+
+    def _atlas_route_key(value: str) -> str:
+        if value == "ATLAS:":
+            return "ATLAS:"
+        return "ATLAS: " + atlas.normalize_code(value)
 
     registry = Registry()
     # 工标网没有 HTTPS 监听（2026-11-20 发版 e2e 实测 443 拒绝连接），但它是
@@ -120,6 +127,11 @@ def default_registry(client: MetadataClient | None = None, *, cancelled: Callabl
     registry.register(Route("shzjw", (*SHANGHAI_PREFIXES, "DB31"),
                             lambda: ShzjwCurrency(client, cancelled=cancelled),
                             normalizer=normalize_code, code_filter=is_shanghai_code))
+    # 标准图集（国标/中南标/省标/DBJ 图集）走国标电子书库唯一权威只读元数据端点；
+    # is_atlas_code 与上海及国行标/通用地标严格互斥，"ATLAS: " 前缀长度 6 优先于通用 "DB"(2)。
+    registry.register(Route("chinabuilding", ("ATLAS:",),
+                            lambda: ChinaBuildingCurrency(client, cancelled=cancelled),
+                            normalizer=_atlas_route_key, code_filter=atlas.is_atlas_code))
     # 端点级路由：prefixes=()/factory=None，不参与编号匹配，与 guiju/net/endpoints.DEFAULT_METADATA_FORM_HOSTS
     # 保持同步，声明这些 host 接受表单 POST。
     registry.register(Route("ccsn", (), None, hosts=("www.ccsn.org.cn",), form_post=True))

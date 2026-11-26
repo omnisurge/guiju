@@ -25,6 +25,7 @@ GOLDEN = [
         "replaces": "",
         "raw": "现行",
         "fallback": "",
+        "replaced_by": "",
     },
     {
         "code": "GB/T 19000.2-1998",
@@ -36,6 +37,7 @@ GOLDEN = [
         "replaces": "",
         "raw": "废止",
         "fallback": "",
+        "replaced_by": "",
     },
     {
         "code": "GB/T 27865-2011",
@@ -47,6 +49,7 @@ GOLDEN = [
         "replaces": "",
         "raw": "现行",
         "fallback": "",
+        "replaced_by": "",
     },
     {
         "code": "GB/Z 19036-2009",
@@ -58,6 +61,7 @@ GOLDEN = [
         "replaces": "",
         "raw": "废止",
         "fallback": "",
+        "replaced_by": "",
     },
 ]
 
@@ -138,6 +142,7 @@ class StdSamrParseTest(OfflineTestCase):
             "code": "GB/T 1-2000", "name": "替代 GB1-1980 的标准", "status": "superseded",
             "publish_date": "2000-01-01T00:00:00", "implement_date": "未公布",
             "source": "std_samr", "replaces": "", "raw": "被代替", "fallback": "",
+            "replaced_by": "",
         })
 
     def test_missing_and_null_fields_use_go_zero_values(self):

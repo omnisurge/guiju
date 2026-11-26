@@ -11,7 +11,9 @@ from guiju._version import __version__
 from guiju.currency import jsonutil
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
 from guiju.net import metadata as net_metadata
+from guiju.net.endpoints import CHINABUILDING_CONCISE_PATH, CHINABUILDING_HOST
 from guiju.net.metadata import MAX_RESPONSE_BYTES, UA, MetadataClient
+from guiju.net.policy import BodyPolicy, MetadataPolicy
 from guiju.net.throttle import Throttle
 from tests.currency_helpers import URL, FakeResponse, real_response
 from tests.net_harness import build_metadata_opener, metadata_redirect
@@ -647,6 +649,123 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
                 handler.http_error_302(req, response, 307, "Found", {"Location": target})
             self.assertEqual(response.read_sizes, [])
             self.assertTrue(response.closed)
+
+
+class ChinaBuildingTransportTest(unittest.TestCase):
+    SEARCH_URL = f"https://{CHINABUILDING_HOST}/zbooklib/search?SiteID=1&contentType=book&SearchKey=22G101-1"
+    DETAIL_URL = f"https://{CHINABUILDING_HOST}/zbooklib/book/detail/show?SiteID=1&bookID=153493"
+    CONCISE_URL = f"https://{CHINABUILDING_HOST}{CHINABUILDING_CONCISE_PATH}?SiteID=1&sublibID=2118&currentSublibInnerCode=0029"
+
+    def setUp(self):
+        mock.patch.object(net_metadata.time, "sleep").start()
+        mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def _opener_client(self, responder, *, probes=None):
+        class MemoryHTTPS(urllib.request.HTTPSHandler):
+            def https_open(self, req):
+                resp = responder(req)
+                final_url = getattr(resp, "_final_url", req.full_url)
+                resp.geturl = lambda url=final_url: url
+                return resp
+
+        sink = probes.append if probes is not None else None
+        return MetadataClient(
+            throttle=Throttle(0),
+            transport=build_metadata_opener(MemoryHTTPS()),
+            probe_sink=sink,
+        )
+
+    @staticmethod
+    def _http_html(body: bytes, *, status: int = 200, reason: str = "OK", extra_headers: str = ""):
+        wire = (
+            f"HTTP/1.1 {status} {reason}\r\n"
+            f"Content-Type: text/html; charset=utf-8\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            f"{extra_headers}\r\n"
+        ).encode("ascii") + body
+        return real_response(wire)
+
+    def test_approved_https_endpoints_work_and_record_probes(self):
+        probes = []
+        client = self._opener_client(lambda req: self._http_html(b"<html>ok</html>"), probes=probes)
+        for url in (self.SEARCH_URL, self.DETAIL_URL, self.CONCISE_URL):
+            with self.subTest(url=url):
+                self.assertEqual(client.get(url), b"<html>ok</html>")
+        self.assertEqual([p.outcome for p in probes], ["ok", "ok", "ok"])
+
+    def test_unapproved_scheme_port_paths_and_methods_are_denied(self):
+        probes = []
+        client = self._opener_client(lambda req: self._http_html(b"<html>ok</html>"), probes=probes)
+        for url in (
+            self.SEARCH_URL.replace("https://", "http://"),
+            f"https://{CHINABUILDING_HOST}:8443/zbooklib/search?SiteID=1",
+            f"https://{CHINABUILDING_HOST}/zbooklib/advSearchResult?SearchKey=22G101-1",
+            f"https://{CHINABUILDING_HOST}/zbooklib/book/download?bookID=153493",
+            f"https://{CHINABUILDING_HOST}/a.pdf",
+        ):
+            with self.subTest(url=url), self.assertRaises(ComplianceDenied):
+                client.get(url)
+        with self.assertRaises(ComplianceDenied):
+            client.post_form(self.SEARCH_URL, {"SearchKey": "22G101-1"})
+        with self.assertRaises(ComplianceDenied):
+            client.post_json(self.SEARCH_URL, {"SearchKey": "22G101-1"})
+        with self.assertRaises(ComplianceDenied):
+            BodyPolicy.default().check_url(self.DETAIL_URL)
+        self.assertTrue(all(p.outcome == "blocked" for p in probes))
+
+    def test_attachment_binary_and_cross_host_redirect_are_denied(self):
+        client = self._opener_client(
+            lambda req: self._http_html(b"%PDF-1.7", extra_headers="Content-Disposition: attachment\r\n")
+        )
+        with self.assertRaises(ComplianceDenied):
+            client.get(self.DETAIL_URL)
+
+        redirect_client = self._opener_client(
+            lambda req: self._http_html(
+                b"", status=302, reason="Found",
+                extra_headers=f"Location: {M2MetadataClientTest.SAMR}\r\n",
+            )
+        )
+        with self.assertRaises(ComplianceDenied):
+            redirect_client.get(self.SEARCH_URL)
+
+    def test_concise_catalogue_allows_3mb_up_to_8mb_while_search_and_detail_stay_2mb(self):
+        probes = []
+        three_mb = b"<html>" + b"a" * (3_000_000 - 13) + b"</html>"
+        nine_mb = b"<html>" + b"b" * (8_100_000) + b"</html>"
+
+        client = self._opener_client(lambda req: self._http_html(three_mb), probes=probes)
+        self.assertEqual(len(client.get(self.CONCISE_URL)), 3_000_000)
+        self.assertEqual(probes[-1].outcome, "ok")
+
+        for url in (self.SEARCH_URL, self.DETAIL_URL):
+            with self.subTest(url=url), self.assertRaises(NeedsHuman) as ctx:
+                client.get(url)
+            self.assertEqual(ctx.exception.exit, 50)
+            self.assertEqual(probes[-1].outcome, "too_large")
+
+        oversize_client = self._opener_client(lambda req: self._http_html(nine_mb), probes=probes)
+        with self.assertRaises(NeedsHuman) as ctx:
+            oversize_client.get(self.CONCISE_URL)
+        self.assertEqual(ctx.exception.exit, 50)
+        self.assertEqual(probes[-1].outcome, "too_large")
+
+        # 从 search 重定向到 conciseCatalogueList 不允许放宽初始 2 MB 上限。
+        def escalate(req):
+            if "/search" in req.full_url:
+                return self._http_html(
+                    b"", status=302, reason="Found",
+                    extra_headers=f"Location: {CHINABUILDING_CONCISE_PATH}?SiteID=1&sublibID=2118&currentSublibInnerCode=0029\r\n",
+                )
+            return self._http_html(three_mb)
+
+        redirect_client = self._opener_client(escalate, probes=probes)
+        with self.assertRaises(NeedsHuman):
+            redirect_client.get(self.SEARCH_URL)
+        self.assertEqual(probes[-1].outcome, "too_large")
+        self.assertEqual(MetadataPolicy().max_bytes_for(self.CONCISE_URL), 8_000_000)
+        self.assertEqual(MetadataPolicy().max_bytes_for(self.SEARCH_URL), 2_000_000)
 
 
 if __name__ == "__main__":

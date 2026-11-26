@@ -2,7 +2,7 @@
 
 from .block import BLOCK_MARKERS, BlockDetector
 from .body import BodyClient, finalize
-from .endpoints import DEFAULT_METADATA_ENDPOINTS, DEFAULT_METADATA_FORM_HOSTS
+from .endpoints import DEFAULT_METADATA_ENDPOINTS, DEFAULT_METADATA_FORM_HOSTS, DEFAULT_METADATA_MAX_BYTES
 from .headers import canonical_host, header_int, parse_content_range
 from .metadata import MetadataClient
 from .policy import BodyPolicy, MetadataPolicy, normalize_path
@@ -15,6 +15,7 @@ __all__ = [
     "BLOCK_MARKERS",
     "DEFAULT_METADATA_ENDPOINTS",
     "DEFAULT_METADATA_FORM_HOSTS",
+    "DEFAULT_METADATA_MAX_BYTES",
     "BlockDetector",
     "BodyClient",
     "BodyPolicy",

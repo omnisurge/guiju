@@ -55,8 +55,21 @@ _PROV_ATLAS_RE = re.compile(
 )
 _PROV_STRIP_YEAR_RE = re.compile(rf"^({_PROV_PATTERN})\d{{2}}([A-Z].*)$")
 _DBJ_ATLAS_RE = re.compile(r"^DBJ(?:/[TZ])?(?!08)\d{2}-\d+-\d{4}-\d{2}[A-Z]{1,4}\d+(?:-\d+)?$")
+_YEARLESS_DISCIPLINE_PREFIXES = (
+    # 单字母建标/图集专业类代号（避免把 M1、CECS1、XX999 等非图集误判为无年份图集号）
+    "J", "G", "S", "K", "D", "X", "R", "L", "F", "M", "C", "N", "H", "Q", "T",
+    # 国标/中南/人防/省市图集常见双三字母专题代号
+    "GJ", "SG", "SS", "SJ", "DX", "FD", "FJ", "FG", "FK", "FS", "FZ", "RF", "MR",
+    "CS", "CD", "CG", "MS", "MD", "MJ", "MG", "MK", "ZJ", "ZG", "ZS", "ZD", "ZK",
+    "ZR", "ZX", "ZN", "TJ", "TG", "TS", "TD", "TK", "TX", "TR", "BJ", "BG", "BS",
+    "BD", "BK", "BR", "BX", "DQ", "DJ", "JS", "GT", "GX", "SZ", "SSB",
+)
+_YEARLESS_PREFIX_PATTERN = "|".join(sorted(_YEARLESS_DISCIPLINE_PREFIXES, key=len, reverse=True))
 _BASE_OR_BINDING_RE = re.compile(
-    r"^[A-Z]{1,4}\d{1,5}(?:-\d{1,4})?(?:~(?:[A-Z]{0,4}\d{1,5}(?:-\d{1,4})?))?(?:\([^()]+\))?$"
+    rf"^(?:{_YEARLESS_PREFIX_PATTERN})"
+    r"(?:\d{2,5}(?:-\d{1,4})?(?:~(?:[A-Z]{0,4}\d{1,5}(?:-\d{1,4})?))?"
+    r"|\d(?:-\d{1,4})?~(?:[A-Z]{0,4}\d{1,5}(?:-\d{1,4})?))"
+    r"(?:\([^()]+\))?$"
 )
 
 _STATUS_MAP = {

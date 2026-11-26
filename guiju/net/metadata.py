@@ -175,8 +175,9 @@ class MetadataClient:
                     final_url = resp.geturl() if hasattr(resp, "geturl") else url
                     self.policy.check_redirect(req, final_url)
                     self.policy.check_headers(resp.headers, url)
+                    max_bytes = min(self.policy.max_bytes_for(url), self.policy.max_bytes_for(final_url))
                     chunks: list[bytes] = []
-                    remaining = self.policy.max_bytes + 1
+                    remaining = max_bytes + 1
                     content_type = resp.headers.get("Content-Type", "")
                     try:
                         while remaining > 0:
@@ -202,7 +203,7 @@ class MetadataClient:
                     body = b"".join(chunks)
                     current_bytes = len(body)
                     missing = getattr(resp, "length", None)
-                    if len(body) <= self.policy.max_bytes and missing is not None and missing > 0:
+                    if len(body) <= max_bytes and missing is not None and missing > 0:
                         self._emit(url, status, current_bytes, "truncated", attempts=attempt + 1, started=started)
                         emitted = True
                         raise SourceUnreachable(f"元数据响应读取失败（响应截断，尚缺 {missing} 字节）：{url}")
@@ -214,7 +215,7 @@ class MetadataClient:
                         self._emit(url, status, current_bytes, "blocked", attempts=attempt + 1, started=started)
                         emitted = True
                         raise ComplianceDenied("元数据 JSON 端点返回网页错误页")
-                    if len(body) > self.policy.max_bytes:
+                    if len(body) > max_bytes:
                         self._emit(url, status, current_bytes, "too_large", attempts=attempt + 1, started=started)
                         emitted = True
                         raise NeedsHuman("元数据响应过大，停止解析", hint="检查时效查询端点与响应结构")

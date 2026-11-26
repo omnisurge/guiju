@@ -26,7 +26,7 @@ class AtlasCodeClassificationTest(unittest.TestCase):
             "21ZJ111", "粤25G/T116", "京05G69", "京02SSB1", "冀00J201", "冀00ZJ03",
             # 合订本与无年份基础号
             "G101-1", "G101", "J401", "ZJ111", "S901～902", "D101-1～7", "D101-1～7(新)",
-            "D500~D502", "DX003～004",
+            "D500~D502", "DX003～004", "S1~S3", "FD01",
             # 明确带图集后缀的非上海地方 DBJ
             "DBJ/T02-81-2013-12D1",
         )
@@ -46,6 +46,7 @@ class AtlasCodeClassificationTest(unittest.TestCase):
             "DBTJ08-102-2016", "DBJ08-101-2020", "DB31/T 792-2014", "DB3108-2020",
             # 非编号输入与非法控制字符
             "建筑防火通用规范", "混凝土结构施工图", "153493",
+            "CECS1", "GBX1", "XX 999", "UNKNOWN", "NFPA 13", "M1",
             "https://ebook.chinabuilding.com.cn/zbooklib/book/detail/show?SiteID=1&bookID=153493",
             "2022-05-01", "", "   ", "22G101-1\u200b", "22G101-1\x00",
         )

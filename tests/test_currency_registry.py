@@ -3,8 +3,10 @@
 import unittest
 from unittest import mock
 
+from guiju.currency.chinabuilding import ChinaBuildingCurrency
 from guiju.currency.fallback import FallbackCurrency
 from guiju.currency.registry import Registry, Route, default_registry, has_code_prefix
+from guiju.currency.shzjw import ShzjwCurrency
 
 
 def item(name):
@@ -59,6 +61,26 @@ class RegistryTest(unittest.TestCase):
                 self.assertEqual(adapter.name, "csres")
         for code in ("CECS1", "GBX1", "UNKNOWN"):
             self.assertIsNone(reg.match(code))
+
+    def test_default_registry_routes_atlases_exclusively_without_disturbing_standards(self):
+        client = mock.Mock()
+        reg = default_registry(client=client)
+        for code in (
+            "22G101-1", "16G101-1", "B16G101-1", "G101-1", "21ZJ111",
+            "粤25G/T116", "DBJ/T02-81-2013-12D1", "DX003～004",
+        ):
+            with self.subTest(atlas=code):
+                adapter = reg.match(code)
+                self.assertIsInstance(adapter, ChinaBuildingCurrency)
+                self.assertIs(adapter.client, client)
+                self.assertEqual(adapter.source_names, ("chinabuilding",))
+                self.assertFalse(hasattr(adapter, "backups"))
+        for code in ("DG/TJ08-2007", "DB31/T1010", "DB3108-2020"):
+            with self.subTest(shanghai=code):
+                self.assertIsInstance(reg.match(code), ShzjwCurrency)
+        for code in ("CECS1", "GBX1", "XX 999", "UNKNOWN", "DB31/373-2010", "22G101-1\u200b"):
+            with self.subTest(unrouted=code):
+                self.assertIsNone(reg.match(code))
 
     def test_cache_namespace_changes_with_route_or_backup_policy(self):
         reg = Registry()
