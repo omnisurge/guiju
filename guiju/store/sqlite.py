@@ -13,6 +13,7 @@ import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from ..domain.codes import Codes, Confidence, Role, _is_older_same_family
 from ..errors import NeedsHuman, SourceUnreachable
@@ -440,6 +441,31 @@ class Store:
             (source, url, status, size, outcome, note, now()),
         )
 
+    def record_body_hash(self, ann_id: int, digest: str, *, source: str = "") -> bool:
+        """记录详情页 body_sha256；仅在已有非空旧指纹且发生变化时返回 True 并写 probe。"""
+        if not digest:
+            return False
+        row = self.db.execute(
+            "SELECT url, body_sha256 FROM announcement WHERE id=?", (ann_id,)
+        ).fetchone()
+        if row is None:
+            return False
+        prev = row["body_sha256"] or ""
+        if prev == digest:
+            return False
+        self.db.execute("UPDATE announcement SET body_sha256=? WHERE id=?", (digest, ann_id))
+        if prev:
+            self.log_probe(
+                source or "unknown",
+                row["url"] or f"ann:{ann_id}",
+                200,
+                None,
+                "body_changed",
+                f"{prev[:12]}->{digest[:12]}",
+            )
+            return True
+        return False
+
     def set_meta(self, key: str, value: str) -> None:
         self.db.execute("INSERT OR REPLACE INTO corpus_meta(k,v) VALUES(?,?)", (key, value))
 
@@ -536,6 +562,61 @@ class Store:
             "SELECT outcome, COUNT(*) c FROM probe GROUP BY outcome ORDER BY c DESC"
         ).fetchall()
         return {row["outcome"]: row["c"] for row in rows}
+
+    def probe_summary_by_source(self, *, recent_failures: int = 5) -> dict[str, dict[str, Any]]:
+        """按数据源聚合 probe 台账与近期异常，供 sources 健康度视图消费。"""
+        limit = max(0, int(recent_failures))
+        summary: dict[str, dict[str, Any]] = {}
+        rows = self.db.execute(
+            "SELECT COALESCE(NULLIF(source, ''), 'unknown') AS src,"
+            "       outcome, COUNT(*) AS c, MAX(at) AS last_at"
+            " FROM probe GROUP BY src, outcome"
+        ).fetchall()
+        for row in rows:
+            src = str(row["src"])
+            entry = summary.setdefault(
+                src,
+                {"total": 0, "counts": {}, "last_at": "", "body_changes": 0, "recent_failures": []},
+            )
+            count = int(row["c"])
+            outcome = str(row["outcome"] or "")
+            entry["total"] += count
+            entry["counts"][outcome] = count
+            last_at = str(row["last_at"] or "")
+            if last_at > entry["last_at"]:
+                entry["last_at"] = last_at
+            if outcome == "body_changed":
+                entry["body_changes"] += count
+        if limit > 0 and summary:
+            fail_rows = self.db.execute(
+                "SELECT COALESCE(NULLIF(source, ''), 'unknown') AS src,"
+                "       url, status, bytes, outcome, note, at"
+                " FROM probe WHERE outcome != 'ok' ORDER BY id DESC"
+            ).fetchall()
+            for row in fail_rows:
+                entry = summary.get(str(row["src"]))
+                if entry is None or len(entry["recent_failures"]) >= limit:
+                    continue
+                entry["recent_failures"].append(
+                    {
+                        "url": row["url"],
+                        "status": row["status"],
+                        "bytes": row["bytes"],
+                        "outcome": row["outcome"],
+                        "note": row["note"] or "",
+                        "at": row["at"] or "",
+                    }
+                )
+        return summary
+
+    def body_hash_coverage(self) -> dict[str, int]:
+        """详情页指纹覆盖度：已记录 body_sha256 的公告数与总公告数。"""
+        row = self.db.execute(
+            "SELECT COUNT(*) AS total,"
+            " COALESCE(SUM(CASE WHEN body_sha256 IS NOT NULL AND body_sha256 != '' THEN 1 ELSE 0 END), 0) AS hashed"
+            " FROM announcement"
+        ).fetchone()
+        return {"hashed": int(row["hashed"]), "total": int(row["total"])}
 
     def stats(self) -> dict:
         q = self.db.execute

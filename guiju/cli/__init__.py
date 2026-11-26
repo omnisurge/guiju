@@ -23,13 +23,14 @@ from .commands import (
     pull,
     search,
     show,
+    sources,
     status,
     sync,
     version,
     which,
 )
 
-COMMANDS = (sync, search, which, show, pull, cite, status, version, mcp)
+COMMANDS = (sync, search, which, show, pull, cite, status, sources, version, mcp)
 
 
 def _exit_epilog() -> str:

@@ -207,7 +207,7 @@ class _ReadOnlyStore:
 
     _WRITES = frozenset({
         "upsert_announcement", "upsert_edition", "add_mention", "mark_scanned",
-        "log_probe", "set_meta", "cache_currency", "commit",
+        "log_probe", "record_body_hash", "set_meta", "cache_currency", "commit",
     })
 
     def __init__(self, inner) -> None:
@@ -215,8 +215,12 @@ class _ReadOnlyStore:
 
     def __getattr__(self, name):
         if name in self._WRITES:
-            # upsert_announcement 期望返回 (row_id, inserted)；其余返回值没人消费，一律 no-op。
-            return (lambda *a, **k: (0, False)) if name == "upsert_announcement" else (lambda *a, **k: None)
+            # upsert_announcement 期望返回 (row_id, inserted)，record_body_hash 返回 bool；其余一律 no-op。
+            if name == "upsert_announcement":
+                return lambda *a, **k: (0, False)
+            if name == "record_body_hash":
+                return lambda *a, **k: False
+            return lambda *a, **k: None
         return getattr(self._inner, name)
 
     def close(self) -> None:

@@ -5,6 +5,7 @@
 > 目标版本：1.3.0（开发进行中，详见 `docs/spec-1.3.0.md`）。
 
 - S0：开发期 `Unreleased` 门禁解耦（`--docs-only` 放行单测数演进，`--artifacts` 仍拒绝未冻结版本）。
+- S1：M4 改版观测闭环（`announcement.body_sha256` 落库与变更告警、`MetadataClient` `probe_sink`、新增 `guiju sources [--probe] [--json]`）。
 
 ## 1.2.0 — 2026-11-24（1.2.0 正式发布）
 

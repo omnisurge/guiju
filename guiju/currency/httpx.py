@@ -44,11 +44,11 @@ _check_headers = MetadataPolicy().check_headers
 class HttpClient:
     """Only returns raw metadata bytes; adapters own parsing."""
 
-    def __init__(self, timeout: float = DEFAULT_TIMEOUT) -> None:
+    def __init__(self, timeout: float = DEFAULT_TIMEOUT, *, probe_sink=None) -> None:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("元数据请求超时必须为正数")
         self.timeout = timeout
-        self._client = MetadataClient(timeout=timeout, throttle=_CompatThrottle())
+        self._client = MetadataClient(timeout=timeout, throttle=_CompatThrottle(), probe_sink=probe_sink)
         self.transport = self._client.transport
 
     def close(self) -> None:

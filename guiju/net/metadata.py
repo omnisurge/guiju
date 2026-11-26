@@ -17,6 +17,7 @@ from .block import BlockDetector
 from .endpoints import SHANGHAI_HOST, SHANGHAI_ORIGIN, SHANGHAI_REFERER
 from .policy import MetadataPolicy
 from .read import read_prefix
+from .request import ProbeRecord
 from .throttle import Throttle, default_throttle
 from .transport import Transport
 
@@ -48,6 +49,7 @@ class MetadataClient:
         throttle: Throttle | None = None,
         detector: BlockDetector | None = None,
         transport=None,
+        probe_sink=None,
     ) -> None:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("元数据请求超时必须为正数")
@@ -58,6 +60,29 @@ class MetadataClient:
         self.throttle = throttle or default_throttle()
         self.detector = detector or BlockDetector()
         self.transport = transport or Transport(self.policy, self.throttle, self.detector)
+        self.probe_sink = probe_sink or (lambda record: None)
+
+    def _emit(
+        self,
+        url: str,
+        status: int | None,
+        size: int | None,
+        outcome: str,
+        *,
+        attempts: int = 1,
+        started: float | None = None,
+    ) -> None:
+        elapsed_ms = 0 if started is None else max(0, int((time.monotonic() - started) * 1000))
+        self.probe_sink(
+            ProbeRecord(
+                url=url,
+                status=status,
+                bytes=size,
+                outcome=outcome,
+                attempts=attempts,
+                elapsed_ms=elapsed_ms,
+            )
+        )
 
     def close(self) -> None:
         """Compatibility hook; MetadataClient owns no persistent connection."""
@@ -100,11 +125,16 @@ class MetadataClient:
         referer: str | None = None,
         expect_json: bool = False,
     ) -> bytes:
-        host = self.policy.check_url(url)
-        if host == SHANGHAI_HOST and method != "POST":
-            raise ComplianceDenied("上海元数据查询只接受 POST JSON，不跟随改为 GET 的跳转")
-        if accept not in (None, "application/json", "text/html", "text/html,application/xhtml+xml"):
-            raise ValueError("元数据 Accept 只允许已知查询文本类型")
+        started = time.monotonic()
+        try:
+            host = self.policy.check_url(url)
+            if host == SHANGHAI_HOST and method != "POST":
+                raise ComplianceDenied("上海元数据查询只接受 POST JSON，不跟随改为 GET 的跳转")
+            if accept not in (None, "application/json", "text/html", "text/html,application/xhtml+xml"):
+                raise ValueError("元数据 Accept 只允许已知查询文本类型")
+        except ComplianceDenied:
+            self._emit(url, None, None, "blocked", attempts=1, started=started)
+            raise
         last_error: Exception | None = None
         for attempt in range(self.attempts):
             if attempt:
@@ -121,10 +151,16 @@ class MetadataClient:
                 headers["Origin"] = SHANGHAI_ORIGIN
                 headers["Referer"] = SHANGHAI_REFERER
             req = urllib.request.Request(url, data=data, headers=headers, method=method)
+            current_status: int | None = None
+            current_bytes: int | None = None
+            emitted = False
             try:
                 with self.transport.open(req, timeout=self.timeout) as resp:
                     status = getattr(resp, "status", 200)
+                    current_status = status
                     if status != 200:
+                        self._emit(url, status, None, "http_error", attempts=attempt + 1, started=started)
+                        emitted = True
                         raise SourceUnreachable(f"元数据源返回 HTTP {status}：{url}")
                     final_url = resp.geturl() if hasattr(resp, "geturl") else url
                     self.policy.check_redirect(req, final_url)
@@ -146,26 +182,53 @@ class MetadataClient:
                             chunks.append(chunk)
                             remaining -= len(chunk)
                     except (OSError, http.client.HTTPException) as exc:
-                        self.detector.check(b"".join(chunks), content_type, reject_binary=True)
+                        partial_body = b"".join(chunks)
+                        current_bytes = len(partial_body)
+                        self.detector.check(partial_body, content_type, reject_binary=True)
+                        outcome = "truncated" if isinstance(exc, http.client.IncompleteRead) else "read_error"
+                        self._emit(url, status, current_bytes, outcome, attempts=attempt + 1, started=started)
+                        emitted = True
                         raise SourceUnreachable(f"元数据响应读取失败：{url}：{exc}") from exc
                     body = b"".join(chunks)
+                    current_bytes = len(body)
                     missing = getattr(resp, "length", None)
                     if len(body) <= self.policy.max_bytes and missing is not None and missing > 0:
+                        self._emit(url, status, current_bytes, "truncated", attempts=attempt + 1, started=started)
+                        emitted = True
                         raise SourceUnreachable(f"元数据响应读取失败（响应截断，尚缺 {missing} 字节）：{url}")
                     self.detector.check(body, content_type, reject_binary=True)
                     if expect_json and (
                         content_type.split(";", 1)[0].strip().lower() == "text/html"
                         or _looks_like_html(body)
                     ):
+                        self._emit(url, status, current_bytes, "blocked", attempts=attempt + 1, started=started)
+                        emitted = True
                         raise ComplianceDenied("元数据 JSON 端点返回网页错误页")
                     if len(body) > self.policy.max_bytes:
+                        self._emit(url, status, current_bytes, "too_large", attempts=attempt + 1, started=started)
+                        emitted = True
                         raise NeedsHuman("元数据响应过大，停止解析", hint="检查时效查询端点与响应结构")
+                    self._emit(url, status, current_bytes, "ok", attempts=attempt + 1, started=started)
+                    emitted = True
                     return body
+            except ComplianceDenied:
+                if not emitted:
+                    self._emit(url, current_status, current_bytes, "blocked", attempts=attempt + 1, started=started)
+                raise
+            except SourceUnreachable:
+                if not emitted:
+                    self._emit(url, current_status, current_bytes, "unreachable", attempts=attempt + 1, started=started)
+                raise
             except urllib.error.HTTPError as exc:
+                current_status = exc.code
                 try:
                     if exc.fp is not None and not getattr(exc.fp, "closed", False):
                         prefix, _read_error = read_prefix(exc, 65536)
+                        current_bytes = len(prefix)
                         self.detector.check(prefix, "text/html", reject_binary=True)
+                except ComplianceDenied:
+                    self._emit(url, exc.code, current_bytes, "blocked", attempts=attempt + 1, started=started)
+                    raise
                 except (OSError, http.client.HTTPException, ValueError):
                     pass
                 finally:
@@ -173,11 +236,13 @@ class MetadataClient:
                         exc.close()
                 retryable = 500 <= exc.code <= 599 or exc.code == 429
                 if not retryable or attempt == self.attempts - 1:
+                    self._emit(url, exc.code, current_bytes, "http_error", attempts=attempt + 1, started=started)
                     raise SourceUnreachable(f"元数据源返回 HTTP {exc.code}：{url}") from exc
                 last_error = exc
             except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
                 last_error = exc
                 if attempt == self.attempts - 1:
+                    self._emit(url, None, None, "network_error", attempts=attempt + 1, started=started)
                     raise SourceUnreachable(
                         f"元数据源不可达（{url}）：{type(exc).__name__}：{exc}"
                     ) from exc

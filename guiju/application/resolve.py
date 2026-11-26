@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 
 from ..domain.currency import QueryCancelled, Record
@@ -29,6 +30,7 @@ from ..errors import (
     NotIndexed,
     SourceUnreachable,
 )
+from ..files import sha256_bytes
 from ..ports.currency import CurrencyPort
 from ..ports.store import StorePort
 
@@ -247,6 +249,11 @@ def _pick_current_version(
                 sid = source_of(ann["url"])["id"]
                 source = _sources_or_registry(sources).get(sid) or _sources_or_registry(sources)["mohurd"]
                 html, text = source.detail(ann["url"])
+                digest = sha256_bytes(html.encode("utf-8"))
+                record_hash = getattr(store, "record_body_hash", None)
+                if callable(record_hash):
+                    with contextlib.suppress(Exception):
+                        record_hash(int(ann["id"]), digest, source=sid)
                 has_attachment = bool(source.attachments(html))
             except (NeedsHuman, ComplianceDenied, QueryCancelled):
                 # 契约错误不是"这条公告抓取失败"：50/40/取消必须冒到 CLI 决策表，
@@ -540,14 +547,15 @@ def _verify_by_primary_code(
 
     if len(hits) > _VERIFY_MAX:
         return []
-    if fetch_detail is None:
-        def fetch_detail(url):
+    custom_fetch = fetch_detail is not None
+    if not custom_fetch:
+        def fetch_raw(url):
             # 按 URL 归属源挑 detail（M4）：shzjw 类 api_mode 源没有公告页，
             # 其 detail 缺失会走普通异常被跳过，不会拿 mohurd 解析器错抓。
             sid = source_of(url)["id"]
             src = _sources_or_registry(sources)
             source = src.get(sid) or src["mohurd"]
-            return source.detail(url)[1]
+            return sid, source.detail(url)
 
     matched = []
     attempts = 0
@@ -559,7 +567,17 @@ def _verify_by_primary_code(
             continue
         attempts += 1
         try:
-            text = fetch_detail(ann["url"])
+            if custom_fetch:
+                assert fetch_detail is not None
+                text = fetch_detail(ann["url"])
+            else:
+                sid, (html, text) = fetch_raw(ann["url"])
+                digest = sha256_bytes(html.encode("utf-8"))
+                record_hash = getattr(store, "record_body_hash", None)
+                if callable(record_hash):
+                    with contextlib.suppress(Exception):
+                        record_hash(int(ann["id"]), digest, source=sid)
+                        store.commit()
         except (NeedsHuman, ComplianceDenied, QueryCancelled):
             # 详情页的契约错误（站点改版/验证码/取消）必须按 50/40 上抛；
             # 静默 continue 会把"查证失败"伪装成"正文编号对不上"。

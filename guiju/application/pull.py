@@ -268,6 +268,8 @@ def _pull_api(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
                 "source_page": rec["page_url"],
                 "attachment": rec["download_url"],
                 "confidence": "parsed",
+                "body_sha256": None,
+                "body_changed": False,
                 "exit": EXIT_EXISTS,
             }
 
@@ -314,6 +316,8 @@ def _pull_api(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
         "availability": window.value,
         "source_page": rec["page_url"],
         "attachment": rec["download_url"],
+        "body_sha256": None,
+        "body_changed": False,
         "exit": EXIT_OK,
     }
 
@@ -393,13 +397,17 @@ def _pull_one(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
         cached = find_cached(out_dir, code_key, display_name, readable=args.readable, ann_id=ann_id)
         if cached:
             path, digest = cached
+            ann_keys = tuple(ann.keys()) if hasattr(ann, "keys") else ()
+            cached_hash = ann["body_sha256"] if "body_sha256" in ann_keys else None
             return {
                 "ok": True, "already": True, "code": code_display or code_key,
                 "name": display_name, "status": status,
                 "path": str(path), "sha256": digest, "bytes": path.stat().st_size,
                 "magic": "pdf", "confidence": confidence, "attachment": None,
                 "published_on": ann["published_on"], "availability": window.value,
-                "source_page": ann["url"], "exit": EXIT_EXISTS,
+                "source_page": ann["url"],
+                "body_sha256": cached_hash, "body_changed": False,
+                "exit": EXIT_EXISTS,
             }
 
     try:
@@ -407,6 +415,17 @@ def _pull_one(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
     except GuijuError as exc:
         # W4-2：detail 解析/抓取失败（含 BadAttachment）也要带可得性事实。
         raise _attach_availability(exc, ann["published_on"]) from None
+    body_sha256 = sha256_bytes(html.encode("utf-8"))
+    record_hash = getattr(store, "record_body_hash", None)
+    body_changed = (
+        record_hash(ann_id, body_sha256, source=getattr(source, "id", "mohurd")) is True
+        if callable(record_hash)
+        else False
+    )
+    if body_changed:
+        render.warn(f"公告详情页内容指纹发生变化（id={ann_id}，{body_sha256[:12]}）")
+        with contextlib.suppress(Exception):
+            store.commit()
     # 名称证据用"用户要的那一本"：doc_name（第一本）会把弱证据指向另一本书的编号
     codes = classify(text, display_name)
     if len(names) > 1 and ref_name:
@@ -447,13 +466,17 @@ def _pull_one(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
         cached = find_cached(out_dir, code_key, display_name, readable=args.readable, ann_id=ann_id)
         if cached:
             path, digest = cached
+            with contextlib.suppress(Exception):
+                store.commit()
             return {
                 "ok": True, "already": True, "code": code_display,
                 "name": display_name, "status": status,
                 "path": str(path), "sha256": digest, "bytes": path.stat().st_size,
                 "magic": "pdf", "confidence": confidence, "attachment": None,
                 "published_on": ann["published_on"], "availability": window.value,
-                "source_page": ann["url"], "exit": EXIT_EXISTS,
+                "source_page": ann["url"],
+                "body_sha256": body_sha256, "body_changed": body_changed,
+                "exit": EXIT_EXISTS,
             }
 
     try:
@@ -544,6 +567,8 @@ def _pull_one(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
         "attachment": choice.url,
         "published_on": ann["published_on"],
         "availability": window.value,
+        "body_sha256": body_sha256,
+        "body_changed": body_changed,
         "exit": EXIT_OK,
     }
 
