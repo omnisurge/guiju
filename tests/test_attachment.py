@@ -1,8 +1,10 @@
-"""附件裁定 —— 抓不到是空，抓错是事故。"""
+"""附件裁定与 PDF 格式识别 —— 抓不到是空，抓错是事故。"""
+
+from __future__ import annotations
 
 import unittest
 
-from guiju.domain.attachment import Attachment, Verdict, pick
+from guiju.domain.attachment import Attachment, Verdict, _is_pdf, pick
 
 
 def atts(*labels):
@@ -87,6 +89,20 @@ class PickTest(unittest.TestCase):
         got = pick([doc, pdf], "某标准", announcement_title="关于发布《某标准》的公告")
         self.assertIs(got.verdict, Verdict.OK)
         self.assertIs(got.choice, pdf)
+
+
+class IsPdfTest(unittest.TestCase):
+    def test_is_pdf_by_url_extension(self) -> None:
+        self.assertIs(_is_pdf(Attachment(url="https://x.gov.cn/f/abc.PDF?x=1")), True)
+        self.assertIs(_is_pdf(Attachment(url="https://x.gov.cn/f/abc.pdf#page=2")), True)
+
+    def test_is_pdf_by_label_marker(self) -> None:
+        self.assertIs(_is_pdf(Attachment(url="https://x.gov.cn/dl/1", label="规范正文.pdf")), True)
+
+    def test_is_pdf_rejects_pdf_substring_traps(self) -> None:
+        # 名字里带 "pdf" 但不是 PDF 的（真实案例：PDF版.zip / xxpdfyy）
+        self.assertIs(_is_pdf(Attachment(url="https://x.gov.cn/f/x.zip", label="规范PDF版.zip")), False)
+        self.assertIs(_is_pdf(Attachment(url="https://x.gov.cn/f/xxpdfyy.doc")), False)
 
 
 if __name__ == "__main__":

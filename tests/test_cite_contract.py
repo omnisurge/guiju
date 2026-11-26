@@ -1,4 +1,4 @@
-"""P3-7 / P3-8a：cite --strict 失败体合同（真实 main()/stdout 入口）。
+"""cite --strict 失败体合同（真实 main()/stdout 入口）。
 
 覆盖 C3：20/34/32 三条 strict 失败分支必须经 _fail() 投影到 stdout，
 返回码不变，stdout 是纯 JSON，且失败体不含 cite/候选串。
@@ -90,6 +90,7 @@ class CiteMainContractTest(unittest.TestCase):
         self.tmp, self.db = _make_db()
         self.addCleanup(self.tmp.cleanup)
         self.addCleanup(render.configure, as_json=False, quiet=False)
+        self.addCleanup(render.set_catalog, None)
 
     def _run(self, fake, *, strict=True):
         out, err = io.StringIO(), io.StringIO()

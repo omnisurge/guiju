@@ -82,3 +82,47 @@ def body_client(transport: FakeTransport, **kwargs) -> BodyClient:
         transport=transport,
         **kwargs,
     )
+
+
+class ShortRead:
+    """Response-like object: controlled short reads, then an optional error."""
+
+    def __init__(
+        self,
+        pieces=(),
+        *,
+        headers=None,
+        error=None,
+        url="https://www.mohurd.gov.cn/gongkai/a.pdf",
+        status=200,
+    ):
+        self.pieces = [bytes(piece) for piece in pieces]
+        self.headers = dict(headers or {})
+        self.error = error
+        self._url = url
+        self.status = status
+        self.closed = False
+
+    def read(self, size=-1):
+        if self.pieces:
+            piece = self.pieces.pop(0)
+            if size is not None and 0 <= size < len(piece):
+                self.pieces.insert(0, piece[size:])
+                piece = piece[:size]
+            return piece
+        if self.error is not None:
+            error, self.error = self.error, None
+            raise error
+        return b""
+
+    def geturl(self):
+        return self._url
+
+    def close(self):
+        self.closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()

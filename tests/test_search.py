@@ -1,5 +1,8 @@
-"""检索评分 —— 用户最常用的入口，行为必须可预期。"""
+"""检索评分与 search/show 输出流测试 —— 用户最常用的入口，行为必须可预期。"""
 
+from __future__ import annotations
+
+import argparse
 import io
 import json
 import tempfile
@@ -11,6 +14,7 @@ from unittest import mock
 from guiju import report as render
 from guiju.cli import main
 from guiju.domain.search import bigrams, normalize, rank, tokens_of
+from guiju.errors import BadUsage
 from guiju.store.sqlite import Store, now
 
 ENTRIES = [
@@ -148,6 +152,15 @@ class CliHumanStreamTest(unittest.TestCase):
                     rc_dj = main(["show", "1", "--json", "--db", str(db_path)])
                 self.assertEqual(rc_dj, 0)
                 self.assertTrue(json.loads(out_dj.getvalue())["ok"])
+
+
+class SearchNegativeLimitTest(unittest.TestCase):
+    def test_search_negative_limit_is_bad_usage(self) -> None:
+        from guiju.cli.commands import search
+
+        args = argparse.Namespace(keywords=["防火"], limit=-1, all=False)
+        with self.assertRaises(BadUsage):
+            search.run(mock.Mock(), args)
 
 
 if __name__ == "__main__":

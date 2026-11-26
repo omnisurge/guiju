@@ -1,12 +1,22 @@
-"""高危 bug 的定向回归 —— 覆盖退出码、分类器之外的崩溃点。"""
+"""高危 bug 与杂项小修定向回归 —— 覆盖退出码、hint、naming、CLI 入口等跨模块保护。"""
 
+from __future__ import annotations
+
+import io
+import json
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
+from guiju import files
+from guiju import report as render
+from guiju.cli import main
+from guiju.domain import naming
 from guiju.domain.codes import classify
 from guiju.domain.search import _year_of
-from guiju.errors import BadUsage, NotIndexed
+from guiju.errors import BadUsage, NeedsHuman, NotIndexed
 from guiju.store.sqlite import Store, persist_codes
 
 
@@ -38,7 +48,9 @@ class ResolveExitTest(unittest.TestCase):
     """裸 GuijuError 让「没收录」变成 internal(1)：分流到对应退出码。"""
 
     def setUp(self):
-        self.store = Store(Path(tempfile.mkdtemp()) / "c.db")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Store(Path(self.tmp.name) / "c.db")
         self.addCleanup(self.store.close)
 
     def test_empty_ref_is_bad_usage(self):
@@ -64,7 +76,9 @@ class PersistCodesTest(unittest.TestCase):
     """ambiguous 兜底 primary 没资格把同族编号写成 superseded_ref（之前一律改写）。"""
 
     def setUp(self):
-        self.store = Store(Path(tempfile.mkdtemp()) / "c.db")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Store(Path(self.tmp.name) / "c.db")
         self.addCleanup(self.store.close)
         self.store.upsert_announcement(
             "https://www.mohurd.gov.cn/x.html", "2021-07-15", "标题", "建筑拆除工程安全技术规范", "national"
@@ -83,6 +97,63 @@ class PersistCodesTest(unittest.TestCase):
         roles = {r["code_key"]: r["role"] for r in self.store.mentions_for(1)}
         self.assertEqual(roles["GB/T50362-2005"], "superseded_ref")
         self.assertEqual(roles["GB/T50362-2022"], "primary")
+
+
+class NeedsHumanHintTest(unittest.TestCase):
+    def test_needs_human_hint_not_mohurd_only(self) -> None:
+        err = NeedsHuman("boom")
+        self.assertTrue("mohurd.py" not in err.hint or "shzjw.py" in err.hint)
+        self.assertIn("sources/", err.hint)
+
+
+class MohurdDeduplicateTest(unittest.TestCase):
+    def test_mohurd_uses_domain_classify_title(self) -> None:
+        from guiju.domain import announcement
+        from guiju.sources import mohurd
+
+        self.assertIs(mohurd.classify_title, announcement.classify_title)
+        self.assertFalse(hasattr(mohurd, "_CATEGORY_RULES"))
+        self.assertFalse(hasattr(mohurd, "_NAME_RE"))
+
+
+class UntitledStemTest(unittest.TestCase):
+    def test_untitled_stem_includes_ann_id(self) -> None:
+        self.assertNotEqual(naming.library_stem(None, "", 1), naming.library_stem(None, "", 2))
+        self.assertEqual(naming.library_stem(None, ""), "untitled")  # 无 ann_id 时维持旧名
+
+    def test_find_cached_untitled_uses_ann_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            content = b"pdf-body-for-ann-7"
+            digest = files.sha256_bytes(content)
+            name = naming.library_name(None, "", digest, ann_id=7)
+            (tmp_path / name).write_bytes(content)
+            # 正确 ann_id 命中；别的 ann_id / 裸 untitled 都不得误中
+            self.assertIsNotNone(files.find_cached(tmp_path, None, "", ann_id=7))
+            self.assertIsNone(files.find_cached(tmp_path, None, "", ann_id=8))
+            self.assertIsNone(files.find_cached(tmp_path, None, ""))
+
+
+class CliNoCommandJsonTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(render.configure, as_json=False, quiet=False)
+        self.addCleanup(render.set_catalog, None)
+
+    def test_json_without_subcommand_is_json(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.dict("os.environ", {"GUIJU_NO_AUTO_SYNC": "1",
+                                            "GUIJU_HOME": tmp.name}),
+            redirect_stdout(out),
+            redirect_stderr(err),
+        ):
+            rc = main(["--json", "--db", str(Path(tmp.name) / "c.db")])
+        self.assertEqual(rc, 0)
+        payload = json.loads(out.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertIn("commands", payload)
 
 
 if __name__ == "__main__":

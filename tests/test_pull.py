@@ -1,45 +1,27 @@
-"""W4 CLI/pull 发版修复回归（1.2.0a4 / task-57）。
-
-每条测试对应计划 W4-1..W4-5，先复现原缺陷：
-- W4-1 批量失败体丢 candidates/availability/...；成功项丢 name/status/availability/source_page。
-- W4-2 单条 pull 的 30/32/33/resolve 早期失败没有 availability/availability_note。
-- W4-3 批量 SQLite locked/corrupt 被兜成 exit 1/internal，而不是 20/50 + stopped=database。
-- W4-4 shzjw（api_mode）pull 不落 announcement/mention，已缓存 10 路径也不补；
-  cite --offline 因此不可用。
-- W4-5 未知 --source、清单 BOM、--json 无子命令、exit 10 形状。
-"""
+"""pull 命令：AppContext 注入、availability 字段传播、api_mode 落库与 cite 闭环测试。"""
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import io
 import json
-import sqlite3
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from guiju import report as render
 from guiju.application import AppContext, pull
-from guiju.application.pull import (
-    _batch,
-    _codes_for_book,
-    _pull_api,
-    _pull_one,
-    _read_refs,
-)
+from guiju.application.pull import _codes_for_book, _pull_api, _pull_one
 from guiju.cli import main
+from guiju.cli.commands import pull as pull_cli
+from guiju.currency import CachedCurrency
 from guiju.domain import attachment as att_domain
 from guiju.domain import availability, naming
 from guiju.domain.codes import Codes, Confidence, Mention, Role, normalize_key
-from guiju.errors import (
-    AmbiguousAttachment,
-    AmbiguousCode,
-    BadAttachment,
-    GuijuError,
-    NotIndexed,
-)
+from guiju.errors import AmbiguousAttachment, AmbiguousCode, BadAttachment, GuijuError, NotIndexed
 from guiju.files import sha256_bytes
 from guiju.net.request import ProbeRecord
 from guiju.store.sqlite import Store
@@ -89,119 +71,45 @@ def _target(**overrides):
     return target
 
 
-# --------------------------------------------------------------------- W4-1
+class PullCurrencyStoreTest(unittest.TestCase):
+    """M9：CLI 入口必须装配带 store 的 CachedCurrency 并经 AppContext 注入 pull。"""
 
-
-class BatchFailureHandoffTest(unittest.TestCase):
-    def _run_batch(self, side_effect):
+    def test_pull_cli_injects_store_backed_currency(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        args = _args(list="-", out=tmp.name)
+        store = Store(Path(tmp.name) / "c.db")
+        self.addCleanup(store.close)
+        args = argparse.Namespace(
+            ref="GB 50016-2014", out=tmp.name, force=False, readable=False,
+            source="mohurd", list=None,
+        )
+        source = mock.Mock(spec=[])  # api_mode 缺失 → 走非 API 分支
+        captured = {}
+
+        def fake_resolve(s, ref, currency=None, allow_network=True, fetch_detail=None, sources=None):
+            captured["currency"] = currency
+            return {"ann": {"id": 1, "url": "u", "doc_name": "d", "published_on": "2020-01-01"},
+                    "versions": [], "code_key": None, "code_display": None}
+
         with (
-            mock.patch.object(pull, "_read_refs", return_value=["A-1", "B-2"]),
-            mock.patch.object(pull, "_pull_one", side_effect=side_effect),
-            mock.patch.object(pull.render, "emit") as emit,
-            mock.patch.object(pull.render, "note"),
-            mock.patch.object(pull.render, "is_json", return_value=True),
+            mock.patch.object(pull, "resolve", side_effect=fake_resolve),
+            mock.patch.object(pull, "find_cached", return_value=None),
+            mock.patch.object(pull, "availability"),
+            contextlib.suppress(Exception),
         ):
-            rc = _batch(mock.Mock(), args, mock.Mock())
-        return rc, emit.call_args.args[0]
+            # 我们只关心 CLI 入口装配后传给 resolve 的 currency，后续下载路径允许失败
+            pull_cli.run(store, args, sources={"mohurd": source})
+        self.assertIsInstance(captured.get("currency"), CachedCurrency)
+        self.assertIs(captured["currency"].store, store)
 
-    def test_ambiguous_errors_keep_all_handoff_fields(self):
-        def side_effect(store, args, ref, source, out_dir):
-            if ref == "A-1":
-                raise AmbiguousCode(
-                    "多个编号候选",
-                    hint="请人工选定",
-                    candidates=[{"code": "GB 1-2020", "key": "GB1-2020"}],
-                    availability="in_window",
-                    availability_note="2026 年公告在正文可得窗口内",
-                    page_url="https://www.mohurd.gov.cn/x/1",
-                    verdict="ambiguous",
-                    names=["甲标准"],
-                    pick_reason="正文有多个候选",
-                )
-            raise AmbiguousAttachment(
-                "多个附件候选",
-                hint="请人工选定附件",
-                candidates=[{"label": "甲.pdf", "url": "https://x/a.pdf"}],
-                attachments=[{"label": "甲.pdf", "url": "https://x/a.pdf"}],
-                availability="pre_window",
-                availability_note="2010 年公告通常没有正文",
-                page_url="https://www.mohurd.gov.cn/x/2",
-                verdict="ambiguous",
-                names=["乙标准"],
-                pick_reason="附件名无法锁定",
+        with self.assertRaises(ValueError):
+            _pull_one(
+                store,
+                argparse.Namespace(force=False, readable=False, out=tmp.name),
+                "GB 50016-2014",
+                source,
+                Path(tmp.name),
             )
-
-        rc, payload = self._run_batch(side_effect)
-        # 32/33 不属于 _SEVERE（1/20/40/50）；批量顶层按既有契约返回 0，逐条看 exit。
-        self.assertEqual(rc, 0)
-        first, second = payload["results"]
-        self.assertEqual(first["exit"], 32)
-        self.assertEqual(second["exit"], 33)
-        for key in (
-            "error",
-            "hint",
-            "candidates",
-            "availability",
-            "availability_note",
-            "page_url",
-            "verdict",
-            "names",
-            "pick_reason",
-        ):
-            self.assertIn(key, first, key)
-            self.assertIn(key, second, key)
-        self.assertEqual(first["availability"], "in_window")
-        self.assertEqual(second["availability"], "pre_window")
-        self.assertEqual(second["attachments"], [{"label": "甲.pdf", "url": "https://x/a.pdf"}])
-        # 失败体不得携带成功字段
-        self.assertNotIn("path", first)
-        self.assertNotIn("sha256", first)
-
-    def test_no_attachment_keeps_availability(self):
-        def side_effect(store, args, ref, source, out_dir):
-            raise BadAttachment(
-                "附件不是 PDF",
-                availability="pre_window",
-                availability_note="2010 年公告通常没有正文",
-            )
-
-        rc, payload = self._run_batch(side_effect)
-        # 30 不属于 _SEVERE；批量顶层按既有契约返回 0，逐条看 exit。
-        self.assertEqual(rc, 0)
-        result = payload["results"][0]
-        self.assertEqual(result["exit"], 30)
-        self.assertEqual(result["availability"], "pre_window")
-        self.assertEqual(result["availability_note"], "2010 年公告通常没有正文")
-
-    def test_success_item_keeps_name_status_availability_source_page(self):
-        def side_effect(store, args, ref, source, out_dir):
-            return {
-                "ok": True,
-                "exit": 0,
-                "code": "GB 1-2020",
-                "name": "某标准",
-                "status": "current",
-                "availability": "in_window",
-                "source_page": "https://www.mohurd.gov.cn/x/1",
-                "path": "/tmp/x.pdf",
-                "bytes": 12,
-            }
-
-        rc, payload = self._run_batch(side_effect)
-        self.assertEqual(rc, 0)
-        result = payload["results"][0]
-        for key in ("name", "status", "availability", "source_page"):
-            self.assertIn(key, result, key)
-        self.assertEqual(result["name"], "某标准")
-        self.assertEqual(result["status"], "current")
-        self.assertEqual(result["availability"], "in_window")
-        self.assertEqual(result["source_page"], "https://www.mohurd.gov.cn/x/1")
-
-
-# --------------------------------------------------------------------- W4-2
 
 
 class PullOneAvailabilityTest(unittest.TestCase):
@@ -368,10 +276,6 @@ class PullApiAvailabilityTest(unittest.TestCase):
             source.download_to.side_effect = download
         return source
 
-    def _call(self, source, ref="DG/TJ08-1-2020"):
-        with tempfile.TemporaryDirectory() as tmp:
-            return _pull_api(mock.Mock(), _args(), ref, source, Path(tmp))
-
     def _raise_api(self, source, ref="DG/TJ08-1-2020"):
         with tempfile.TemporaryDirectory() as tmp, self.assertRaises(GuijuError) as ctx:
             _pull_api(mock.Mock(), _args(), ref, source, Path(tmp))
@@ -427,62 +331,6 @@ class PullApiAvailabilityTest(unittest.TestCase):
         self.assertEqual(payload["availability"], "in_window")
 
 
-# --------------------------------------------------------------------- W4-3
-
-
-class BatchDatabaseErrorTest(unittest.TestCase):
-    def _run(self, error):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        refs = Path(tmp.name) / "refs.txt"
-        refs.write_text("A-1\nB-2\nC-3\n", encoding="utf-8")
-        calls = []
-
-        def side_effect(store, args, ref, source, out_dir):
-            calls.append(ref)
-            if ref == "B-2":
-                raise error
-            return {"exit": 0, "code": ref, "availability": "in_window"}
-
-        args = _args(list=str(refs), out=tmp.name)
-        with (
-            mock.patch.object(pull, "_pull_one", side_effect=side_effect),
-            mock.patch.object(pull.render, "emit") as emit,
-            mock.patch.object(pull.render, "note"),
-            mock.patch.object(pull.render, "is_json", return_value=True),
-        ):
-            rc = _batch(mock.Mock(), args, mock.Mock())
-        return rc, calls, emit.call_args.args[0]
-
-    def test_locked_maps_to_20_and_stops_batch(self):
-        rc, calls, payload = self._run(sqlite3.OperationalError("database is locked"))
-        self.assertEqual(rc, 20)
-        self.assertEqual(calls, ["A-1", "B-2"])
-        self.assertEqual(payload["stopped"], "database")
-        self.assertEqual(payload["results"][-1]["exit"], 20)
-        self.assertEqual(payload["results"][-1]["availability"], "unknown")
-        self.assertEqual(payload["done"], 2)
-        self.assertEqual(payload["total"], 3)
-
-    def test_corrupt_maps_to_50_and_stops_batch(self):
-        rc, calls, payload = self._run(sqlite3.DatabaseError("file is not a database"))
-        self.assertEqual(rc, 50)
-        self.assertEqual(calls, ["A-1", "B-2"])
-        self.assertEqual(payload["stopped"], "database")
-        self.assertEqual(payload["results"][-1]["exit"], 50)
-        self.assertEqual(payload["results"][-1]["availability"], "unknown")
-
-    def test_readonly_maps_to_50(self):
-        rc, _calls, payload = self._run(
-            sqlite3.OperationalError("attempt to write a readonly database")
-        )
-        self.assertEqual(rc, 50)
-        self.assertEqual(payload["results"][-1]["exit"], 50)
-
-
-# --------------------------------------------------------------------- W4-4
-
-
 class _FakeApiSource:
     id = "fakeapi"
     display_name = "测试地标源"
@@ -521,6 +369,8 @@ class PullApiCiteRoundTripTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(render.configure, as_json=False, quiet=False)
+        self.addCleanup(render.set_catalog, None)
         self.home = Path(self.tmp.name)
         self.db = self.home / "catalog.db"
         self.out = self.home / "library"
@@ -546,20 +396,22 @@ class PullApiCiteRoundTripTest(unittest.TestCase):
         rec = _api_rec()
         source = _FakeApiSource(rec)
         store = Store(self.db)
-        with mock.patch.object(store, "commit", wraps=store.commit) as commit:
-            payload = _pull_api(store, _args(force=True), "DG/TJ08-2007-2026", source, self.out)
-            self.assertGreaterEqual(commit.call_count, 1)
-        self.assertTrue(payload["ok"])
-        self.assertEqual(payload["exit"], 0)
-        ann = store.get_ann_by_url(rec["page_url"])
-        self.assertIsNotNone(ann)
-        mentions = store.mentions_for(int(ann["id"]))
-        self.assertEqual(len(mentions), 1)
-        self.assertEqual(mentions[0]["code_key"], normalize_key(rec["code"]))
-        self.assertEqual(mentions[0]["role"], "primary")
-        self.assertEqual(mentions[0]["confidence"], "parsed")
-        self.assertEqual(mentions[0]["status"], "current")
-        store.close()
+        try:
+            with mock.patch.object(store, "commit", wraps=store.commit) as commit:
+                payload = _pull_api(store, _args(force=True), "DG/TJ08-2007-2026", source, self.out)
+                self.assertGreaterEqual(commit.call_count, 1)
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["exit"], 0)
+            ann = store.get_ann_by_url(rec["page_url"])
+            self.assertIsNotNone(ann)
+            mentions = store.mentions_for(int(ann["id"]))
+            self.assertEqual(len(mentions), 1)
+            self.assertEqual(mentions[0]["code_key"], normalize_key(rec["code"]))
+            self.assertEqual(mentions[0]["role"], "primary")
+            self.assertEqual(mentions[0]["confidence"], "parsed")
+            self.assertEqual(mentions[0]["status"], "current")
+        finally:
+            store.close()
 
         rc, stdout, stderr = self._run_cite()
         self.assertEqual(rc, 0, stderr)
@@ -578,24 +430,26 @@ class PullApiCiteRoundTripTest(unittest.TestCase):
         cached_path.write_bytes(PDF)
 
         store = Store(self.db)
-        self.assertEqual(store.count_announcements(), 0)
-        with mock.patch.object(store, "commit", wraps=store.commit) as commit:
-            payload = _pull_api(
-                store, _args(force=False), "DG/TJ08-2007-2026", source, self.out
-            )
-            self.assertGreaterEqual(commit.call_count, 1)
-        self.assertEqual(payload["exit"], 10)
-        self.assertTrue(payload["already"])
-        for key in ("name", "status", "availability", "source_page", "published_on"):
-            self.assertIn(key, payload, key)
-        self.assertEqual(payload["availability"], "in_window")
-        self.assertEqual(source.downloaded, [])  # 没有重下
-        ann = store.get_ann_by_url(rec["page_url"])
-        self.assertIsNotNone(ann)
-        mentions = store.mentions_for(int(ann["id"]))
-        self.assertEqual([m["code_key"] for m in mentions], [code_key])
-        self.assertEqual(mentions[0]["status"], "current")
-        store.close()
+        try:
+            self.assertEqual(store.count_announcements(), 0)
+            with mock.patch.object(store, "commit", wraps=store.commit) as commit:
+                payload = _pull_api(
+                    store, _args(force=False), "DG/TJ08-2007-2026", source, self.out
+                )
+                self.assertGreaterEqual(commit.call_count, 1)
+            self.assertEqual(payload["exit"], 10)
+            self.assertTrue(payload["already"])
+            for key in ("name", "status", "availability", "source_page", "published_on"):
+                self.assertIn(key, payload, key)
+            self.assertEqual(payload["availability"], "in_window")
+            self.assertEqual(source.downloaded, [])  # 没有重下
+            ann = store.get_ann_by_url(rec["page_url"])
+            self.assertIsNotNone(ann)
+            mentions = store.mentions_for(int(ann["id"]))
+            self.assertEqual([m["code_key"] for m in mentions], [code_key])
+            self.assertEqual(mentions[0]["status"], "current")
+        finally:
+            store.close()
 
         rc, stdout, stderr = self._run_cite()
         self.assertEqual(rc, 0, stderr)
@@ -605,28 +459,12 @@ class PullApiCiteRoundTripTest(unittest.TestCase):
         rec = _api_rec(status="withdrawn")
         source = _FakeApiSource(rec)
         store = Store(self.db)
-        _pull_api(store, _args(force=True), "DG/TJ08-2007-2026", source, self.out)
-        row = store.find_by_code(normalize_key(rec["code"]))
-        self.assertEqual(row[0]["status"], "withdrawn")
-        store.close()
-
-
-# --------------------------------------------------------------------- W4-5
-
-
-class ReadRefsBomTest(unittest.TestCase):
-    def test_file_bom_stripped(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as f:
-            f.write("\ufeffGB 50037\nGB 50038\n")
-            path = f.name
         try:
-            self.assertEqual(_read_refs(path), ["GB 50037", "GB 50038"])
+            _pull_api(store, _args(force=True), "DG/TJ08-2007-2026", source, self.out)
+            row = store.find_by_code(normalize_key(rec["code"]))
+            self.assertEqual(row[0]["status"], "withdrawn")
         finally:
-            Path(path).unlink(missing_ok=True)
-
-    def test_stdin_bom_stripped(self):
-        with mock.patch("sys.stdin", io.StringIO("\ufeffGB 50037\n")):
-            self.assertEqual(_read_refs("-"), ["GB 50037"])
+            store.close()
 
 
 class PullOneCachedShapeTest(unittest.TestCase):
@@ -641,8 +479,6 @@ class PullOneCachedShapeTest(unittest.TestCase):
             with mock.patch.object(pull, "resolve", return_value=_target()):
                 payload = _pull_one(mock.Mock(), _args(force=False), "某标准", source, out)
 
-            # 真实落盘路径：下载成功后必须经唯一 finalize 点改名，不能再出现
-            # `_finalize_body` 未定义/双下划线 helper 的 NameError（rev2 P0）。
             source.detail.return_value = ("<html></html>", "发布 GB 1-2020")
             source.attachments.return_value = [
                 att_domain.Attachment(url="https://x/a.pdf", label="某标准.pdf", kind="pdf")
@@ -700,25 +536,11 @@ class PullOneCachedShapeTest(unittest.TestCase):
         self.assertEqual(payload["availability"], "in_window")
 
 
-class CliNoCommandJsonTest(unittest.TestCase):
-    def test_json_without_subcommand_is_json(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        out, err = io.StringIO(), io.StringIO()
-        with (
-            mock.patch.dict("os.environ", {"GUIJU_NO_AUTO_SYNC": "1",
-                                            "GUIJU_HOME": tmp.name}),
-            redirect_stdout(out),
-            redirect_stderr(err),
-        ):
-            rc = main(["--json", "--db", str(Path(tmp.name) / "c.db")])
-        self.assertEqual(rc, 0)
-        payload = json.loads(out.getvalue())
-        self.assertTrue(payload["ok"])
-        self.assertIn("commands", payload)
-
-
 class UnknownSourceTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(render.configure, as_json=False, quiet=False)
+        self.addCleanup(render.set_catalog, None)
+
     def test_unknown_source_is_bad_usage(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

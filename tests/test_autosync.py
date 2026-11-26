@@ -1,14 +1,22 @@
-"""进程内目录保鲜：新鲜不联网、过期刷一次、失败冷却、锁被占用要如实反馈。"""
+"""进程内目录保鲜：新鲜不联网、过期刷一次、失败冷却、锁被占用要如实反馈、W2 按源聚合。"""
 
+from __future__ import annotations
+
+import io
+import json
 import os
+import sqlite3
 import tempfile
 import unittest
+from argparse import Namespace
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
 from guiju import autosync
 from guiju import report as render
+from guiju.cli.commands import status
 from guiju.errors import NeedsHuman
 from guiju.store.sqlite import Store
 
@@ -16,7 +24,7 @@ from guiju.store.sqlite import Store
 class AutoSyncTest(unittest.TestCase):
     def setUp(self):
         # 测试必须与调用方 shell 的 GUIJU_NO_AUTO_SYNC 隔离；否则整个套件
-        # 在“自动刷新已禁用”的父环境下会把刷新分支全部测成 stale。
+        # 在"自动刷新已禁用"的父环境下会把刷新分支全部测成 stale。
         self._env_guard = mock.patch.dict(os.environ, {}, clear=False)
         self._env_guard.start()
         self.addCleanup(self._env_guard.stop)
@@ -217,10 +225,6 @@ class RenderInjectionTest(unittest.TestCase):
         render.set_catalog(None)
 
     def _emit(self, payload):
-        import io
-        import json
-        from contextlib import redirect_stdout
-
         buf = io.StringIO()
         with redirect_stdout(buf):
             render.emit(payload)
@@ -243,6 +247,194 @@ class RenderInjectionTest(unittest.TestCase):
         render.configure(as_json=True, quiet=True)
         out = self._emit({"ok": True})
         self.assertNotIn("catalog", out)
+
+
+class AutosyncFailureTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.env = mock.patch.dict("os.environ", {"GUIJU_NO_AUTO_SYNC": ""})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.store = Store(f"{self.tmp.name}/catalog.db")
+        self.addCleanup(self.store.close)
+
+    def test_cooldown_write_failure_does_not_escape(self):
+        with mock.patch("guiju.syncengine.crawl", side_effect=RuntimeError("boom")), \
+                mock.patch.object(self.store, "set_meta", side_effect=sqlite3.OperationalError("readonly")):
+            snap = autosync.evaluate(self.store, command="search")
+        self.assertEqual(snap["state"], "refresh_failed")
+        self.assertIn("目录刷新失败", snap["message"])
+
+    def test_commit_failure_does_not_escape(self):
+        with mock.patch("guiju.syncengine.crawl", side_effect=RuntimeError("boom")), \
+                mock.patch.object(self.store, "commit", side_effect=sqlite3.OperationalError("disk full")):
+            snap = autosync.evaluate(self.store, command="search")
+        self.assertEqual(snap["state"], "refresh_failed")
+
+    def test_clear_failure_does_not_block_refreshed(self):
+        with mock.patch("guiju.syncengine.crawl", return_value={"new": 3}), \
+                mock.patch.object(self.store, "set_meta", side_effect=sqlite3.OperationalError("readonly")):
+            snap = autosync.evaluate(self.store, command="search")
+        self.assertEqual(snap["state"], "refreshed")
+        self.assertEqual(snap["new"], 3)
+
+    def test_clear_commit_failure_does_not_block_refreshed(self):
+        with mock.patch("guiju.syncengine.crawl", return_value={"new": 3}), \
+                mock.patch.object(self.store, "commit", side_effect=sqlite3.OperationalError("disk full")):
+            snap = autosync.evaluate(self.store, command="search")
+        self.assertEqual(snap["state"], "refreshed")
+
+
+class AutosyncNotifyTest(unittest.TestCase):
+    def setUp(self) -> None:
+        # 与 AutoSyncTest 同因：父 shell 的 GUIJU_NO_AUTO_SYNC 不能改变单测分支。
+        self._env_guard = mock.patch.dict(os.environ, {}, clear=False)
+        self._env_guard.start()
+        self.addCleanup(self._env_guard.stop)
+        os.environ.pop("GUIJU_NO_AUTO_SYNC", None)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_autosync_notify_uses_fresh_empty(self) -> None:
+        store = Store(Path(self.tmp.name) / "c.db")
+        self.addCleanup(store.close)
+        # 锁外判定时空目录；锁内复查已被"别的进程"补满 → 提示应为增量而非首次同步
+        counts = iter([0, 5, 5, 5, 5])
+        msgs: list[str] = []
+        with mock.patch.object(store, "count_announcements", lambda: next(counts)), \
+             mock.patch.object(store, "catalog_age_days", lambda: 9.5), \
+             mock.patch("guiju.syncengine.crawl", lambda s: {"new": 2}):
+            autosync.evaluate(store, command="search", notify=msgs.append)
+        self.assertTrue(msgs)
+        self.assertIn("增量同步", msgs[0])
+        self.assertNotIn("首次同步", msgs[0])
+
+
+class AutoSyncW2Test(unittest.TestCase):
+    def setUp(self):
+        # 每个用例清掉宿主/外层测试可能带进来的关闭开关，避免 autosync 不执行。
+        env = mock.patch.dict(os.environ, {}, clear=False)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("GUIJU_NO_AUTO_SYNC", None)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Store(str(Path(self.tmp.name) / "catalog.db"))
+        self.addCleanup(self.store.close)
+
+    def _set_source(self, source, *, complete=True, days_ago=1, reason=""):
+        ts = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
+        self.store.set_meta(f"sync:{source}:complete", "1" if complete else "0")
+        self.store.set_meta(f"sync:{source}:reason", reason)
+        self.store.set_meta(f"sync:{source}:synced_at", ts)
+        self.store.commit()
+
+    def test_catalog_sources_all_and_aggregate(self):
+        self._set_source("mohurd", complete=True, days_ago=1)
+        self._set_source("shzjw", complete=True, days_ago=1)
+        snap = autosync._snap(self.store, state="refreshed", source="mohurd")
+        self.assertEqual(snap["source"], "mohurd")
+        self.assertEqual([s["source"] for s in snap["sources_all"]], ["mohurd", "shzjw"])
+        self.assertEqual(snap["aggregate"]["state"], "fresh")
+        self.assertTrue(snap["aggregate"]["complete"])
+        self.assertEqual(snap["aggregate"]["reason"], "")
+        self.assertAlmostEqual(snap["aggregate"]["age_days"], 1.0, delta=0.02)
+        self.assertEqual(len(snap["sources"]), 1)
+        self.assertEqual(snap["sources"][0]["source"], "mohurd")
+
+    def test_aggregate_is_worst_and_reason_is_stable(self):
+        self._set_source("mohurd", complete=True, days_ago=1)
+        self._set_source("shzjw", complete=False, days_ago=1, reason="empty_page_before_total")
+        snap = autosync._snap(self.store, state="fresh", source="mohurd")
+        self.assertEqual(snap["aggregate"]["state"], "stale")
+        self.assertTrue(snap["aggregate"]["stale"])
+        self.assertFalse(snap["aggregate"]["complete"])
+        self.assertEqual(snap["aggregate"]["reason"], "shzjw=empty_page_before_total")
+
+    def test_aggregate_honors_current_stale_state(self):
+        self._set_source("mohurd", complete=True, days_ago=1)
+        self._set_source("shzjw", complete=True, days_ago=1)
+        snap = autosync._snap(self.store, state="stale", source="mohurd")
+        self.assertEqual(snap["state"], "stale")
+        self.assertTrue(snap["aggregate"]["stale"])
+        self.assertEqual(snap["aggregate"]["state"], "stale")
+        current = next(
+            item for item in snap["sources_all"] if item["source"] == "mohurd"
+        )
+        self.assertTrue(current["stale"])
+
+    def test_aggregate_reason_empty_source_uses_unknown(self):
+        self._set_source("mohurd", complete=True, days_ago=1)
+        self._set_source("shzjw", complete=False, days_ago=1, reason="")
+        snap = autosync._snap(self.store, state="fresh", source="mohurd")
+        self.assertEqual(snap["aggregate"]["reason"], "shzjw=unknown")
+
+    def test_per_source_cooldown(self):
+        self._set_source("shzjw", complete=False, days_ago=1, reason="empty_page_before_total")
+        old = (datetime.now() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+        self.store.set_meta("auto_sync_failed_at:shzjw", old)
+        self.store.commit()
+        with mock.patch("guiju.syncengine.crawl", side_effect=AssertionError("不该联网")):
+            snap = autosync.evaluate(self.store, command="search", source="shzjw")
+        self.assertEqual(snap["state"], "refresh_failed")
+        self.assertGreater(snap["retry_after_seconds"], 0)
+
+    def test_legacy_mohurd_cooldown_still_applies(self):
+        self._set_source("mohurd", complete=False, days_ago=1)
+        old = (datetime.now() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+        self.store.set_meta("auto_sync_failed_at", old)
+        self.store.commit()
+        with mock.patch("guiju.syncengine.crawl", side_effect=AssertionError("不该联网")):
+            snap = autosync.evaluate(self.store, command="search", source="mohurd")
+        self.assertEqual(snap["state"], "refresh_failed")
+
+
+class CatalogPayloadBaselineTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Store(str(Path(self.tmp.name) / "catalog.db"))
+        self.addCleanup(self.store.close)
+        self.addCleanup(render.configure, as_json=False, quiet=False)
+        self.store.upsert_announcement(
+            "https://www.mohurd.gov.cn/x.html", "2026-01-01", "标题", "名称", "other"
+        )
+        self.store.set_meta("sync:mohurd:complete", "1")
+        self.store.set_meta("sync:mohurd:total", "1")
+        self.store.set_meta("sync:mohurd:seen", "1")
+        self.store.commit()
+
+    def test_snap_has_existing_fields(self):
+        snap = autosync._snap(self.store, state="fresh", source="mohurd")
+        for key in (
+            "state", "message", "source", "complete", "complete_reason",
+            "age_days", "synced_at", "announcements", "new",
+            "retry_after_seconds", "sources",
+        ):
+            self.assertIn(key, snap)
+        self.assertEqual(snap["state"], "fresh")
+        self.assertEqual(snap["source"], "mohurd")
+        self.assertEqual(snap["announcements"], 1)
+        self.assertIsInstance(snap["sources"], list)
+        self.assertIn("complete", snap["sources"][0])
+
+    def test_status_has_existing_fields(self):
+        buf = io.StringIO()
+        render.configure(as_json=True, quiet=True)
+        with redirect_stdout(buf):
+            rc = status.run(self.store, Namespace())
+        self.assertEqual(rc, 0)
+        payload = json.loads(buf.getvalue())
+        for key in (
+            "ok", "db", "schema_version", "announcements", "editions",
+            "mentions", "scanned", "synced_at", "catalog_age_days",
+            "catalog_stale", "sources", "latest_published_on", "coverage",
+            "by_year",
+        ):
+            self.assertIn(key, payload)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["sources"])
 
 
 if __name__ == "__main__":

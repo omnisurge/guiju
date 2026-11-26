@@ -1,4 +1,6 @@
-"""上海地标源：API 检索 + 直连下载（不打公告页），以及 pull 的 API 模式分支。"""
+"""上海地标源：API 检索 + 直连下载（不打公告页），以及 pull/localstatus 分支测试。"""
+
+from __future__ import annotations
 
 import io
 import json
@@ -8,6 +10,8 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from guiju import localstatus
+from guiju import report as render
 from guiju.cli import main
 from guiju.sources import shzjw
 from guiju.sources.shzjw import _record, file_id_of
@@ -48,6 +52,8 @@ class PullApiModeTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(render.configure, as_json=False, quiet=False)
+        self.addCleanup(render.set_catalog, None)
         self.home = Path(self.tmp.name)
 
     def _run(self, *argv):
@@ -172,16 +178,12 @@ class StatusDimensionTest(unittest.TestCase):
 
 class LocalStatusTest(unittest.TestCase):
     def test_recognises_local_codes(self):
-        from guiju import localstatus
-
         for ref in ("DG/TJ08-2007", "DG/TJ 08-2007-2026", "DBJT08-144", "DB31/T 1010"):
             self.assertTrue(localstatus.is_local_code(ref), ref)
         for ref in ("GB 55037-2022", "JGJ/T450-2018", "建筑防火通用规范"):
             self.assertFalse(localstatus.is_local_code(ref), ref)
 
     def test_records_map_to_currency_shape(self):
-        from guiju import localstatus
-
         hits = [
             {"code": "DG/TJ08-2007-2026", "name": "地质灾害危险性评估技术标准",
              "status": "current", "implement_on": "2027-02-01"},
@@ -194,12 +196,25 @@ class LocalStatusTest(unittest.TestCase):
         self.assertEqual(recs[0].implement_date, "2027-02-01")
 
 
+class LocalstatusPrefixTest(unittest.TestCase):
+    def test_localstatus_shanghai_prefixes(self) -> None:
+        for ref in ("DG/TJ08-2007-2026", "DBJT08-109-2017", "DGJ08-88-2021",
+                    "DB31/T 1531-2024", "DBJ08-214-2021"):
+            self.assertTrue(localstatus.is_local_code(ref), ref)
+
+    def test_localstatus_rejects_foreign_prefixes(self) -> None:
+        for ref in ("DBJ50-023-2020", "DGJ11-01-2020", "DB32/T 1-2020", "DB11/T 1-2020"):
+            self.assertFalse(localstatus.is_local_code(ref), ref)
+
+
 class WhichFallbackTest(unittest.TestCase):
     """时效服务没记录时，地方标准的现行性由源站回答（which 的 currency_source 可证）。"""
 
     def test_which_uses_shzjw_when_currency_has_nothing(self):
         from guiju import currency as currency_mod
 
+        self.addCleanup(render.configure, as_json=False, quiet=False)
+        self.addCleanup(render.set_catalog, None)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         buf = io.StringIO()

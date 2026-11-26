@@ -327,5 +327,18 @@ class CommandWiringTest(unittest.TestCase):
         self.assertEqual(missing, [], f"这些子命令没绑 func：{missing}")
 
 
+class NoBatchFixTestFilesTest(unittest.TestCase):
+    """S5 收口护栏：禁止新增 test_fix_* / test_b2_* / test_b3_* / test_w1_* 按批次命名的单测文件。"""
+
+    def test_no_batch_named_fix_test_files(self):
+        tests_dir = ROOT / "tests"
+        offenders = sorted(
+            path.name
+            for path in tests_dir.glob("test_*.py")
+            if re.match(r"^test_(?:fix|b2|b3|w1)_", path.name)
+        )
+        self.assertEqual(offenders, [], f"禁止新增批次/修复命名测试文件：{offenders}")
+
+
 if __name__ == "__main__":
     unittest.main()
