@@ -13,13 +13,13 @@
 
 | 项 | 值 |
 |---|---|
-| 代码基线 | `feat/v1.3.0`（S0–S5 提交 `0c62bc7`..`62c85dc` + S6 冻结） |
-| 版本 | `1.3.0`（目标发布 tag `v1.3.0`） |
+| 代码基线 | `main`（S0–S6 收口，发布 tag `v1.3.0` 指向最终发布提交） |
+| 版本 | `1.3.0`（发布 tag `v1.3.0`） |
 | 单测 | Python 3.10.21 / 3.13.5 **各 1224/1224 通过**；`scripts/ci.sh` exit 0（含 ruff、docs-only、离线 e2e 4/4） |
 | 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39** 通过，exit 0；日志 `/tmp/guiju-e2e-20261126-release.log`，2781 bytes，SHA-256 `dc94b38cafd5a608ced816705a085b1d483d101607842b28b276c452290a4f56`（同步 db=3257 上游=3257，二次幂等 new=0） |
 | 发布产物 | wheel `guiju-1.3.0-py3-none-any.whl` SHA-256 `cb3d7ec00569412f8d559b2568472b1d4ed353ed41192c8bd88d5ec9ab73a187`；sdist `guiju-1.3.0.tar.gz` SHA-256 `adfa515d1e4165bf084c8307581dd804a61eaf2a92e2adf272e1e1d773299bda` |
 | 本地回退演练 | `/tmp/guiju-rollback-drill-20261126` 实测 `1.3.0 → 1.2.0 → 1.3.0` wheel 切换、`SCHEMA_VERSION=2` DB 直读与备份回滚均完整（`rollback_drill_marker=before-rollback-1.3.0`，`sources --json` 与 `version --json` 均通过） |
-| hk 生产部署 | 尚未部署（待所有者窗口执行 `1.2.0 ↔ 1.3.0` 部署、强化 unit 更新及真实 systemd 回退/再部署演练）；未访问 NAS |
+| hk 生产部署 | 2026-11-26 20:00 CST 已升级 1.3.0（/opt/guiju，Python 3.11.2）；强化 unit SHA-256 `a91fcd79d9fec2b726aabc586bca2f514b96ed3785d656fe2ce3ba4d238ffc6c`（移除 `ExecStartPre=/bin/mkdir -p /var/lib/guiju/mcp`），`User=guiju` / `Group=guiju` / `ProtectSystem=strict` / `ReadWritePaths=/var/lib/guiju` / `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`；本地 health `{"ok":true}`，MCP query `GB 55037-2022` 返回 current，MCP batch 内联 `codes[]` 通过（返回 `总数 1, 完成 1`），`list` 参数明确拒绝（`isError=True`），公网无 Bearer 401；完成 `1.2.0 ↔ 1.3.0` 真实 systemd 回退/再部署。备份 `/opt/guiju/backup-1.2.0-20261126-195727/`（另留 `guiju.prev-1.2.0-20261126-195727` 与 `guiju-mcp.service.bak-20261126-195727`）；未访问 NAS |
 | 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.3.0 |
 
 ## v1.2.0（2026-11-24）

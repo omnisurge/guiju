@@ -11,7 +11,7 @@
 > S3 退场 `guiju/compliance.py`、`guiju/currency/httpx.py`、`guiju/cli/{lookup,render}.py` 与 `application/` 隐式构造兜底并由 `AppContext` 显式装配；
 > S4 彻底净化 MCP 服务面（`batch` 仅内联 `codes[]`，强制后端提供并发安全 `query(code) -> Outcome`，`_ReadOnlyStore` 白名单化）；
 > S5 将 33 个按批次命名的回归文件零删减收敛入领域测试套件并设防回流守卫。
-> B4/B5（1.2.0）基础见 [b4-application-mcp-20261123.md](audit/b4-application-mcp-20261123.md) 与 [release-1.2.0-20261124.md](audit/release-1.2.0-20261124.md)；hk `guiju-mcp` 运行 1.2.0（1.3.0 待所有者窗口升级与回退演练），NAS 绝不访问。
+> B4/B5（1.2.0）基础见 [b4-application-mcp-20261123.md](audit/b4-application-mcp-20261123.md) 与 [release-1.2.0-20261124.md](audit/release-1.2.0-20261124.md)；hk `guiju-mcp` 已部署 1.3.0 与强化 unit 并完成 `1.2.0 ↔ 1.3.0` 真实 systemd 回退/再部署，NAS 绝不访问。
 
 > **修订（2026-11-09）**：归档责任划给 kb-system 后，本地不再有正文注册表：
 > `artifact` 表、`verify`/`provenance` 命令已删除，幂等改由文件名里的
