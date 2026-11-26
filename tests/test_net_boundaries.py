@@ -33,7 +33,7 @@ class NetBoundaryTest(unittest.TestCase):
         self.assertEqual(hits, allowed)
 
     def test_pull_has_no_direct_replace_and_uses_finalize(self):
-        # B4：pull 编排已迁到 application；CLI 只剩兼容 alias，结构门禁看真实实现。
+        # B4：pull 编排在 application；结构门禁看真实实现。
         text = (ROOT / "guiju/application/pull.py").read_text("utf-8")
         self.assertNotIn("os.replace", text)
         self.assertIn("finalize_body", text)
@@ -207,6 +207,129 @@ class NetBoundaryTest(unittest.TestCase):
                     ):
                         bad.append(f"{rel}:{node.lineno}:from {mod or '.'}")
         self.assertEqual(bad, [])
+
+    def test_cli_shims_and_module_aliases_retired(self):
+        self.assertFalse((ROOT / "guiju/cli/lookup.py").exists())
+        self.assertFalse((ROOT / "guiju/cli/lookup").exists())
+        self.assertFalse((ROOT / "guiju/cli/render.py").exists())
+        self.assertFalse((ROOT / "guiju/cli/render").exists())
+
+        bad_imports = []
+        py_files = [
+            p
+            for base in (ROOT / "guiju", ROOT / "tests")
+            for p in base.rglob("*.py")
+            if "__pycache__" not in p.parts
+        ]
+        for path in py_files:
+            rel = str(path.relative_to(ROOT))
+            in_cli = path.is_relative_to(ROOT / "guiju/cli")
+            tree = ast.parse(path.read_text("utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name in ("guiju.cli.lookup", "guiju.cli.render") or alias.name.startswith(
+                            ("guiju.cli.lookup.", "guiju.cli.render.")
+                        ):
+                            bad_imports.append(f"{rel}:{node.lineno}:{alias.name}")
+                elif isinstance(node, ast.ImportFrom):
+                    mod = node.module or ""
+                    if (
+                        mod in ("guiju.cli.lookup", "guiju.cli.render")
+                        or mod.startswith(("guiju.cli.lookup.", "guiju.cli.render."))
+                        or (mod in ("", "guiju.cli") and any(a.name in ("lookup", "render") for a in node.names))
+                        or (
+                            in_cli
+                            and node.level > 0
+                            and (
+                                mod in ("lookup", "render")
+                                or mod.startswith(("lookup.", "render."))
+                            )
+                        )
+                    ):
+                        bad_imports.append(f"{rel}:{node.lineno}:from {mod or '.'}")
+        self.assertEqual(bad_imports, [])
+
+        bad_aliases = []
+        for path in _files():
+            rel = str(path.relative_to(ROOT))
+            text = path.read_text("utf-8")
+            tree = ast.parse(text)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Assign):
+                    continue
+                for target in node.targets:
+                    if (
+                        isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Attribute)
+                        and isinstance(target.value.value, ast.Name)
+                        and target.value.value.id == "sys"
+                        and target.value.attr == "modules"
+                        and isinstance(target.slice, ast.Name)
+                        and target.slice.id == "__name__"
+                    ):
+                        bad_aliases.append(f"{rel}:{node.lineno}")
+            if "sys.modules[__name__]" in text:
+                bad_aliases.append(f"{rel}:text")
+        self.assertEqual(bad_aliases, [])
+
+    def test_application_has_no_implicit_adapter_construction(self):
+        banned_symbols = {
+            "Store",
+            "CachedCurrency",
+            "default_currency",
+            "NullCurrency",
+            "default_backend",
+            "registry",
+        }
+        banned_env_helpers = {"default_out_dir", "default_home"}
+        bad = []
+        for path in (ROOT / "guiju/application").glob("*.py"):
+            rel = str(path.relative_to(ROOT))
+            is_context = path.name == "context.py"
+            tree = ast.parse(path.read_text("utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name in ("guiju.currency", "guiju.sources", "guiju.store.sqlite"):
+                            bad.append(f"{rel}:{node.lineno}:import {alias.name}")
+                elif isinstance(node, ast.ImportFrom):
+                    mod = node.module or ""
+                    names = {a.name for a in node.names}
+                    if names & banned_symbols:
+                        bad.append(f"{rel}:{node.lineno}:from {mod} import {sorted(names & banned_symbols)}")
+                    if mod == "" and node.level > 0 and (names & {"currency", "sources"}):
+                        bad.append(f"{rel}:{node.lineno}:from . import {sorted(names & {'currency', 'sources'})}")
+                    if mod in ("guiju.currency", "guiju.sources") or (
+                        node.level > 0 and mod in ("currency", "sources")
+                    ):
+                        bad.append(f"{rel}:{node.lineno}:from {mod}")
+                    if not is_context and (names & banned_env_helpers):
+                        bad.append(f"{rel}:{node.lineno}:env helper {sorted(names & banned_env_helpers)}")
+                elif isinstance(node, ast.Call):
+                    func = node.func
+                    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                    if name in banned_symbols or (not is_context and name in banned_env_helpers):
+                        bad.append(f"{rel}:{node.lineno}:call {name}")
+        self.assertEqual(bad, [])
+
+        retired_defs = {
+            "guiju/application/cite.py": {"_check_currency"},
+            "guiju/application/resolve.py": {"_CurrencyModuleProxy", "currency_mod", "_sources_or_registry"},
+            "guiju/application/pull.py": {"_cached_currency"},
+            "guiju/application/context.py": {"currency_or_default"},
+        }
+        leftovers = []
+        for rel, names in retired_defs.items():
+            tree = ast.parse((ROOT / rel).read_text("utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in names:
+                    leftovers.append(f"{rel}:{node.lineno}:{node.name}")
+                elif isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name) and target.id in names:
+                            leftovers.append(f"{rel}:{node.lineno}:{target.id}")
+        self.assertEqual(leftovers, [])
 
 
 if __name__ == "__main__":

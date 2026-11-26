@@ -10,13 +10,13 @@ import argparse
 
 from ... import currency as currency_mod
 from ... import localstatus
+from ... import report as render
+from ...application.resolve import ref_is_code, resolve
 from ...domain.availability import note as availability_note
 from ...domain.availability import state
 from ...domain.currency_check import completeness_of, empty_authoritative_of
 from ...errors import AmbiguousTarget, NoCurrencyRecord, NotIndexed, SourceUnreachable
 from ...store.sqlite import Store
-from .. import render
-from ..lookup import ref_is_code, resolve
 
 
 class _ReplayCurrency:
@@ -108,6 +108,11 @@ def run(store: Store, args: argparse.Namespace) -> int:
         except (NotIndexed, SourceUnreachable):
             records = []
 
+    sources = getattr(ctx, "sources", None) if ctx is not None else None
+    if sources is None:
+        from ...sources import registry
+
+        sources = registry()
     target = None
     error = None
     try:
@@ -116,7 +121,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
             args.ref,
             currency=currency_mod.NullCurrency() if args.offline else cur,
             allow_network=not args.offline,
-            sources=getattr(ctx, "sources", None),
+            sources=sources,
         )
     except (NotIndexed, AmbiguousTarget) as exc:
         # 本地定位失败不算命令失败：时效结论仍然要输出，错误只在提示里说明

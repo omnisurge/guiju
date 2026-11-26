@@ -1,8 +1,7 @@
 """应用层显式上下文。
 
-D3：store / currency / out_dir / offline / allow_network / read_only / home 由入口构造，
-深处禁止 new Store()/default_backend()。旧 CLI 命令暂时通过 from_args 获得同一份
-上下文；后续逐步把参数传递改成显式 context 参数。
+D3：store / currency / out_dir / offline / allow_network / read_only / home / sources
+由入口（CLI/MCP）统一装配后传入应用层，深处禁止隐式构造具体适配器或回退到默认值。
 """
 
 from __future__ import annotations
@@ -63,10 +62,3 @@ class AppContext:
             read_only=True,
             home=default_home(),
         )
-
-    def currency_or_default(self) -> Any:
-        if self.currency is not None:
-            return self.currency
-        from .. import currency as currency_mod
-
-        return currency_mod.default_currency()

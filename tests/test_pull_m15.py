@@ -13,7 +13,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from guiju.cli.commands.pull import _batch, _pull_one, _read_refs
+from guiju.application import AppContext
+from guiju.application.pull import _batch, _pull_one, _read_refs
 from guiju.domain.codes import Codes, Confidence, Mention, Role
 from guiju.errors import EXIT_OK
 
@@ -60,16 +61,21 @@ class ConfidenceReportedFromParseTest(unittest.TestCase):
         choice = mock.Mock(url="https://u/x.pdf", label="正文")
         pick = mock.Mock(ok=True, choice=choice)
         store = mock.Mock()
-        args = argparse.Namespace(force=True, readable=False, out=None)
+        args = argparse.Namespace(
+            force=True,
+            readable=False,
+            out=None,
+            app_context=AppContext(store=store, currency=mock.Mock(), sources={}),
+        )
         with (
             tempfile.TemporaryDirectory() as tmp,
-            mock.patch("guiju.cli.commands.pull.resolve", return_value=target),
-            mock.patch("guiju.cli.commands.pull.classify", return_value=parsed),
-            mock.patch("guiju.cli.commands.pull.att_domain.pick", return_value=pick),
-            mock.patch("guiju.cli.commands.pull.find_cached", return_value=None),
-            mock.patch("guiju.cli.commands.pull.sha256_file", return_value="d"),
-            mock.patch("guiju.cli.commands.pull.sha256_bytes", return_value="k"),
-            mock.patch("guiju.cli.commands.pull.naming.library_name", return_value="f.pdf"),
+            mock.patch("guiju.application.pull.resolve", return_value=target),
+            mock.patch("guiju.application.pull.classify", return_value=parsed),
+            mock.patch("guiju.application.pull.att_domain.pick", return_value=pick),
+            mock.patch("guiju.application.pull.find_cached", return_value=None),
+            mock.patch("guiju.application.pull.sha256_file", return_value="d"),
+            mock.patch("guiju.application.pull.sha256_bytes", return_value="k"),
+            mock.patch("guiju.application.pull.naming.library_name", return_value="f.pdf"),
             mock.patch("os.replace"),
         ):
             result = _pull_one(store, args, "GB 1", source, Path(tmp))
@@ -92,8 +98,8 @@ class BatchNonGuijuErrorTest(unittest.TestCase):
             return {"ok": True, "exit": EXIT_OK, "code": ref, "path": "/p", "bytes": 1}
 
         with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch("guiju.cli.commands.pull._read_refs", return_value=refs), \
-                mock.patch("guiju.cli.commands.pull._pull_one", side_effect=fake_pull):
+                mock.patch("guiju.application.pull._read_refs", return_value=refs), \
+                mock.patch("guiju.application.pull._pull_one", side_effect=fake_pull):
             args = argparse.Namespace(list="-", force=False, readable=False, out=tmp)
             rc = _batch(store, args, source)
         # 整批跑完 3 条，boom 那条记 internal/exit1 → severe → rc=1

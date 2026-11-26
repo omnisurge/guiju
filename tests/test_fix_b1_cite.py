@@ -18,8 +18,10 @@ from pathlib import Path
 from unittest import mock
 
 from guiju import currency as currency_mod
-from guiju.cli import main, render
-from guiju.cli.commands import cite
+from guiju import report as render
+from guiju.application import AppContext
+from guiju.application import cite as cite_app
+from guiju.cli import main
 from guiju.cli.commands import which as which_mod
 from guiju.currency import Record
 from guiju.errors import AmbiguousCode, NoCurrencyRecord, SourceUnreachable
@@ -40,7 +42,7 @@ def _make_store(confidence="parsed"):
 
 
 class _FakeCurrency:
-    """替身：cite.run 与 _check_currency 都会构造 CachedCurrency(store=...)。"""
+    """替身：由入口通过 AppContext 注入给 cite 的时效端口替身。"""
 
     name = "fake"
 
@@ -120,16 +122,23 @@ class _CiteCase(unittest.TestCase):
         }
 
     def _run(self, currency_cls, *, strict=False, offline=False, clause="5.2.1"):
+        cur = currency_mod.NullCurrency() if offline else currency_cls()
         args = argparse.Namespace(
-            ref="某标准", clause=clause, strict=strict, offline=offline, format="json"
+            ref="某标准",
+            clause=clause,
+            strict=strict,
+            offline=offline,
+            format="json",
+            app_context=AppContext(
+                store=self.store, currency=cur, sources={}, offline=offline
+            ),
         )
         emitted = {}
         with (
-            mock.patch.object(cite, "resolve", return_value=self._target()),
-            mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted.update(p)),
-            mock.patch.object(currency_mod, "CachedCurrency", currency_cls),
+            mock.patch.object(cite_app, "resolve", return_value=self._target()),
+            mock.patch.object(cite_app.render, "emit", side_effect=lambda p: emitted.update(p)),
         ):
-            rc = cite.run(self.store, args)
+            rc = cite_app.run(self.store, args)
         return rc, emitted
 
 
@@ -183,15 +192,21 @@ class CiteMultiNameTest(_CiteCase):
         target = self._target()
         target["via"] = "name"
         args = argparse.Namespace(
-            ref="第二本", clause="5.2.1", strict=False, offline=False, format="json"
+            ref="第二本",
+            clause="5.2.1",
+            strict=False,
+            offline=False,
+            format="json",
+            app_context=AppContext(
+                store=store, currency=_FakeCurrency(), sources={}, offline=False
+            ),
         )
         emitted = {}
         with (
-            mock.patch.object(cite, "resolve", return_value=target),
-            mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted.update(p)),
-            mock.patch.object(currency_mod, "CachedCurrency", _FakeCurrency),
+            mock.patch.object(cite_app, "resolve", return_value=target),
+            mock.patch.object(cite_app.render, "emit", side_effect=lambda p: emitted.update(p)),
         ):
-            cite.run(store, args)
+            cite_app.run(store, args)
         self.assertEqual(emitted["name"], "第二本")
         self.assertTrue(emitted["cite"].startswith("《第二本》"))
 

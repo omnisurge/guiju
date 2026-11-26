@@ -14,10 +14,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from guiju.cli import lookup
-from guiju.cli.commands import cite, pull
-from guiju.cli.lookup import local_records, match_currency, resolve
-from guiju.currency import Record
+from guiju.application import AppContext
+from guiju.application import cite as cite_app
+from guiju.application import pull as pull_app
+from guiju.application import resolve as lookup
+from guiju.application.resolve import local_records, match_currency, resolve
+from guiju.cli.commands import cite as cite_cli
+from guiju.cli.commands import pull as pull_cli
+from guiju.currency import CachedCurrency, NullCurrency, Record
 from guiju.domain.currency_check import CurrencyCheck, CurrencyState
 from guiju.errors import SourceUnreachable
 from guiju.store.sqlite import Store
@@ -73,8 +77,7 @@ class HasAttachmentTriStateTest(unittest.TestCase):
         store.add_mention(1, "GB50016-2014", "primary", "e1")
         store.add_mention(2, "GB50016-2014", "target_of_revision", "e2")
         # has_attachment=None 由"编号来自缓存、未抓详情页"产生 → 不打 detail
-        with mock.patch("guiju.sources.registry", return_value={"mohurd": mock.Mock()}):
-            target = resolve(store, "建筑设计防火规范", cur)
+        target = resolve(store, "建筑设计防火规范", cur, sources={"mohurd": mock.Mock()})
         # 两个版本 has_attachment 均为 None（缓存路径没抓详情页）→ win 必须选出来而非 None
         self.assertIsNotNone(target)
         self.assertIn(target["ann"]["url"], ("https://www.mohurd.gov.cn/a1.html",
@@ -91,55 +94,115 @@ class HasAttachmentTriStateTest(unittest.TestCase):
         src = mock.Mock()
         src.detail.return_value = ("<html>a.pdf</html>", "正文")
         src.attachments.return_value = [mock.Mock()]
-        with mock.patch("guiju.sources.registry", return_value={"mohurd": src}):
-            target = resolve(store, "建筑设计防火规范", cur)
+        target = resolve(store, "建筑设计防火规范", cur, sources={"mohurd": src})
         # 两条都抓到了附件（has_attachment=True）→ 取 published_on 最新的 a2
         self.assertEqual(target["ann"]["url"], "https://www.mohurd.gov.cn/a2.html")
 
 
 class PullCurrencyStoreTest(unittest.TestCase):
-    """M9：pull 必须给 resolve 一个带 store 的 CachedCurrency。"""
+    """M9：CLI 入口必须装配带 store 的 CachedCurrency 并经 AppContext 注入 pull。"""
 
-    def test_pull_one_passes_store_backed_currency(self):
+    def test_pull_cli_injects_store_backed_currency(self):
         store = make_store()
-        args = argparse.Namespace(ref="GB 50016-2014", out=None, force=False, readable=False)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        args = argparse.Namespace(
+            ref="GB 50016-2014", out=tmp.name, force=False, readable=False,
+            source="mohurd", list=None,
+        )
         source = mock.Mock(spec=[])  # api_mode 缺失 → 走非 API 分支
         captured = {}
 
-        def fake_resolve(s, ref, currency=None, allow_network=True, fetch_detail=None):
+        def fake_resolve(s, ref, currency=None, allow_network=True, fetch_detail=None, sources=None):
             captured["currency"] = currency
             return {"ann": {"id": 1, "url": "u", "doc_name": "d", "published_on": "2020-01-01"},
                     "versions": [], "code_key": None, "code_display": None}
 
-        with mock.patch.object(pull, "resolve", side_effect=fake_resolve), \
-             mock.patch.object(pull, "find_cached", return_value=None), \
-             mock.patch.object(pull, "availability"), contextlib.suppress(Exception):
-            # 我们只关心 resolve 入参，后续下载路径允许失败
-            pull._pull_one(store, args, "GB 50016-2014", source, Path(tempfile.mkdtemp()))
-        from guiju.currency import CachedCurrency
+        with (
+            mock.patch.object(pull_app, "resolve", side_effect=fake_resolve),
+            mock.patch.object(pull_app, "find_cached", return_value=None),
+            mock.patch.object(pull_app, "availability"),
+            contextlib.suppress(Exception),
+        ):
+            # 我们只关心 CLI 入口装配后传给 resolve 的 currency，后续下载路径允许失败
+            pull_cli.run(store, args, sources={"mohurd": source})
         self.assertIsInstance(captured.get("currency"), CachedCurrency)
         self.assertIs(captured["currency"].store, store)
 
+        with self.assertRaises(ValueError):
+            pull_app._pull_one(
+                store,
+                argparse.Namespace(force=False, readable=False, out=tmp.name),
+                "GB 50016-2014",
+                source,
+                Path(tmp.name),
+            )
 
-class ResolveDefaultCurrencyStoreTest(unittest.TestCase):
-    """M9：resolve 不传 currency 时，默认 CachedCurrency 也要带 store。"""
 
-    def test_default_cached_currency_has_store(self):
-        store = make_store()
-        store.upsert_announcement(
-            "https://www.mohurd.gov.cn/a1.html", "2015-05-01",
-            "关于发布国家标准《建筑设计防火规范》的公告", "建筑设计防火规范", "national",
-        )
-        seen = {}
+class ApplicationExplicitInjectionContractTest(unittest.TestCase):
+    """S3c：application 不得在缺参时隐式构造 CachedCurrency/registry()/out_dir。"""
 
-        def spy(inner=None, store=None):
-            seen["store"] = store
-            return mock.Mock(lookup=lambda code: [], name="spy")
+    def test_missing_explicit_dependencies_raise_value_error(self):
+        store = two_version_store()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        non_api_src = mock.Mock(spec=[])
+        empty_cur = mock.Mock()
+        empty_cur.lookup.return_value = []
 
-        with mock.patch.object(lookup.currency_mod, "CachedCurrency", side_effect=spy), \
-             contextlib.suppress(Exception):
+        # 1. resolve 按编号缺 currency
+        with self.assertRaises(ValueError):
+            resolve(store, "GB 50016-2014")
+        # 2. resolve 同名多版缺 currency
+        with self.assertRaises(ValueError):
             resolve(store, "建筑设计防火规范")
-        self.assertIs(seen.get("store"), store)
+        # 3. resolve 同名多版需抓详情页但缺 sources
+        with self.assertRaises(ValueError):
+            resolve(store, "建筑设计防火规范", currency=empty_cur, allow_network=True)
+        # 4. local_records 缺 sources
+        with self.assertRaises(ValueError):
+            local_records("DG/TJ08-2007")
+        # 5. cite_app.check_currency 在线缺 currency
+        with self.assertRaises(ValueError):
+            cite_app.check_currency("GB 1-2020", offline=False)
+        # 6. cite_app.run 在线缺 AppContext.currency
+        with self.assertRaises(ValueError):
+            cite_app.run(
+                store,
+                argparse.Namespace(ref="GB 1-2020", clause=None, strict=False, offline=False),
+            )
+        # 7. pull_app.run 缺 sources
+        with self.assertRaises(ValueError):
+            pull_app.run(
+                store,
+                argparse.Namespace(
+                    ref="GB 1-2020", source="mohurd", force=False, readable=False, out=tmp.name
+                ),
+            )
+        # 8. pull_app._pull_one 缺 AppContext.currency
+        with self.assertRaises(ValueError):
+            pull_app._pull_one(
+                store,
+                argparse.Namespace(force=False, readable=False, out=tmp.name),
+                "GB 1-2020",
+                non_api_src,
+                Path(tmp.name),
+            )
+        # 9. pull_app._out_dir 缺 out_dir 与 out
+        with self.assertRaises(ValueError):
+            pull_app._out_dir(argparse.Namespace(out=None))
+
+    def test_cite_cli_entry_injects_store_backed_currency_and_sources(self):
+        store = make_store()
+        args = argparse.Namespace(ref="GB 50016-2014", clause=None, strict=False, offline=False)
+        with mock.patch.object(cite_app, "run", return_value=0) as app_run:
+            rc = cite_cli.run(store, args)
+        self.assertEqual(rc, 0)
+        app_run.assert_called_once_with(store, args)
+        ctx = args.app_context
+        self.assertIsInstance(ctx.currency, CachedCurrency)
+        self.assertIs(ctx.currency.store, store)
+        self.assertIn("mohurd", ctx.sources)
 
 
 class LocalRecordsRegistryDrivenTest(unittest.TestCase):
@@ -155,8 +218,7 @@ class LocalRecordsRegistryDrivenTest(unittest.TestCase):
         other = mock.Mock()
         other.api_mode = False
         other.id = "mohurd"
-        with mock.patch("guiju.sources.registry", return_value={"mohurd": other, "shzjw": shzjw}):
-            recs = local_records("DG/TJ 08-2007-2026")
+        recs = local_records("DG/TJ 08-2007-2026", sources={"mohurd": other, "shzjw": shzjw})
         shzjw.find.assert_called_once()
         self.assertEqual(len(recs), 1)
         self.assertEqual(recs[0].code, "DG/TJ08-2007-2026")
@@ -169,8 +231,7 @@ class LocalRecordsRegistryDrivenTest(unittest.TestCase):
         s2.api_mode = True
         s2.id = "newsrc"
         s2.find.return_value = [{"code": "XX-1", "status": "current"}]
-        with mock.patch("guiju.sources.registry", return_value={"newsrc": s2}):
-            recs = local_records("XX-1")
+        recs = local_records("XX-1", sources={"newsrc": s2})
         self.assertEqual(len(recs), 1)
 
 
@@ -221,25 +282,40 @@ class CiteRefAsCodeFallbackTest(unittest.TestCase):
 
     def test_ref_is_code_gets_citation(self):
         store = self._store_no_code()
-        args = argparse.Namespace(ref="GB 50016-2014", clause=None, strict=False,
-                                  offline=True, format="json")
         src = mock.Mock()
         src.detail.return_value = ("", "无编号正文")
-        with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
-             mock.patch("guiju.sources.registry", return_value={"mohurd": src}):
-            rc = cite.run(store, args)
+        args = argparse.Namespace(
+            ref="GB 50016-2014",
+            clause=None,
+            strict=False,
+            offline=True,
+            format="json",
+            app_context=AppContext(
+                store=store, currency=NullCurrency(), sources={"mohurd": src}, offline=True
+            ),
+        )
+        with mock.patch.object(cite_app, "resolve", return_value=self._target(store)), \
+             mock.patch.object(cite_app, "check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)):
+            rc = cite_app.run(store, args)
         self.assertEqual(rc, 0)
 
     def test_ref_not_code_still_31(self):
         store = self._store_no_code()
-        args = argparse.Namespace(ref="不存在的规范名", clause=None, strict=False,
-                                  offline=True, format="json")
+        args = argparse.Namespace(
+            ref="不存在的规范名",
+            clause=None,
+            strict=False,
+            offline=True,
+            format="json",
+            app_context=AppContext(
+                store=store, currency=NullCurrency(), sources={}, offline=True
+            ),
+        )
         from guiju.errors import NotIndexed
-        with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
+        with mock.patch.object(cite_app, "resolve", return_value=self._target(store)), \
+             mock.patch.object(cite_app, "check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
              self.assertRaises(NotIndexed):
-            cite.run(store, args)
+            cite_app.run(store, args)
 
 
 class CiteDbFallbackConfidenceTest(unittest.TestCase):
@@ -262,34 +338,51 @@ class CiteDbFallbackConfidenceTest(unittest.TestCase):
 
     def test_ambiguous_fallback_warns_and_strict_fails(self):
         store = self._store_mention("ambiguous")
-        args = argparse.Namespace(ref="某公告", clause=None, strict=False,
-                                  offline=True, format="json")
+        args = argparse.Namespace(
+            ref="某公告",
+            clause=None,
+            strict=False,
+            offline=True,
+            format="json",
+            app_context=AppContext(
+                store=store, currency=NullCurrency(), sources={}, offline=True
+            ),
+        )
         emitted = {}
-        with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
-             mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted.update(p)):
-            cite.run(store, args)
+        with mock.patch.object(cite_app, "resolve", return_value=self._target(store)), \
+             mock.patch.object(cite_app, "check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
+             mock.patch.object(cite_app.render, "emit", side_effect=lambda p: emitted.update(p)):
+            cite_app.run(store, args)
         self.assertTrue(emitted["warnings"], "非 parsed 兜底必须产生 warning")
         self.assertEqual(emitted["confidence"], "ambiguous")
 
         args.strict = True
         args.offline = False  # strict+offline 本身是 BadUsage，先解除
+        args.app_context = AppContext(store=store, currency=mock.Mock(), sources={}, offline=False)
         from guiju.errors import AmbiguousCode
-        with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
-             mock.patch.object(cite.render, "emit"), \
+        with mock.patch.object(cite_app, "resolve", return_value=self._target(store)), \
+             mock.patch.object(cite_app, "check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
+             mock.patch.object(cite_app.render, "emit"), \
              self.assertRaises(AmbiguousCode):
-            cite.run(store, args)
+            cite_app.run(store, args)
 
     def test_parsed_fallback_no_extra_warning(self):
         store = self._store_mention("parsed")
-        args = argparse.Namespace(ref="某公告", clause=None, strict=False,
-                                  offline=True, format="json")
+        args = argparse.Namespace(
+            ref="某公告",
+            clause=None,
+            strict=False,
+            offline=True,
+            format="json",
+            app_context=AppContext(
+                store=store, currency=NullCurrency(), sources={}, offline=True
+            ),
+        )
         emitted = {}
-        with mock.patch.object(cite, "resolve", return_value=self._target(store)), \
-             mock.patch.object(cite, "_check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
-             mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted.update(p)):
-            cite.run(store, args)
+        with mock.patch.object(cite_app, "resolve", return_value=self._target(store)), \
+             mock.patch.object(cite_app, "check_currency", return_value=CurrencyCheck(CurrencyState.OFFLINE)), \
+             mock.patch.object(cite_app.render, "emit", side_effect=lambda p: emitted.update(p)):
+            cite_app.run(store, args)
         self.assertEqual(emitted["confidence"], "parsed")
         self.assertEqual(emitted["warnings"], [])
 
@@ -304,9 +397,8 @@ class SourceUnreachableReraiseTest(unittest.TestCase):
         src = mock.Mock()
         src.detail.side_effect = SourceUnreachable("down")
         src.attachments.return_value = []
-        with mock.patch("guiju.sources.registry", return_value={"mohurd": src}), \
-             self.assertRaises(SourceUnreachable):
-            resolve(store, "建筑设计防火规范", cur)
+        with self.assertRaises(SourceUnreachable):
+            resolve(store, "建筑设计防火规范", cur, sources={"mohurd": src})
 
     def test_partial_failure_still_tolerated(self):
         """部分失败部分成功 → 不构成 20，走正常路径。"""
@@ -326,8 +418,7 @@ class SourceUnreachableReraiseTest(unittest.TestCase):
             return r
         src.detail.side_effect = detail
         src.attachments.return_value = []
-        with mock.patch("guiju.sources.registry", return_value={"mohurd": src}):
-            target = resolve(store, "建筑设计防火规范", cur)
+        target = resolve(store, "建筑设计防火规范", cur, sources={"mohurd": src})
         self.assertIsNotNone(target)
 
 

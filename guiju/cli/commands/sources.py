@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 
+from ... import report as render
 from ...application.sources import build_sources
 from ...errors import BadUsage
 from ...sources import registry
 from ...store.sqlite import Store
-from .. import render
 
 
 def run(store: Store, args: argparse.Namespace) -> int:

@@ -24,7 +24,7 @@ class RefIsCodeTest(unittest.TestCase):
     """which/resolve 入口分流：名称形态必须先走本地检索，不能去问时效服务。"""
 
     def test_cjk_name_is_not_code(self):
-        from guiju.cli.lookup import ref_is_code
+        from guiju.application.resolve import ref_is_code
 
         self.assertFalse(ref_is_code("绿色建筑评价标准"))
         self.assertFalse(ref_is_code("《绿色建筑评价标准》"))
@@ -42,19 +42,19 @@ class ResolveExitTest(unittest.TestCase):
         self.addCleanup(self.store.close)
 
     def test_empty_ref_is_bad_usage(self):
-        from guiju.cli.lookup import resolve
+        from guiju.application.resolve import resolve
 
         with self.assertRaises(BadUsage):
             resolve(self.store, "  ")
 
     def test_unknown_url_is_not_indexed(self):
-        from guiju.cli.lookup import resolve
+        from guiju.application.resolve import resolve
 
         with self.assertRaises(NotIndexed):
             resolve(self.store, "https://www.mohurd.gov.cn/not-in-db.html")
 
     def test_unknown_ann_id_is_not_indexed(self):
-        from guiju.cli.lookup import resolve
+        from guiju.application.resolve import resolve
 
         with self.assertRaises(NotIndexed):
             resolve(self.store, "999999")

@@ -1,6 +1,6 @@
 """输出投影（独立于 CLI 的展示层，application 可用 Reporter 接口调用）。
 
-JSON 走 stdout，人类日志走 stderr；CLI 的 render 模块是本模块的兼容 alias。
+JSON 走 stdout，人类日志走 stderr。
 """
 
 

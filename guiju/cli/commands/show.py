@@ -4,21 +4,31 @@ from __future__ import annotations
 
 import argparse
 
+from ... import report as render
+from ...application.resolve import resolve
 from ...domain.availability import note as availability_note
 from ...domain.availability import state
 from ...files import default_out_dir, find_cached
 from ...store.sqlite import Store
-from .. import render
-from ..lookup import resolve
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
     ctx = getattr(args, "app_context", None)
+    currency = getattr(ctx, "currency", None) if ctx is not None else None
+    if currency is None:
+        from ...currency import CachedCurrency
+
+        currency = CachedCurrency(store=store)
+    sources = getattr(ctx, "sources", None) if ctx is not None else None
+    if sources is None:
+        from ...sources import registry
+
+        sources = registry()
     target = resolve(
         store,
         args.ref,
-        currency=getattr(ctx, "currency", None),
-        sources=getattr(ctx, "sources", None),
+        currency=currency,
+        sources=sources,
     )
     ann = target["ann"]
     ann_id = int(ann["id"])

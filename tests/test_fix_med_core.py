@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from guiju.cli import render
+from guiju import report as render
 from guiju.cli.commands import which as which_mod
 from guiju.domain.codes import Confidence, Role, classify
 from guiju.mcp import McpServer, _ReadOnlyStore

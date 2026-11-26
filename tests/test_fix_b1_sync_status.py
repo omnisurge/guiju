@@ -9,7 +9,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from guiju.cli import render
+from guiju import report as render
 from guiju.cli.commands import status
 from guiju.cli.commands import sync as sync_mod
 from guiju.store.sqlite import Store, now

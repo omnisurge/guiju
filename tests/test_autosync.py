@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from guiju import autosync
-from guiju.cli import render
+from guiju import report as render
 from guiju.errors import NeedsHuman
 from guiju.store.sqlite import Store
 

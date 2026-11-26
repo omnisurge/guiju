@@ -301,7 +301,7 @@ class TestSyncIfStaleCountsOnce(unittest.TestCase):
     """sync --if-stale 命中新鲜目录时 count_announcements 只查一次。"""
 
     def test_single_count_call(self):
-        from guiju.cli import render
+        from guiju import report as render
         from guiju.cli.commands import sync as sync_mod
 
         # render 是进程级单例：别的测试若留下 as_json=True，MagicMock 字段会被

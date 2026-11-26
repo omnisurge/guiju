@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 
+from ... import report as render
 from ..._version import __version__
 from ...store.sqlite import Store
-from .. import render
 
 
 def run(store: Store, args: argparse.Namespace) -> int:

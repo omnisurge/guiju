@@ -9,6 +9,7 @@
 - S2：冗余清理与锁收窄（清理 `CachedCurrency` 不可达的进程/SQLite `currency_cache` 路径与死代码 `Store.search()`；`McpServer._announcement` 缩窄 `_store_lock` 至本地 SQLite 读阶段；统一 `search`/`show` 人读主输出走 `stdout`）。
 - S3a：兼容门面 `guiju/compliance.py` 退场（`sources/{mohurd,shzjw}` 改直连 `guiju/net/{body,metadata}`，清理旧 B2 C0 `compliance` 基线门禁同时保留全部 76 条 target characterization 用例，并在 `test_net_boundaries.py` 增加防回流 AST 守卫）。
 - S3b：兼容门面 `guiju/currency/httpx.py` 退场（抽出纯解码模块 `guiju/currency/jsonutil.py`，将 `DEFAULT_METADATA_FORM_HOSTS` / `MetadataPolicy.check_form_url` 与上下文管理器下沉至 `guiju/net`，7 个 `currency` 模块改直连 `MetadataClient` + `jsonutil`，`test_currency_httpx.py` 迁为 `test_net_metadata_client.py` 并新增防回流 AST 守卫）。
+- S3c：CLI shim 与 `application/` 隐式构造兜底退场（删除 `guiju/cli/lookup.py`、`guiju/cli/render.py` 与 `cli/commands/{pull,cite}.py` 的 `sys.modules[__name__]` alias，移除 `application/{__init__,context,resolve,cite,pull}.py` 内隐式 `CachedCurrency` / `NullCurrency` / `registry()` / `default_out_dir` 兜底构造，统一由入口 `AppContext` 显式注入，并在 `test_net_boundaries.py` 与 `test_fix_med_20261112.py` 补充防回流 AST 守卫与显式注入契约单测）。
 
 ## 1.2.0 — 2026-11-24（1.2.0 正式发布）
 

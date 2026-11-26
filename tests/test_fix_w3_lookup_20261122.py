@@ -14,7 +14,7 @@ from unittest import mock
 
 from guiju import currency as currency_mod
 from guiju import localstatus
-from guiju.cli import lookup as lookup_mod
+from guiju.application import resolve as lookup_mod
 from guiju.cli.commands import which as which_mod
 from guiju.currency import Record
 from guiju.currency.model import QueryCancelled
@@ -123,11 +123,14 @@ class PickCurrentVersionConfidenceTest(_StoreCase):
         cur = FakeCurrency([
             _record(code, status=statuses[code]) for code in statuses
         ])
-        with (
-            mock.patch("guiju.sources.registry", lambda: {"mohurd": source}),
-            self.assertRaises(AmbiguousTarget),
-        ):
-            lookup_mod.resolve(self.store, NAME, currency=cur, allow_network=True)
+        with self.assertRaises(AmbiguousTarget):
+            lookup_mod.resolve(
+                self.store,
+                NAME,
+                currency=cur,
+                allow_network=True,
+                sources={"mohurd": source},
+            )
 
     def test_incomplete_currency_cannot_pick_current_version(self):
         first = self._ann("a1", "2022-01-01")
@@ -363,12 +366,10 @@ class WhichLocalFallbackTest(unittest.TestCase):
         source.api_mode = True
         source.id = "shzjw"
         source.find.return_value = []
-        with mock.patch("guiju.sources.registry", return_value={"shzjw": source}):
-            lookup_mod.local_records("DG/TJ08-2007")
+        lookup_mod.local_records("DG/TJ08-2007", sources={"shzjw": source})
         source.find.assert_called_once_with("DG/TJ08-2007", prefer_exact=False)
         source.find.reset_mock()
-        with mock.patch("guiju.sources.registry", return_value={"shzjw": source}):
-            lookup_mod.local_records("DG/TJ08-2007-2026")
+        lookup_mod.local_records("DG/TJ08-2007-2026", sources={"shzjw": source})
         source.find.assert_called_once_with("DG/TJ08-2007-2026", prefer_exact=True)
 
     def test_base_code_keeps_current_year_version(self):

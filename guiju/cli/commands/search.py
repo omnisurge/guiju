@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 
+from ... import report as render
 from ...domain.availability import coverage_statement
 from ...domain.search import rank, tokens_of
 from ...errors import BadUsage
 from ...store.sqlite import Store
-from .. import render
 
 
 def run(store: Store, args: argparse.Namespace) -> int:

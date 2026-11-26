@@ -2,7 +2,7 @@
 
 import unittest
 
-from guiju.cli import lookup
+from guiju.application import resolve as lookup
 from guiju.currency.model import Record
 from guiju.errors import NeedsHuman, NotIndexed
 

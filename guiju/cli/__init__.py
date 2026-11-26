@@ -13,10 +13,10 @@ import sqlite3
 import sys
 
 from .. import autosync
+from .. import report as render
 from ..adapters.store.sqlite import Store
 from ..application import AppContext
 from ..errors import EXIT_OK, EXIT_TABLE, BadUsage, GuijuError, NeedsHuman, SourceUnreachable
-from . import render
 from .commands import (
     cite,
     mcp,
@@ -109,29 +109,34 @@ def main(argv: list[str] | None = None) -> int:
                 parser.print_help()
             return EXIT_OK
         # 只在真正执行子命令时构造 AppContext；--version/无子命令不触碰默认适配器。
-        # pull/cite/which 需要带落库缓存的时效端口：入口构造一次，应用层不再自建。
+        # pull/cite/which/show 需要带落库缓存的时效端口；status/mcp 用 default_currency；
+        # 入口统一装配，应用层不再自建。
         ctx_currency = None
-        if args.cmd in ("pull", "cite", "which", "show") and not (
-            args.cmd == "cite" and bool(getattr(args, "offline", False))
-        ):
-            from ..currency import CachedCurrency
+        if args.cmd in ("pull", "cite", "which", "show"):
+            if args.cmd == "cite" and bool(getattr(args, "offline", False)):
+                from ..currency import NullCurrency
 
-            ctx_currency = CachedCurrency(store=store)
+                ctx_currency = NullCurrency()
+            else:
+                from ..currency import CachedCurrency
+
+                ctx_currency = CachedCurrency(store=store)
+        elif args.cmd in ("status", "mcp"):
+            from ..currency import default_currency
+
+            ctx_currency = default_currency()
         from ..sources import registry as source_registry
 
+        sources_map = source_registry()
         args.app_context = AppContext.from_args(
-            store, args, currency=ctx_currency, sources=source_registry()
+            store, args, currency=ctx_currency, sources=sources_map
         )
-        args._sources = args.app_context.sources
         source = getattr(args, "source", "mohurd") or "mohurd"
-        if args.cmd == "pull":
-            from ..sources import registry as source_registry
-
-            if source not in source_registry():
-                raise BadUsage(
-                    f"未知数据源：{source}",
-                    hint=f"可用数据源：{'、'.join(source_registry())}",
-                )
+        if args.cmd == "pull" and source not in sources_map:
+            raise BadUsage(
+                f"未知数据源：{source}",
+                hint=f"可用数据源：{'、'.join(sources_map)}",
+            )
         # 进程内目录保鲜：过期就顺手增量刷新，不依赖设备级定时任务（见 ADR 0003）。
         # 刷新状态会注入到每份 JSON 结果，agent 不必猜"结果是不是旧的"。
         catalog = autosync.evaluate(
@@ -145,9 +150,7 @@ def main(argv: list[str] | None = None) -> int:
         if catalog.get("message"):
             render.note(catalog["message"])
         if args.cmd == "pull":
-            from ..sources import registry as source_registry
-
-            return int(pull.run(store, args, sources=source_registry()))
+            return int(pull.run(store, args, sources=sources_map))
         return int(args.func(store, args))
     except GuijuError as exc:
         return _fail(exc)

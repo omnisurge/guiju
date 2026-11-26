@@ -21,15 +21,15 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from guiju.cli import main
-from guiju.cli.commands import pull
-from guiju.cli.commands.pull import (
+from guiju.application import AppContext, pull
+from guiju.application.pull import (
     _batch,
     _codes_for_book,
     _pull_api,
     _pull_one,
     _read_refs,
 )
+from guiju.cli import main
 from guiju.domain import attachment as att_domain
 from guiju.domain import availability, naming
 from guiju.domain.codes import Codes, Confidence, Mention, Role, normalize_key
@@ -64,6 +64,15 @@ def _args(**kwargs):
         "source": "mohurd",
     }
     base.update(kwargs)
+    base.setdefault(
+        "app_context",
+        AppContext(
+            store=None,
+            currency=mock.Mock(),
+            out_dir=Path(base["out"]).expanduser() if base["out"] else None,
+            sources={},
+        ),
+    )
     return argparse.Namespace(**base)
 
 

@@ -13,7 +13,11 @@ def run(store: Store, args: argparse.Namespace) -> int:
     # --db 必须贯通到 MCP：announcement 读的应是同一个目录库，而不是默认 GUIJU_HOME。
     # 入口已有 AppContext 时复用同一 currency，避免命令层再建一份。
     ctx = getattr(args, "app_context", None)
-    backend = ctx.currency_or_default() if ctx is not None else mcp_service.default_backend()
+    backend = (
+        ctx.currency
+        if ctx is not None and getattr(ctx, "currency", None) is not None
+        else mcp_service.default_backend()
+    )
     server = mcp_service.McpServer(backend, store_path=store.path)
     if args.http:
         try:

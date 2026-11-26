@@ -7,7 +7,7 @@
 
 import unittest
 
-from guiju.cli.lookup import resolve
+from guiju.application.resolve import resolve
 from guiju.currency import Record
 from guiju.domain.codes import classify
 from guiju.errors import AmbiguousTarget

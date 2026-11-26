@@ -34,18 +34,6 @@ from ..files import sha256_bytes
 from ..ports.currency import CurrencyPort
 from ..ports.store import StorePort
 
-
-class _CurrencyModuleProxy:
-    """兼容旧测试/旧 CLI 对 currency_mod.CachedCurrency 的 patch；不属于业务依赖。"""
-
-    def __getattr__(self, name: str):
-        from .. import currency as _currency
-
-        return getattr(_currency, name)
-
-
-currency_mod = _CurrencyModuleProxy()
-
 _CJK = re.compile(r"[\u4e00-\u9fff]")
 _CODEISH = re.compile(r"^[A-Za-z]")
 _DECISIVE_ROLES = ("primary", "target_of_revision")
@@ -73,13 +61,16 @@ def source_of(url: str) -> dict:
     return {"id": "unknown", "label": "未知源"}
 
 
-def _sources_or_registry(sources: object | None):
-    """入口注入的源注册表优先；兼容直接调用时才读进程注册表。"""
-    if sources is not None:
-        return sources
-    from ..sources import registry
+def _require_sources(sources: object | None):
+    if sources is None:
+        raise ValueError("application.resolve 需要显式注入 sources")
+    return sources
 
-    return registry()
+
+def _require_currency(currency: CurrencyPort | None) -> CurrencyPort:
+    if currency is None:
+        raise ValueError("application.resolve 需要显式注入 currency")
+    return currency
 
 
 def ref_is_code(ref: str) -> bool:
@@ -106,11 +97,6 @@ def resolve(
     ref = (ref or "").strip()
     if not ref:
         raise BadUsage("引用为空")
-    # 默认缓存要带 store：无 store 的 CachedCurrency 只剩进程内一层，
-    # 落库 TTL 缓存（服务挂掉时的兜底）够不到——which/pull/cite 走同一条约定。
-    if currency is None:
-        # 兼容桥：旧 CLI/测试未显式注入时，仍用带 store 的缓存端口；B4 完成后删除。
-        currency = currency_mod.CachedCurrency(store=store)
 
     if ref.lower().startswith("http"):
         return _by_url(store, ref)
@@ -220,8 +206,7 @@ def _pick_current_version(
     exact = [h for h in hits if h.match == "exact_name"][: _VERIFY_MAX]
     if len(exact) < 2:
         return None
-    if currency is None:
-        currency = currency_mod.CachedCurrency()
+    currency = _require_currency(currency)
 
     versions: list[dict] = []
     attempts = 0
@@ -242,12 +227,13 @@ def _pick_current_version(
         if cached:
             code_key = cached[0]["code_key"]
         elif allow_network:
+            src_map = _require_sources(sources)
             attempts += 1
             try:
                 # 详情页按 URL 归属源路由（M4）：不假设候选都来自 mohurd，
                 # 与 mcp.py 的同一写法对齐。
                 sid = source_of(ann["url"])["id"]
-                source = _sources_or_registry(sources).get(sid) or _sources_or_registry(sources)["mohurd"]
+                source = src_map.get(sid) or src_map["mohurd"]
                 html, text = source.detail(ann["url"])
                 digest = sha256_bytes(html.encode("utf-8"))
                 record_hash = getattr(store, "record_body_hash", None)
@@ -353,13 +339,15 @@ def _pick_current_version(
 def _by_code(
     store: StorePort,
     ref: str,
-    currency: CurrencyPort,
+    currency: CurrencyPort | None,
     *,
     allow_network: bool = True,
     fetch_detail=None,
     sources: object | None = None,
 ) -> dict:
     from ..domain.codes import normalize_key
+
+    currency = _require_currency(currency)
 
     key = normalize_key(ref)
     rows = store.find_by_code(key)
@@ -549,11 +537,12 @@ def _verify_by_primary_code(
         return []
     custom_fetch = fetch_detail is not None
     if not custom_fetch:
+        src = _require_sources(sources)
+
         def fetch_raw(url):
             # 按 URL 归属源挑 detail（M4）：shzjw 类 api_mode 源没有公告页，
             # 其 detail 缺失会走普通异常被跳过，不会拿 mohurd 解析器错抓。
             sid = source_of(url)["id"]
-            src = _sources_or_registry(sources)
             source = src.get(sid) or src["mohurd"]
             return sid, source.detail(url)
 
@@ -649,7 +638,7 @@ def local_records(ref: str, sources: object | None = None) -> list:
     # 写了版年（DG/TJ08-2007-2026）仍精确匹配，不混入其他版本。
     prefer_exact = explicit_version(ref)
     out = []
-    for source in _sources_or_registry(sources).values():
+    for source in _require_sources(sources).values():
         if not getattr(source, "api_mode", False):
             continue
         find = getattr(source, "find", None)

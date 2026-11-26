@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from guiju.cli.commands.pull import _read_refs
+from guiju.application.pull import _read_refs
 
 
 class ReadRefsTest(unittest.TestCase):

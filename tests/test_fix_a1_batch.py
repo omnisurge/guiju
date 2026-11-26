@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from guiju.cli.commands import pull
+from guiju.application import pull
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
 
 

@@ -33,7 +33,6 @@ def check_currency(
     返回类型化结果（ADR 0004 D4）：「拿不到结论」也要说清是哪一种 ——
     不可达（20）、路由未覆盖（34）、没有记录（34）都不能伪装成"已校验为现行"。
     """
-    from .. import currency as currency_mod
     from ..domain.codes import normalize_key
 
     if offline:
@@ -42,6 +41,8 @@ def check_currency(
         return CurrencyCheck(
             CurrencyState.NO_RECORD, message="编号未核实：本引用无从做现行性校验"
         )
+    if currency is None:
+        raise ValueError("application.cite.check_currency 需要显式注入 currency")
 
     state = CurrencyState.OK
     records: tuple = ()
@@ -49,8 +50,7 @@ def check_currency(
     complete: bool | None = None
     incomplete_reason = ""
     try:
-        # 入口可注入同一个 currency；未注入时保留旧 CachedCurrency(store=store) 兼容桥。
-        port = currency if currency is not None else currency_mod.CachedCurrency(store=store)
+        port = currency
         records = tuple(port.lookup(code_display))
         complete, incomplete_reason = completeness_of(port)
         if bool(getattr(port, "stale", False)):
@@ -116,8 +116,6 @@ def run(store: StorePort, args: Any) -> int:
             hint="接受 5.2.1 / 第5.2.1条 / 5.2.1条 三种写法",
         )
 
-    from .. import currency as currency_mod
-
     if strict and offline:
         # --strict 承诺"宁可不给，也不给不确定的引用"；离线做不了现行性校验，
         # 两者相加只可能是静默降级 —— 按用法错误当场拒掉，不等到解析完再说。
@@ -126,21 +124,16 @@ def run(store: StorePort, args: Any) -> int:
             hint="去掉 --offline 再试；或去掉 --strict，接受一份未校验现行性的引用串",
         )
 
-    # --offline 的语义是"完全不碰网络"：连时效端口都不用，而不是只跳过详情页核实。
-    # 在线时优先用入口注入的端口；旧直接调用才构造带落库缓存的兼容实例。
-    ctx = getattr(args, "app_context", None)
-    if offline:
-        currency = currency_mod.NullCurrency()
-    elif ctx is not None and getattr(ctx, "currency", None) is not None:
-        currency = ctx.currency
-    else:
-        currency = currency_mod.CachedCurrency(store=store)
+    currency = getattr(ctx, "currency", None) if ctx is not None else None
+    sources = getattr(ctx, "sources", None) if ctx is not None else None
+    if not offline and currency is None:
+        raise ValueError("application.cite.run 需要通过 AppContext 显式注入 currency")
     target = resolve(
         store,
         ref,
         currency=currency,
         allow_network=not offline,
-        sources=getattr(ctx, "sources", None),
+        sources=sources,
     )
     ann = target["ann"]
     # 多名称公告（P1-3）：按名称引用时用用户查询的那一本，不能固定写标题里的第一本。
@@ -178,14 +171,8 @@ def run(store: StorePort, args: Any) -> int:
             # 详情页按 URL 归属源路由（M4），api_mode 源没有 detail 时跳过现场解析。
             from ..domain.codes import classify
 
-            ctx = getattr(args, "app_context", None)
-            sources = getattr(ctx, "sources", None) if ctx is not None else None
             if sources is None:
-                sources = getattr(args, "_sources", None)
-            if sources is None:
-                from ..sources import registry as _registry
-
-                sources = _registry()
+                raise ValueError("application.cite.run 需要通过 AppContext 显式注入 sources")
             sid = source_of(ann["url"])["id"]
             source = sources.get(sid) or sources["mohurd"]
             detail = getattr(source, "detail", None)
@@ -356,9 +343,9 @@ def run(store: StorePort, args: Any) -> int:
     # 拿不到结论时按 CurrencyCheck 的 state 分流（ADR 0004 D4）：
     #   非 strict：照常输出引用串 + warning（status=unknown）；
     #   strict：不可达 → 20、未覆盖/无记录 → 34、其他 warning 维持 32。
-    check = _check_currency(
+    check = check_currency(
         code_display, offline=offline, store=store, currency=currency,
-        sources=getattr(ctx, "sources", None),
+        sources=sources,
     )
     status = check.status
     current_hint = check.current
@@ -415,12 +402,3 @@ def run(store: StorePort, args: Any) -> int:
         for w in warnings:
             render.warn(w)
     return 0
-
-
-def _check_currency(
-    code_display: str | None, *, offline: bool, store=None, currency=None, sources=None
-) -> CurrencyCheck:
-    """兼容名字：实现已迁到 guiju.application.cite，测试仍可 patch 本模块。"""
-    return check_currency(
-        code_display, offline=offline, store=store, currency=currency, sources=sources
-    )

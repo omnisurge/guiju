@@ -307,7 +307,7 @@ class Download416Test(unittest.TestCase):
 
 class LookupFixesTest(unittest.TestCase):
     def test_dedupe_keeps_distinct_empty_key_rows(self) -> None:
-        from guiju.cli.lookup import _dedupe
+        from guiju.application.resolve import _dedupe
 
         rows = [
             {"code_key": "", "id": 1},
@@ -320,7 +320,7 @@ class LookupFixesTest(unittest.TestCase):
         self.assertEqual([r.get("id") for r in out], [1, 2, None, 4])
 
     def test_version_window_keeps_undated_hits(self) -> None:
-        from guiju.cli.lookup import _filter_by_version_window
+        from guiju.application.resolve import _filter_by_version_window
 
         class H:
             def __init__(self, d):
@@ -334,7 +334,7 @@ class LookupFixesTest(unittest.TestCase):
         self.assertEqual(dates.count(None) + dates.count(""), 2)  # 无日期：无证据，保留
 
     def test_name_match_level_tiers(self) -> None:
-        from guiju.cli.lookup import _best_name_hits, _name_match_level
+        from guiju.application.resolve import _best_name_hits, _name_match_level
 
         self.assertEqual(_name_match_level("建筑设计防火规范", "建筑设计防火规范"), 3)
         self.assertEqual(_name_match_level("《建筑设计防火规范》", "建筑设计防火规范"), 2)

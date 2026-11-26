@@ -15,14 +15,15 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from guiju.cli import main, render
+from guiju import report as render
+from guiju.cli import main
 from guiju.currency import Record
 from guiju.errors import NoCurrencyRecord, SourceUnreachable
 from guiju.store.sqlite import Store
 
 
 class _FakeCurrency:
-    """替身：cite.run 内部会构造 CachedCurrency(store=...)。"""
+    """替身：CLI 入口会构造 CachedCurrency(store=...)。"""
 
     name = "fake"
     complete = True

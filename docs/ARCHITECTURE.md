@@ -181,40 +181,40 @@ stderr : 全部日志、进度、警告
               └────────────────────────────────────────────┘
 ```
 
-**依赖方向铁律（现状）**：`guiju/net` 是唯一出站层（白名单、限速、重定向与 block 判定都在 `guiju.net`，`guiju.compliance` 已于 v1.3.0-S3a 退场）；`domain` 不碰网络与 DB；`sources` 只把 HTML 变成 DTO，绝不写库；`currency` 适配器不落文件；`store` 不负责网络。违反即评审不通过。
+**依赖方向铁律（现状）**：`guiju/net` 是唯一出站层（白名单、限速、重定向与 block 判定都在 `guiju.net`，`guiju.compliance` 已于 v1.3.0-S3a 退场，`guiju/currency/httpx.py` 已于 S3b 退场）；`domain` 不碰网络与 DB；`sources` 只把 HTML 变成 DTO，绝不写库；`currency` 适配器不落文件；`store` 不负责网络。违反即评审不通过。
 
-**B4 进度（2026-11-23 实现，2026-11-23 双审 APPROVE；2026-11-24 随 1.2.0 发布）**：`application/`、`ports/`、`adapters/` 已建立；`application.resolve` 承接编号/名称解析，`application.status` 承接状态投影，`application.sync` 承接同步用例（CLI 注入 crawl/lock），`application.pull`/`application.cite` 承接完整编排，`application.cite.check_currency` 承接时效校验。CLI 的 `lookup.py` 是兼容 shim；MCP 已改用只读 Store，batch 支持内联 `codes[]`，`list/out` 仅保留 1.1.1-1.2.0 过渡。独立双审已 APPROVE，B4 已完成；本节按已落地结构描述。
+**B4 进度与 S3c 收口**：`application/`、`ports/`、`adapters/` 已建立；`application.resolve` 承接编号/名称解析，`application.status` 承接状态投影，`application.sync` 承接同步用例（CLI 注入 crawl/lock），`application.pull`/`application.cite` 承接完整编排，`application.cite.check_currency` 承接时效校验。v1.3.0-S3c 起，过渡期的 `cli/lookup.py`、`cli/render.py` 与 `cli/commands/{pull,cite}.py` 的 `sys.modules` alias 已全部删除，`application/` 不再隐式构造 `Store` / `CachedCurrency` / `registry()`，统一由入口 `AppContext` 显式装配；MCP 已改用只读 Store，batch 支持内联 `codes[]`，`list/out` 仅保留到 S4 前过渡。
 
-### 目标目录（B4 已落地方向）
+### 目录结构（v1.3.0-S3c 现状对齐）
 
 ```
 guiju/
 ├── __init__.py            # 只导出 __version__
 ├── __main__.py
 ├── _version.py            # 版本单一来源
+├── report.py              # JSON 与人读两种投影（stdout/stderr）
 ├── cli/
-│   ├── __init__.py        # build_parser / main
-│   ├── render.py          # JSON 与人读两种投影
-│   └── commands/          # 每命令一文件：sync.py pull.py cite.py ...
+│   ├── __init__.py        # build_parser / main（统一装配 AppContext）
+│   └── commands/          # 每命令一文件：sync.py pull.py cite.py sources.py ...
 ├── application/
-│   ├── sync.py  pull.py  cite.py  verify.py  provenance.py  resolve.py
+│   ├── context.py  sync.py  pull.py  cite.py  resolve.py  status.py  sources.py
 ├── domain/
 │   ├── codes.py           # 归一化 / 角色判定 / 新旧关系
 │   ├── cite.py            # 引用串（最需测试）
 │   ├── naming.py          # 文件名策略
 │   └── availability.py    # 可得性判定与评分
 ├── ports/
-│   └── source.py          # Source/Catalog/Store/Fetcher 四个 Protocol
+│   └── source.py          # Source/Catalog/Store/Currency/Fetcher Protocol
 ├── adapters/
-│   ├── fetch/guard.py     # 唯一出站
-│   ├── store/sqlite.py    # schema + 迁移
-│   └── sources/mohurd.py  # 站点魔术值全在此
-├── compliance/
-│   └── __init__.py        # 白名单 + 限速 + 反爬放弃
+│   └── store/sqlite.py    # schema + 迁移
+├── sources/               # 站点适配器（mohurd / shzjw）
+└── net/
+    ├── body.py            # BodyClient（唯一正文下载与 finalize）
+    └── metadata.py        # MetadataClient（JSON/网页元数据请求）
 migrations/0001_init.sql
 tests/
   fixtures/catalog-page-1.html      # 列表页解析的离线夹具（唯一的测试固件）
-  test_cite.py  test_codes.py  test_guard.py  test_parse_catalog.py
+  test_cite.py  test_codes.py  test_net_boundaries.py  test_parse_catalog.py
 ```
 
 > 拆分不是为了好看：`cite` 与 `codes` 是唯一值得写单测的纯逻辑，混在 536 行的 cli 里就永远测不了。

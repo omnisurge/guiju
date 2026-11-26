@@ -357,7 +357,7 @@ class SidecarE2ETest(unittest.TestCase):
     def test_pull_two_stage(self):
         import argparse
 
-        from guiju.cli.commands import pull
+        from guiju.application import AppContext, pull
         from guiju.sources import mohurd
         from guiju.store.sqlite import Store
 
@@ -368,7 +368,13 @@ class SidecarE2ETest(unittest.TestCase):
         self.addCleanup(store.close)
         out_dir = tmp_home / "library"
         out_dir.mkdir()
-        args = argparse.Namespace(force=False, readable=False)
+        args = argparse.Namespace(
+            force=False,
+            readable=False,
+            app_context=AppContext(
+                store=store, currency=mock.Mock(), out_dir=out_dir, sources={}
+            ),
+        )
 
         class LocalSource:
             id = "pull-e2e"

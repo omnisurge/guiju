@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from guiju import autosync, syncengine
-from guiju.cli import render
+from guiju import report as render
 from guiju.cli.commands import status
 from guiju.sources import mohurd
 from guiju.store.sqlite import SCHEMA_VERSION, Store

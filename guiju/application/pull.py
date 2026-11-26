@@ -29,7 +29,7 @@ from ..errors import (
     GuijuError,
     NoAttachment,
 )
-from ..files import default_out_dir, find_cached, sha256_bytes, sha256_file
+from ..files import find_cached, sha256_bytes, sha256_file
 from ..ports.store import StorePort
 from .resolve import resolve
 
@@ -38,12 +38,14 @@ _SEVERE = (1, 20, 40, 50)
 
 
 def _out_dir(args: Any) -> Path:
-    """下载目录：AppContext 优先，旧直接调用保留默认目录兼容。"""
+    """下载目录：AppContext.out_dir 优先，其次 args.out；禁止隐式读 GUIJU_HOME。"""
     ctx = getattr(args, "app_context", None)
     if ctx is not None and getattr(ctx, "out_dir", None) is not None:
         return Path(ctx.out_dir)
     out = getattr(args, "out", None)
-    return Path(out).expanduser() if out else default_out_dir()
+    if out:
+        return Path(out).expanduser()
+    raise ValueError("application.pull 需要通过 AppContext.out_dir 或 args.out 显式指定下载目录")
 
 
 def _finalize_body(part_path, dest_path) -> None:
@@ -327,24 +329,22 @@ def persist_codes(store: StorePort, ann_id: int, codes: Codes, doc_name: str, st
     store.persist_codes(ann_id, codes, doc_name, status=status)
 
 
-def _cached_currency(args: Any, store: StorePort):
-    """取本次命令的时效端口；入口注入优先，旧直接调用才构造兼容缓存。"""
+def _require_currency(args: Any):
+    """取入口显式注入的时效端口；应用层不再隐式构造。"""
     ctx = getattr(args, "app_context", None)
-    if ctx is not None and getattr(ctx, "currency", None) is not None:
-        return ctx.currency
-    from .. import currency as currency_mod
-
-    return currency_mod.CachedCurrency(store=store)
+    currency = getattr(ctx, "currency", None) if ctx is not None else None
+    if currency is None:
+        raise ValueError("application.pull 需要通过 AppContext 显式注入 currency")
+    return currency
 
 
 def _pull_one(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> dict:
     if getattr(source, "api_mode", False):
         return _pull_api(store, args, ref, source, out_dir)
 
-    # 显式给带落库缓存的时效端口：否则 resolve 内部会建一个无 store 的
-    # CachedCurrency，TTL 缓存够不到，pull 每次都直打时效服务（M9）。
+    # 入口须通过 AppContext 显式提供带落库缓存的时效端口，不再在应用层兜底自建。
     try:
-        resolve_kwargs = {"currency": _cached_currency(args, store)}
+        resolve_kwargs = {"currency": _require_currency(args)}
         sources = getattr(getattr(args, "app_context", None), "sources", None)
         if sources is not None:
             resolve_kwargs["sources"] = sources
@@ -713,10 +713,7 @@ def run(store: StorePort, args: Any, sources=None) -> int:
     if sources is None:
         sources = getattr(ctx, "sources", None)
     if sources is None:
-        # 兼容直接调用（测试/嵌入）；CLI 入口会显式传入 registry()。
-        from ..sources import registry as _registry
-
-        sources = _registry()
+        raise ValueError("application.pull.run 需要显式注入 sources")
     source_name = getattr(args, "source", None) or getattr(ctx, "source", None) or "mohurd"
     source = sources.get(source_name)
     if source is None:

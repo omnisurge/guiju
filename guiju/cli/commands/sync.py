@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 
+from ... import report as render
 from ...application.sync import run_sync
 from ...autosync import safe_sync
 from ...store.sqlite import Store
 from ...syncengine import crawl
-from .. import render
 
 
 def run(store: Store, args: argparse.Namespace) -> int:

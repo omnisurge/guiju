@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from guiju.cli.lookup import resolve
+from guiju.application.resolve import resolve
 from guiju.currency import Record
 from guiju.currency.model import QueryCancelled
 from guiju.errors import AmbiguousTarget, ComplianceDenied, NeedsHuman
@@ -62,12 +62,12 @@ class FakeCurrency:
         return self.records
 
 
-def _patch_source(error):
-    """让 registry()["mohurd"].detail 抛指定错误（详情页抓取路径）。"""
+def _sources(error):
+    """构造仅含 mohurd 的注入源表（详情页抓取路径）。"""
     source = mock.Mock()
     source.detail.side_effect = error
     source.attachments.return_value = []
-    return mock.patch("guiju.sources.registry", lambda: {"mohurd": source})
+    return {"mohurd": source}
 
 
 class PickVersionDetailFetchTest(unittest.TestCase):
@@ -78,14 +78,23 @@ class PickVersionDetailFetchTest(unittest.TestCase):
 
     def test_contract_errors_propagate(self):
         for err_cls in _CONTRACT_ERRORS:
-            with self.subTest(error=err_cls.__name__), _patch_source(err_cls("x")), \
-                 self.assertRaises(err_cls):
-                resolve(self.store, "建筑设计防火规范", FakeCurrency())
+            with self.subTest(error=err_cls.__name__), self.assertRaises(err_cls):
+                resolve(
+                    self.store,
+                    "建筑设计防火规范",
+                    FakeCurrency(),
+                    sources=_sources(err_cls("x")),
+                )
 
     def test_generic_error_still_drops_candidates(self):
         """普通抓取失败仍按原样 continue，最终交还 32 歧义——韧性语义不变。"""
-        with _patch_source(ValueError("boom")), self.assertRaises(AmbiguousTarget):
-            resolve(self.store, "建筑设计防火规范", FakeCurrency())
+        with self.assertRaises(AmbiguousTarget):
+            resolve(
+                self.store,
+                "建筑设计防火规范",
+                FakeCurrency(),
+                sources=_sources(ValueError("boom")),
+            )
 
 
 class PickVersionCurrencyLoopTest(unittest.TestCase):

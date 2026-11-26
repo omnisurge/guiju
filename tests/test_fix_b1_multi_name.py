@@ -16,8 +16,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from guiju.cli import render
-from guiju.cli.commands.pull import _pull_one
+from guiju import report as render
+from guiju.application import AppContext
+from guiju.application.pull import _pull_one
 from guiju.domain.announcement import classify_title, extract_names, match_name, names_of
 from guiju.domain.attachment import Attachment, Verdict, pick
 from guiju.errors import AmbiguousAttachment, AmbiguousCode
@@ -257,17 +258,22 @@ class PullMultiNameTest(unittest.TestCase):
     def _run(self, row, ref, via, *, cached=None, expect_ambiguous=True, text="正文没有编号"):
         source = _FakeSource(attachments_for(row), text=text)
         store = mock.Mock()
-        args = argparse.Namespace(force=False, readable=False, out=None)
+        args = argparse.Namespace(
+            force=False,
+            readable=False,
+            out=None,
+            app_context=AppContext(store=store, currency=mock.Mock(), sources={}),
+        )
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         find_cached = mock.Mock(return_value=cached)
         with (
-            mock.patch("guiju.cli.commands.pull.resolve", return_value=self._target(row, via)),
-            mock.patch("guiju.cli.commands.pull.find_cached", find_cached),
-            mock.patch("guiju.cli.commands.pull.sha256_file", return_value="0" * 64),
-            mock.patch("guiju.cli.commands.pull.sha256_bytes", return_value="key"),
+            mock.patch("guiju.application.pull.resolve", return_value=self._target(row, via)),
+            mock.patch("guiju.application.pull.find_cached", find_cached),
+            mock.patch("guiju.application.pull.sha256_file", return_value="0" * 64),
+            mock.patch("guiju.application.pull.sha256_bytes", return_value="key"),
             mock.patch("os.replace"),
-            mock.patch("guiju.cli.commands.pull.render.warn"),
+            mock.patch("guiju.application.pull.render.warn"),
         ):
             if expect_ambiguous:
                 with self.assertRaises(AmbiguousAttachment) as cm:
@@ -333,14 +339,19 @@ class PullRealStoreTest(unittest.TestCase):
 
     def _run(self, text, via, ref, expect_error=None):
         source = _FakeSource(attachments_for(MULTI), text=text)
-        args = argparse.Namespace(force=False, readable=False, out=None)
+        args = argparse.Namespace(
+            force=False,
+            readable=False,
+            out=None,
+            app_context=AppContext(store=self.store, currency=mock.Mock(), sources={}),
+        )
         with (
-            mock.patch("guiju.cli.commands.pull.resolve", return_value=self._target(via, ref)),
-            mock.patch("guiju.cli.commands.pull.find_cached", return_value=None),
-            mock.patch("guiju.cli.commands.pull.sha256_file", return_value="0" * 64),
-            mock.patch("guiju.cli.commands.pull.sha256_bytes", return_value="key"),
+            mock.patch("guiju.application.pull.resolve", return_value=self._target(via, ref)),
+            mock.patch("guiju.application.pull.find_cached", return_value=None),
+            mock.patch("guiju.application.pull.sha256_file", return_value="0" * 64),
+            mock.patch("guiju.application.pull.sha256_bytes", return_value="key"),
             mock.patch("os.replace"),
-            mock.patch("guiju.cli.commands.pull.render.warn"),
+            mock.patch("guiju.application.pull.render.warn"),
         ):
             if expect_error is not None:
                 with self.assertRaises(expect_error) as cm:
@@ -369,8 +380,7 @@ class PullRealStoreTest(unittest.TestCase):
         self.assertEqual([r["code_key"] for r in rows], ["GB2-2020"])
 
     def test_cite_after_second_name_pull_uses_second_book_and_code(self):
-        from guiju import currency as currency_mod
-        from guiju.cli.commands import cite
+        from guiju.application import cite as cite_app
 
         text = (
             "现批准《自然保护区工程项目建设标准》，编号为GB 1-2020。"
@@ -392,14 +402,18 @@ class PullRealStoreTest(unittest.TestCase):
 
         emitted = {}
         args = argparse.Namespace(
-            ref=MULTI["names"][1], clause="", strict=False, offline=False, format="json"
+            ref=MULTI["names"][1],
+            clause="",
+            strict=False,
+            offline=False,
+            format="json",
+            app_context=AppContext(store=self.store, currency=EmptyCurrency(), sources={}),
         )
         with (
-            mock.patch.object(cite, "resolve", return_value=target),
-            mock.patch.object(currency_mod, "CachedCurrency", EmptyCurrency),
-            mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted.update(p)),
+            mock.patch.object(cite_app, "resolve", return_value=target),
+            mock.patch.object(cite_app.render, "emit", side_effect=lambda p: emitted.update(p)),
         ):
-            cite.run(self.store, args)
+            cite_app.run(self.store, args)
         self.assertTrue(emitted["cite"].startswith(f"《{MULTI['names'][1]}》"))
         self.assertEqual(emitted["code"], "GB 2-2020")
         self.assertEqual(emitted["confidence"], "parsed")
@@ -410,14 +424,18 @@ class PullRealStoreTest(unittest.TestCase):
         by_code["code_display"] = "GB 2-2020"
         emitted2 = {}
         args2 = argparse.Namespace(
-            ref="GB 2-2020", clause="", strict=False, offline=False, format="json"
+            ref="GB 2-2020",
+            clause="",
+            strict=False,
+            offline=False,
+            format="json",
+            app_context=AppContext(store=self.store, currency=EmptyCurrency(), sources={}),
         )
         with (
-            mock.patch.object(cite, "resolve", return_value=by_code),
-            mock.patch.object(currency_mod, "CachedCurrency", EmptyCurrency),
-            mock.patch.object(cite.render, "emit", side_effect=lambda p: emitted2.update(p)),
+            mock.patch.object(cite_app, "resolve", return_value=by_code),
+            mock.patch.object(cite_app.render, "emit", side_effect=lambda p: emitted2.update(p)),
         ):
-            cite.run(self.store, args2)
+            cite_app.run(self.store, args2)
         self.assertTrue(emitted2["cite"].startswith(f"《{MULTI['names'][1]}》"))
 
     def test_ambiguous_33_does_not_touch_existing_mentions(self):

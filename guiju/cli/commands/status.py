@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import argparse
 
+from ... import report as render
 from ...application.status import build_status
 from ...domain.availability import FULL_TEXT_SINCE_YEAR, coverage_statement
 from ...sources import registry
 from ...store.sqlite import Store
-from .. import render
 
 
 def run(store: Store, args: argparse.Namespace) -> int:
     ctx = getattr(args, "app_context", None)
-    if ctx is not None:
-        currency = ctx.currency_or_default()
-    else:
+    currency = getattr(ctx, "currency", None) if ctx is not None else None
+    if currency is None:
         # 旧测试/嵌入调用直接传 Namespace：只在命令入口兜底，不进入 application。
         from ...currency import default_currency
 

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from guiju.cli.lookup import resolve
+from guiju.application.resolve import resolve
 from guiju.currency import Record
 from guiju.errors import AmbiguousTarget, GuijuError, NotIndexed
 from guiju.store.sqlite import Store
@@ -147,7 +147,7 @@ class SourceLabelTest(unittest.TestCase):
     """候选里必须能看出这条来自哪个源（同名跨源是真实情况）。"""
 
     def test_source_of(self):
-        from guiju.cli.lookup import source_of
+        from guiju.application.resolve import source_of
 
         self.assertEqual(
             source_of("https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2024/art_1.html")["id"], "mohurd"
