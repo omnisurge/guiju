@@ -6,9 +6,8 @@
 import json
 import unittest
 import warnings
-from unittest import mock
 
-from guiju.currency import CachedCurrency, _cache, endpoint_of
+from guiju.currency import CachedCurrency, endpoint_of
 from guiju.currency.cache import CACHE_NAMESPACE, DEFAULT_STALE_LIMIT, DEFAULT_TTL, CacheEntry
 from guiju.currency.ccsn import SEARCH_URL, CcsnCurrency, status_ccsn
 from guiju.currency.model import QueryCancelled, Record
@@ -242,7 +241,7 @@ class M12bFlagExposureTest(unittest.TestCase):
 
 
 
-# ---------- M11（CachedCurrency 侧）：memo key 带端点、flag 元组重放 ----------
+# ---------- M11（CachedCurrency 侧）：状态重置、内层透传、endpoint_of ----------
 
 class _FakeInner:
     def __init__(self, url, rows=None, error=None):
@@ -250,6 +249,10 @@ class _FakeInner:
         self.url = url
         self.rows = rows if rows is not None else [_record(source="mcp")]
         self.error = error
+        self.from_cache = False
+        self.stale = False
+        self.upstream_error = None
+        self.cache_age_days = None
         self.calls = 0
 
     def lookup(self, code):
@@ -260,34 +263,25 @@ class _FakeInner:
 
 
 class M11CachedMemoTest(unittest.TestCase):
-    def setUp(self):
-        _cache.clear()
-        self.addCleanup(_cache.clear)
-
-    def test_memo_key_includes_endpoint(self):
-        a = CachedCurrency(_FakeInner("https://a.example/mcp"))
-        b = CachedCurrency(_FakeInner("https://b.example/mcp"))
-        a.lookup(CODE)
-        b.lookup(CODE)
-        self.assertEqual(a.inner.calls, 1)
-        self.assertEqual(b.inner.calls, 1)  # 端点不同不得命中 a 的 memo
-
-    def test_second_lookup_replays_flags(self):
+    def test_lookup_resets_and_forwards_inner_flags(self):
         inner = _FakeInner("https://a.example/mcp")
         cur = CachedCurrency(inner)
-        cur.lookup(CODE)
-        cur.from_cache = True  # 外力污染
+        cur.from_cache = True
+        cur.stale = True
+        cur.upstream_error = SourceUnreachable("old")
+        cur.cache_age_days = 5.0
+
         cur.lookup(CODE)
         self.assertFalse(cur.from_cache)
         self.assertFalse(cur.stale)
         self.assertIsNone(cur.upstream_error)
-        self.assertEqual(inner.calls, 1)
+        self.assertIsNone(cur.cache_age_days)
 
-    def test_unreachable_disk_fallback_marks_stale(self):
-        inner = _FakeInner("https://a.example/mcp", error=SourceUnreachable("down"))
-        cur = CachedCurrency(inner, store=object())
-        with mock.patch.object(CachedCurrency, "_load", return_value=([_record(source="mcp")], 3.5)):
-            cur.lookup(CODE)
+        inner.from_cache = True
+        inner.stale = True
+        inner.upstream_error = SourceUnreachable("down")
+        inner.cache_age_days = 3.5
+        cur.lookup(CODE)
         self.assertTrue(cur.from_cache)
         self.assertTrue(cur.stale)
         self.assertIsNotNone(cur.upstream_error)

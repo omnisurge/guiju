@@ -6,6 +6,7 @@
 
 - S0：开发期 `Unreleased` 门禁解耦（`--docs-only` 放行单测数演进，`--artifacts` 仍拒绝未冻结版本）。
 - S1：M4 改版观测闭环（`announcement.body_sha256` 落库与变更告警、`MetadataClient` `probe_sink`、新增 `guiju sources [--probe] [--json]`）。
+- S2：冗余清理与锁收窄（清理 `CachedCurrency` 不可达的进程/SQLite `currency_cache` 路径与死代码 `Store.search()`；`McpServer._announcement` 缩窄 `_store_lock` 至本地 SQLite 读阶段；统一 `search`/`show` 人读主输出走 `stdout`）。
 
 ## 1.2.0 — 2026-11-24（1.2.0 正式发布）
 

@@ -184,7 +184,7 @@ class AnnouncementReadOnlyTest(unittest.TestCase):
             ro.mark_scanned(1, 1)
             ro.log_probe("mohurd", "https://x", 200, 1, "ok")
             ro.set_meta("k", "v")
-            ro.cache_currency("native", "GB1", "{}", "2024-01-01")
+            self.assertFalse(ro.record_body_hash(1, "deadbeef", source="mohurd"))
             ro.commit()
             # 底层库纹丝不动
             self.assertEqual(real.count_announcements(), 1)

@@ -93,7 +93,7 @@ class CorruptStoreTest(unittest.TestCase):
         db_path = db_dir / "catalog.db"
         writer = Store(db_path)
         writer.upsert_announcement("https://x/1", "2026-01-01", "标题", "名称", "other")
-        writer.db.execute("DROP TABLE currency_cache")
+        writer.db.execute("DROP TABLE IF EXISTS currency_cache")
         writer.commit()
         writer.close()
         db_path.chmod(0o444)

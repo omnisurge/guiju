@@ -14,7 +14,7 @@ import warnings
 from pathlib import Path
 from unittest import mock
 
-from guiju.currency import CachedCurrency, _cache
+from guiju.currency import CachedCurrency
 from guiju.currency.cache import CACHE_NAMESPACE, CacheEntry
 from guiju.currency.ccsn import CcsnCurrency, parse_ccsn, status_ccsn
 from guiju.currency.codes import family_key, filter_by_code, same_family
@@ -740,11 +740,6 @@ class NativeCacheAuthorityTest(OfflineTestCase):
 
 class CachedCurrencyCompletenessTest(OfflineTestCase):
     """完整性字段必须能被上层读到：CLI 的 JSON 投影只差一层 plumbing（Lead 接）。"""
-
-    def setUp(self):
-        super().setUp()
-        _cache.clear()
-        self.addCleanup(_cache.clear)
 
     def test_cached_currency_forwards_native_completeness(self):
         adapter = StubAdapter(rows=[], complete=False, reason="页面未提供总页数")

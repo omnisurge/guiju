@@ -196,12 +196,6 @@ class Store:
             # 由调用方得到明确的只读写失败（CLI 映射 50）。
             return
         changed = False
-        if not self._table_exists("currency_cache"):
-            self.db.execute(
-                "CREATE TABLE IF NOT EXISTS currency_cache ("
-                "code_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at TEXT NOT NULL)"
-            )
-            changed = True
         # v1.2.0a4：mention 增加按公告的 confidence。老 v2 库只补列不动数据；
         # 旧行保持 NULL，读路径 COALESCE 回退 edition.confidence。
         if self._table_exists("mention") and not self._mention_has_confidence():
@@ -227,20 +221,6 @@ class Store:
             if self._mention_confidence
             else "e.confidence"
         )
-
-    def cache_currency(self, code_key: str, payload: str) -> None:
-        self.db.execute(
-            "INSERT INTO currency_cache(code_key,payload,fetched_at) VALUES(?,?,?) "
-            "ON CONFLICT(code_key) DO UPDATE SET payload=excluded.payload, fetched_at=excluded.fetched_at",
-            (code_key, payload, now()),
-        )
-        self.db.commit()
-
-    def cached_currency(self, code_key: str) -> tuple[str, str] | None:
-        row = self.db.execute(
-            "SELECT payload, fetched_at FROM currency_cache WHERE code_key=?", (code_key,)
-        ).fetchone()
-        return (row["payload"], row["fetched_at"]) if row else None
 
     def _has_tables(self) -> bool:
         row = self.db.execute(
@@ -293,30 +273,6 @@ class Store:
     def max_published_on(self) -> str:
         row = self.db.execute("SELECT MAX(published_on) d FROM announcement").fetchone()
         return row["d"] or ""
-
-    def search(self, keywords: list[str], limit: int = 20, status: str | None = None) -> list[sqlite3.Row]:
-        if not keywords:
-            return []
-        where, params = [], []
-        for kw in keywords:
-            where.append("(a.title LIKE ? ESCAPE '\\' OR a.doc_name LIKE ? ESCAPE '\\' OR e.code_key LIKE ? ESCAPE '\\')")
-            like = f"%{_escape_like(kw)}%"
-            code_like = f"%{_escape_like(kw.upper().replace(' ', ''))}%"
-            params += [like, like, code_like]
-        if status:
-            where.append("e.status = ?")
-            params.append(status)
-        sql = (
-            "SELECT a.*, e.code_key, e.code_display, e.status AS code_status,"
-            f"       {self._mention_confidence_sql()} AS confidence,"
-            "       m.role, m.evidence"
-            " FROM announcement a"
-            " LEFT JOIN mention m ON m.ann_id = a.id"
-            " LEFT JOIN edition e ON e.code_key = m.code_key"
-            " WHERE " + " AND ".join(where) +
-            " ORDER BY a.published_on DESC LIMIT ?"
-        )
-        return self.db.execute(sql, (*params, limit)).fetchall()
 
     def catalog_entries(self) -> list[dict]:
         """把目录（含编号）读进内存供检索打分。数据量 3k 级，不值得建全文索引。"""

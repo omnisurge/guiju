@@ -60,9 +60,6 @@ class NullCurrency:
         return []
 
 
-_cache: dict[tuple[object, ...], tuple] = {}
-
-
 class MisconfiguredCurrency:
     """显式指定了适配器但它不可用：**查询时报错，绝不悄悄换成别的源**。
 
@@ -122,10 +119,10 @@ def default_currency() -> Currency:
 
 
 class CachedCurrency:
-    """两级缓存：进程内（同一次命令不问两次）+ 落库（下次命令、以及服务不可达时）。
+    """薄透传时效包装（1.3.0 起不再维护旧进程/SQLite 缓存，由 NativeCurrency 管理 TTL 磁盘缓存）。
 
-    落库这一层解决一个真实问题：时效服务在私网里，断了以后"编号 → 名称"就没法回答，
-    但同一台机器上昨天刚查过的编号，没理由今天答不出来。缓存只存元数据，不存正文。
+    保留 ``CachedCurrency(inner=..., store=...)`` 签名以兼容 S3c 退场前的入口与测试注入；
+    每次 ``lookup()`` 先重置 7 个状态属性再透传内层状态。
     """
 
     def __init__(self, inner: Currency | None = None, store: object | None = None) -> None:
@@ -152,114 +149,12 @@ class CachedCurrency:
         self.complete = None
         self.empty_authoritative = False
         self.insecure_transport = False
-        if isinstance(self.inner, MisconfiguredCurrency):
-            # W3-7：显式配置错误必须立刻报 20；旧缓存不是"换个源"的理由。
-            self.inner.lookup(code)  # 总是抛 SourceUnreachable
-        if self.inner.name == "native":
-            # 原生内部已按 TTL 管理缓存；不能再外包旧 CachedCurrency 的无 TTL memo。
-            records = self.inner.lookup(code)
-            self.from_cache = bool(getattr(self.inner, "from_cache", False))
-            self.stale = bool(getattr(self.inner, "stale", False))
-            self.upstream_error = getattr(self.inner, "upstream_error", None)
-            self.cache_age_days = getattr(self.inner, "cache_age_days", None)
-            self.complete = getattr(self.inner, "complete", None)
-            self.empty_authoritative = bool(getattr(self.inner, "empty_authoritative", False))
-            self.insecure_transport = bool(getattr(self.inner, "insecure_transport", False))
-            return records
-        # 进程级 memo 的 key 必须带端点：同进程换 GUIJU_CURRENCY
-        # 不能用旧端点的结论回答新端点的问题。
-        key = (endpoint_of(self.inner), self.name, code)
-        hit = _cache.get(key)
-        if hit is not None:
-            (
-                records, self.from_cache, self.stale, self.upstream_error,
-                self.cache_age_days, self.complete, self.empty_authoritative,
-                self.insecure_transport,
-            ) = hit
-            return list(records)
-        try:
-            records = self.inner.lookup(code)
-        except SourceUnreachable as exc:
-            hit = self._load(code)
-            if hit is None:
-                raise
-            records, self.cache_age_days = hit
-            self.from_cache = True
-            self.stale = True  # 落库缓存无 TTL：只有上游刚失败才会走到这里 → 一律按陈旧上报
-            self.upstream_error = exc
-            _cache[key] = (records, True, True, exc, self.cache_age_days, None, False, False)
-            return records
+        records = self.inner.lookup(code)
+        self.from_cache = bool(getattr(self.inner, "from_cache", False))
+        self.stale = bool(getattr(self.inner, "stale", False))
+        self.upstream_error = getattr(self.inner, "upstream_error", None)
+        self.cache_age_days = getattr(self.inner, "cache_age_days", None)
         self.complete = getattr(self.inner, "complete", None)
         self.empty_authoritative = bool(getattr(self.inner, "empty_authoritative", False))
         self.insecure_transport = bool(getattr(self.inner, "insecure_transport", False))
-        # 不完整的答案不落库（P1-4）：否则下次进程会在 24 小时缓存里
-        # 把"没取全"当成"没有"。complete=None 是老适配器契约，按完整处理。
-        # 明文回退（含空结果）永远不写缓存（W3-2 的 cacheable 口径）。
-        if records and self.complete is not False and not self.insecure_transport:
-            self._save(code, records)
-        _cache[key] = (
-            records, self.from_cache, self.stale, self.upstream_error,
-            self.cache_age_days, self.complete, self.empty_authoritative,
-            self.insecure_transport,
-        )
         return records
-
-    # ---- 落库缓存 ----
-    @staticmethod
-    def _key(code: str) -> str:
-        from ..domain.codes import normalize_key
-
-        return normalize_key(code)
-
-    def _save(self, code: str, records: list[Record]) -> None:
-        if self.store is None:
-            return
-        import json
-
-        try:
-            self.store.cache_currency(  # type: ignore[attr-defined]
-                self._key(code), json.dumps([r.cache_payload() for r in records], ensure_ascii=False)
-            )
-        except Exception:  # 缓存失败是可容忍的：不要让它毁掉一次正常查询
-            return
-
-    def _load(self, code: str) -> tuple[list[Record], float | None] | None:
-        if self.store is None:
-            return None
-        import json
-
-        try:
-            hit = self.store.cached_currency(self._key(code))  # type: ignore[attr-defined]
-        except Exception:
-            return None
-        if not hit:
-            return None
-        payload, fetched_at = hit
-        try:
-            rows = json.loads(payload)
-            records = [
-                Record(
-                    code=row.get("code", ""),
-                    status=row.get("status", "unknown"),
-                    name=row.get("name", ""),
-                    implement_date=row.get("implement_date", ""),
-                    source=row.get("source", ""),
-                    replaces=row.get("replaces", ""),
-                    fallback=row.get("fallback", ""),
-                )
-                for row in rows
-            ]
-        except Exception:
-            return None
-        age = None
-        try:
-            from datetime import datetime
-
-            raw_seconds = (datetime.now() - datetime.strptime(
-                fetched_at, "%Y-%m-%d %H:%M:%S")).total_seconds()
-            # 时钟回拨/未来时间戳超过 1h：年龄不可信，保持 None（调用方按"无年龄信息"处理），
-            # 不钳成 0 伪装成"刚写入"。小幅负值（时钟漂移）则钳 0，不误报。
-            age = None if raw_seconds < -3600 else max(0.0, round(raw_seconds / 86400, 2))
-        except (ValueError, TypeError):
-            pass
-        return records, age

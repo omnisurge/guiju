@@ -1,8 +1,17 @@
 """检索评分 —— 用户最常用的入口，行为必须可预期。"""
 
+import io
+import json
+import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from unittest import mock
 
+from guiju import report as render
+from guiju.cli import main
 from guiju.domain.search import bigrams, normalize, rank, tokens_of
+from guiju.store.sqlite import Store, now
 
 ENTRIES = [
     {"id": 1, "name": "建筑防火通用规范", "title": "关于发布国家标准《建筑防火通用规范》的公告",
@@ -88,6 +97,57 @@ class RankTest(unittest.TestCase):
     def test_no_match(self):
         hits, _ = rank(ENTRIES, tokens_of("钢结构"))
         self.assertEqual(hits, [])
+
+
+class CliHumanStreamTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(render.configure, as_json=False, quiet=False)
+        self.addCleanup(render.set_catalog, None)
+
+    def test_search_and_show_write_human_results_to_stdout_even_under_quiet(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db_path = root / "c.db"
+            with Store(db_path) as store:
+                store.upsert_announcement(
+                    "https://www.mohurd.gov.cn/x/1.html",
+                    "2026-01-01",
+                    "关于发布《建筑防火通用规范》的公告",
+                    "建筑防火通用规范",
+                    "national",
+                )
+                store.set_meta("sync:mohurd:complete", "1")
+                store.set_meta("sync:mohurd:synced_at", now())
+                store.commit()
+
+            with mock.patch.dict(
+                "os.environ", {"GUIJU_HOME": str(root), "GUIJU_NO_AUTO_SYNC": "1"}
+            ):
+                out_s, err_s = io.StringIO(), io.StringIO()
+                with redirect_stdout(out_s), redirect_stderr(err_s):
+                    rc_s = main(["search", "防火", "--quiet", "--db", str(db_path)])
+                self.assertEqual(rc_s, 0)
+                self.assertIn("建筑防火通用规范", out_s.getvalue())
+                self.assertNotIn("建筑防火通用规范", err_s.getvalue())
+
+                out_d, err_d = io.StringIO(), io.StringIO()
+                with redirect_stdout(out_d), redirect_stderr(err_d):
+                    rc_d = main(["show", "1", "--quiet", "--db", str(db_path)])
+                self.assertEqual(rc_d, 0)
+                self.assertIn("名称：建筑防火通用规范", out_d.getvalue())
+                self.assertNotIn("名称：", err_d.getvalue())
+
+                out_sj, err_sj = io.StringIO(), io.StringIO()
+                with redirect_stdout(out_sj), redirect_stderr(err_sj):
+                    rc_sj = main(["search", "防火", "--json", "--db", str(db_path)])
+                self.assertEqual(rc_sj, 0)
+                self.assertTrue(json.loads(out_sj.getvalue())["ok"])
+
+                out_dj, err_dj = io.StringIO(), io.StringIO()
+                with redirect_stdout(out_dj), redirect_stderr(err_dj):
+                    rc_dj = main(["show", "1", "--json", "--db", str(db_path)])
+                self.assertEqual(rc_dj, 0)
+                self.assertTrue(json.loads(out_dj.getvalue())["ok"])
 
 
 if __name__ == "__main__":

@@ -51,15 +51,15 @@ def run(store: Store, args: argparse.Namespace) -> int:
 
     if not render.is_json():
         if not hits:
-            render.note(f"没有匹配「{' '.join(args.keywords)}」的公告。若目录为空，请先 guiju sync")
+            render.out(f"没有匹配「{' '.join(args.keywords)}」的公告。若目录为空，请先 guiju sync")
             return 0
         tag = "（模糊匹配）" if mode == "fuzzy" else ""
-        render.note(f"命中 {total} 条{tag}：")
+        render.out(f"命中 {total} 条{tag}：")
         for r in results:
             code = r["codes"][0] if r["codes"] else "（未索引）"
-            render.note(f"  [{r['id']:>5}] {r['published_on']}  {code:<20} {(r['name'] or '')[:34]}")
+            render.out(f"  [{r['id']:>5}] {r['published_on']}  {code:<20} {(r['name'] or '')[:34]}")
         if total > len(results):
-            render.note(f"  还有 {total - len(results)} 条，用 --all 或 --limit N 查看")
+            render.out(f"  还有 {total - len(results)} 条，用 --all 或 --limit N 查看")
     return 0
 
 

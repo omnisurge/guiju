@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from guiju import cli
+from guiju.domain.search import rank, tokens_of
 from guiju.store.sqlite import Store
 
 
@@ -83,8 +84,10 @@ class StoreW4Test(unittest.TestCase):
             "https://x/1", "2026-01-01", "防火规范", "建筑设计防火规范", "standard"
         )
         self.store.commit()
-        self.assertEqual(self.store.search(["%"]), [])
-        self.assertEqual(len(self.store.search(["防火"])), 1)
+        self.assertFalse(hasattr(self.store, "search"))
+        entries = self.store.catalog_entries()
+        self.assertEqual(rank(entries, tokens_of("%"))[0], [])
+        self.assertEqual(len(rank(entries, tokens_of("防火"))[0]), 1)
 
 
 class CliW4Test(unittest.TestCase):

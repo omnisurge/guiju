@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from guiju.currency import CachedCurrency, MisconfiguredCurrency, _cache
+from guiju.currency import CachedCurrency, MisconfiguredCurrency
 from guiju.currency.ccsn import CcsnCurrency
 from guiju.currency.codes import query_with_base_fallback
 from guiju.currency.contract import Completeness
@@ -398,8 +398,6 @@ class MisconfiguredCurrencyCacheTest(unittest.TestCase):
     """W3-7：显式配置错误时必须报 20，不能拿旧缓存回答。"""
 
     def setUp(self):
-        _cache.clear()
-        self.addCleanup(_cache.clear)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.store = Store(Path(self.tmp.name) / "c.db")
@@ -410,7 +408,14 @@ class MisconfiguredCurrencyCacheTest(unittest.TestCase):
             {"code": "GB 50016-2014", "status": "current", "name": "旧缓存里的规范",
              "implement_date": "", "source": "csres", "replaces": "", "fallback": ""}
         ], ensure_ascii=False)
-        self.store.cache_currency("GB50016-2014", payload)
+        self.store.db.execute(
+            "CREATE TABLE IF NOT EXISTS currency_cache ("
+            "code_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at TEXT NOT NULL)"
+        )
+        self.store.db.execute(
+            "INSERT OR REPLACE INTO currency_cache VALUES(?,?,?)",
+            ("GB50016-2014", payload, "2026-01-01 00:00:00"),
+        )
         self.store.commit()
         cur = CachedCurrency(
             inner=MisconfiguredCurrency("xyz(未知)", "GUIJU_CURRENCY=xyz 无法识别"),

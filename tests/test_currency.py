@@ -3,6 +3,8 @@
 import unittest
 
 from guiju.currency import CachedCurrency, NullCurrency, Record
+from guiju.currency.native import NativeCurrency
+from guiju.currency.registry import Registry, Route
 
 
 class Fake:
@@ -20,7 +22,9 @@ class Fake:
 class CacheTest(unittest.TestCase):
     def test_second_lookup_does_not_hit_upstream(self):
         fake = Fake([Record(code="GB 1-2020", status="current", name="X")])
-        cached = CachedCurrency(fake)
+        registry = Registry()
+        registry.register(Route("fake", ("GB",), lambda: fake))
+        cached = CachedCurrency(NativeCurrency(registry, None, clock=lambda: 1000.0))
         cached.lookup("GB 1-2020")
         cached.lookup("GB 1-2020")
         self.assertEqual(fake.calls, 1)

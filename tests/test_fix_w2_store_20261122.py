@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from guiju.domain.codes import Codes, Confidence, Mention, Role
+from guiju.domain.search import rank, tokens_of
 from guiju.errors import NeedsHuman
 from guiju.store.sqlite import Store, persist_codes
 
@@ -409,9 +410,8 @@ class MentionConfidenceTest(_StoreCase):
         found = self._confidence_by_ann(self.store.find_by_code("GB50016-2014"))
         self.assertEqual(found[a], "parsed")
         self.assertEqual(found[b], "ambiguous")
-        searched = self._confidence_by_ann(self.store.search(["50016"]))
-        self.assertEqual(searched[a], "parsed")
-        self.assertEqual(searched[b], "ambiguous")
+        hits, _ = rank(self.store.catalog_entries(), tokens_of("50016"))
+        self.assertEqual({int(h.entry["id"]) for h in hits}, {a, b})
 
     def test_parsed_primary_plus_mentioned_ref(self):
         ann_id = self._ann()
@@ -487,8 +487,9 @@ class MentionConfidenceTest(_StoreCase):
         columns = [r["name"] for r in store.db.execute("PRAGMA table_info(mention)")]
         self.assertNotIn("confidence", columns)
         self.assertIsNotNone(store.find_by_code("GB50016-2014"))
-        searched = store.search(["50016"])
-        self.assertEqual({int(r["id"]): r["confidence"] for r in searched}, {1: "parsed"})
+        hits, _ = rank(store.catalog_entries(), tokens_of("50016"))
+        self.assertEqual([int(h.entry["id"]) for h in hits], [1])
+        self.assertEqual(store.find_by_code("GB50016-2014")[0]["confidence"], "parsed")
 
 
 class EditionStatusTest(_StoreCase):

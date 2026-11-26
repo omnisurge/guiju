@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 class NativeMetadataBoundaryTest(unittest.TestCase):
     def test_native_subtree_has_no_content_storage_or_filesystem_dependency(self):
-        # __init__ 是旧兼容门面，既有 CachedCurrency 落库不属于本约束范围。
+        # __init__ 是旧兼容门面，不纳入子包纯净性 AST 扫描范围。
         paths = sorted((ROOT / "guiju/currency").rglob("*.py"))
         paths.append(ROOT / "guiju/domain/shzjw.py")
         self.assertGreaterEqual(len(paths), 5)

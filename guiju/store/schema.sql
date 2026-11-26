@@ -61,9 +61,5 @@ CREATE TABLE IF NOT EXISTS probe (
 
 CREATE TABLE IF NOT EXISTS corpus_meta (k TEXT PRIMARY KEY, v TEXT);
 
--- 时效查询缓存：服务不可达时仍能回答"这个编号是什么"（只存元数据，不存正文）
-CREATE TABLE IF NOT EXISTS currency_cache (
-    code_key   TEXT PRIMARY KEY,
-    payload    TEXT NOT NULL,
-    fetched_at TEXT NOT NULL
-);
+-- 注：原 currency_cache 表已于 v1.3.0 退役（时效缓存统一由 DiskCurrencyCache 承担）；
+-- 存量库中遗留的旧表保留为无害孤儿表，不降/升 schema 版本。

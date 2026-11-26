@@ -25,9 +25,7 @@ from unittest import mock
 
 import guiju.currency as currency_pkg
 from guiju.currency import (
-    CachedCurrency,
     MisconfiguredCurrency,
-    _cache,
     native_currency,
 )
 from guiju.currency.cache import CACHE_NAMESPACE, DEFAULT_TTL, CacheEntry
@@ -111,20 +109,6 @@ def _no_cache_native(now_holder, source=None, **kwargs):
     return native, source, namespace
 
 
-class FakeStore:
-    def __init__(self, hit=None):
-        self.hit = hit
-        self.saved = []
-
-    def cached_currency(self, key):
-        return self.hit
-
-    def cache_currency(self, key, payload):
-        self.saved.append((key, payload))
-
-
-
-
 class FakeClient:
     def __init__(self, body=b""):
         self.body = body
@@ -190,42 +174,6 @@ class L2CacheOffTest(unittest.TestCase):
 
 
 
-# ---------- L2c：memo 命中原样重放五元组，不重查 ----------
-
-class L2MemoReplayTest(unittest.TestCase):
-    def setUp(self):
-        _cache.clear()
-        self.addCleanup(_cache.clear)
-
-    def test_memo_hit_replays_original_tuple_and_skips_inner(self):
-        inner = Stub(rows=[_record()])
-        cached = CachedCurrency(inner)
-        first = cached.lookup(CODE)
-        self.assertFalse(cached.from_cache)
-        self.assertFalse(cached.stale)
-        self.assertIsNone(cached.upstream_error)
-        second = cached.lookup(CODE)
-        self.assertEqual(inner.calls, 1)          # memo 命中，不重查
-        self.assertEqual(second, first)
-        # 钉住原契约：重放的是首查时的原始五元组（from_cache 仍为 False）。
-        self.assertFalse(cached.from_cache)
-        self.assertFalse(cached.stale)
-
-    def test_memo_hit_replays_stale_upstream_error_tuple(self):
-        store = FakeStore(hit=('[{"code":"GB 1-2000","status":"current"}]', "2020-01-01 00:00:00"))
-        inner = Stub(error=SourceUnreachable("down"))
-        cached = CachedCurrency(inner, store=store)
-        rows = cached.lookup(CODE)
-        self.assertTrue(cached.from_cache)
-        self.assertTrue(cached.stale)
-        self.assertIsNotNone(cached.upstream_error)
-        rows2 = cached.lookup(CODE)
-        self.assertEqual(inner.calls, 1)
-        self.assertEqual(rows2, rows)
-        self.assertTrue(cached.stale)
-        self.assertIs(cached.upstream_error.__class__, SourceUnreachable)
-
-
 # ---------- L2d：hint 指明 native 用法 ----------
 
 class L2MisconfigHintTest(unittest.TestCase):
@@ -239,38 +187,6 @@ class L2MisconfigHintTest(unittest.TestCase):
             self.fail("MisconfiguredCurrency.lookup 必须 SourceUnreachable（不静默换源）")
         self.assertIn("native", hint)
         self.assertIn("off", hint)
-
-
-# ---------- L3：_load 时钟回拨年龄口径 ----------
-
-class L3LoadClockRollbackTest(unittest.TestCase):
-    def _load(self, fetched_at):
-        store = FakeStore(hit=('[{"code":"GB 1-2000","status":"current"}]', fetched_at))
-        cached = CachedCurrency(Stub(), store=store)
-        return cached._load("GB 1-2000")
-
-    def test_future_fetched_at_over_hour_returns_no_age(self):
-        hit = self._load("2999-01-01 00:00:00")
-        self.assertIsNotNone(hit)
-        self.assertIsNone(hit[1])   # 年龄不可信 → None，不伪装"刚写入"
-
-    def test_small_negative_skew_clamps_to_zero(self):
-        from datetime import datetime, timedelta
-        soon = datetime.now() + timedelta(minutes=5)
-        hit = self._load(soon.strftime("%Y-%m-%d %H:%M:%S"))
-        self.assertIsNotNone(hit)
-        self.assertEqual(hit[1], 0.0)  # 1h 内漂移钳 0，不误报陈旧
-
-    def test_past_timestamp_reports_positive_age(self):
-        hit = self._load("2020-01-01 00:00:00")
-        self.assertIsNotNone(hit)
-        self.assertIsNotNone(hit[1])
-        self.assertGreater(hit[1], 0)
-
-    def test_malformed_timestamp_returns_no_age(self):
-        hit = self._load("not-a-date")
-        self.assertIsNotNone(hit)
-        self.assertIsNone(hit[1])
 
 
 # ---------- L4：native admit 只在入口/put 前，不随 guard 计费 ----------
@@ -514,18 +430,6 @@ class L8FallbackAdmitTest(unittest.TestCase):
 
 
 class L8CacheKeyNoNormalizationTest(unittest.TestCase):
-    def setUp(self):
-        _cache.clear()
-        self.addCleanup(_cache.clear)
-
-    def test_raw_code_addressing_keeps_variants_distinct(self):
-        # 钉住原契约：memo/缓存键用原样编号，'GB 1-2000' 与 'gb1-2000' 是两个键。
-        inner = Stub(rows=[_record()])
-        cached = CachedCurrency(inner)
-        cached.lookup("GB 1-2000")
-        cached.lookup("gb1-2000")
-        self.assertEqual(inner.calls, 2)   # 第二个写法不命中第一个的 memo
-
     def test_memory_cache_layer_sees_raw_code(self):
         cache = MemoryCache(lambda: NOW)
         native, _source, _, _ = _make_native([NOW], cache=cache)

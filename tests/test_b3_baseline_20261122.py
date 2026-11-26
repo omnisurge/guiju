@@ -15,6 +15,7 @@ from pathlib import Path
 from guiju import autosync
 from guiju.cli import render
 from guiju.cli.commands import status
+from guiju.domain.search import rank, tokens_of
 from guiju.store.sqlite import Store
 
 
@@ -78,7 +79,7 @@ class StoreBaselineTest(unittest.TestCase):
         )
         self.assertTrue(fresh)
         self.assertGreater(ann_id, 0)
-        rows = self.store.search(["防火"])
+        rows, _ = rank(self.store.catalog_entries(), tokens_of("防火"))
         self.assertEqual(len(rows), 1)
         same_id, fresh2 = self.store.upsert_announcement(
             "https://x/1", "2026-02-01", "新防火规范", "建筑设计防火规范", "standard"

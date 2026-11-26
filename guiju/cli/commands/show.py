@@ -74,17 +74,17 @@ def run(store: Store, args: argparse.Namespace) -> int:
     }
     render.emit(payload)
     if not render.is_json():
-        render.note(f"名称：{payload['name']}")
-        render.note(f"公告：{payload['published_on']}　分类：{payload['category']}")
+        render.out(f"名称：{payload['name']}")
+        render.out(f"公告：{payload['published_on']}　分类：{payload['category']}")
         if payload["codes"]:
             for c in payload["codes"]:
-                render.note(f"编号：{c['code']}　角色：{c['role']}　置信：{c['confidence']}")
+                render.out(f"编号：{c['code']}　角色：{c['role']}　置信：{c['confidence']}")
         else:
-            render.note("编号：（尚未解析 → 跑一次 guiju pull <公告ID> 会顺带解析并落库）")
-        render.note(f"正文：{local['path'] if local else '未下载'}")
-        render.note(f"可得性：{payload['availability']}")
-        render.note(f"  {payload['availability_note']}")
-        render.note(f"链接：{payload['url']}")
+            render.out("编号：（尚未解析 → 跑一次 guiju pull <公告ID> 会顺带解析并落库）")
+        render.out(f"正文：{local['path'] if local else '未下载'}")
+        render.out(f"可得性：{payload['availability']}")
+        render.out(f"  {payload['availability_note']}")
+        render.out(f"链接：{payload['url']}")
     return 0
 
 

@@ -824,7 +824,7 @@ class ReadOnlyAnnouncementStoreTest(unittest.TestCase):
     def test_v2_only_missing_currency_cache_is_readable(self):
         ann_id = self._seed()
         db = sqlite3.connect(self.db)
-        db.execute("DROP TABLE currency_cache")
+        db.execute("DROP TABLE IF EXISTS currency_cache")
         db.commit()
         db.close()
         self._assert_announcement(ann_id, ann_id)
@@ -909,6 +909,56 @@ class ReadOnlyAnnouncementStoreTest(unittest.TestCase):
         self.addCleanup(os.chmod, self.home, 0o755)
         payload = self._assert_error(1, 50)
         self.assertIn("WAL", payload["error"])
+
+    def test_announcement_detail_network_does_not_block_concurrent_announcement(self):
+        mohurd_id = self._seed("https://www.mohurd.gov.cn/gongkai/zc/wjk/art/2026/art_17339_1.html")
+        shzjw_id = self._seed(SHZJW_URL.format(42))
+        entered = threading.Event()
+        release = threading.Event()
+
+        class _SlowMohurd:
+            id = "mohurd"
+            api_mode = False
+
+            def detail(self, _url):
+                entered.set()
+                release.wait(timeout=3)
+                return "<html></html>", "正文"
+
+            def attachments(self, _html):
+                return []
+
+        class _FastShzjw:
+            id = "shzjw"
+            api_mode = True
+
+        res_a = {}
+        with mock.patch(
+            "guiju.sources.registry",
+            return_value={"mohurd": _SlowMohurd(), "shzjw": _FastShzjw()},
+        ):
+            thread_a = threading.Thread(
+                target=lambda: res_a.update(
+                    _call(self.server, "announcement", {"ref": str(mohurd_id)})
+                ),
+                daemon=True,
+            )
+            thread_a.start()
+            try:
+                self.assertTrue(entered.wait(timeout=2), "线程 A 未进入 detail()")
+                # 线程 A 挂起在 detail() 网络 I/O 时，线程 B 的 announcement 不得被 _store_lock 阻塞。
+                res_b = _call(self.server, "announcement", {"ref": str(shzjw_id)})
+                self.assertFalse(res_b["result"]["isError"], res_b)
+                payload_b = json.loads(res_b["result"]["content"][0]["text"])
+                self.assertEqual(payload_b["announcement_id"], shzjw_id)
+                self.assertEqual(payload_b["attachment_verdict"], "api_mode")
+            finally:
+                release.set()
+                thread_a.join(timeout=3)
+        self.assertFalse(thread_a.is_alive())
+        self.assertIn("result", res_a)
+        payload_a = json.loads(res_a["result"]["content"][0]["text"])
+        self.assertEqual(payload_a["announcement_id"], mohurd_id)
 
 if __name__ == "__main__":
     unittest.main()
