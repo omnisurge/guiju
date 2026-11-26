@@ -25,19 +25,6 @@ else
   echo "  · 跳过：未安装且无本地缓存的 ruff（GitHub CI 仍会跑）。安装：uv tool install ruff"
 fi
 
-if [ "${CI_C0_BASELINE:-0}" = "1" ]; then
-  echo "== C0 baseline gate =="
-  if [ -z "${GUIJU_C0_TREE:-}" ]; then
-    echo "CI_C0_BASELINE=1 requires GUIJU_C0_TREE (and GUIJU_C0_NO_GIT=1 for an archive)" >&2
-    exit 2
-  fi
-  if [ "${GUIJU_C0_NO_GIT:-0}" = "1" ] || [ "${CI_C0_NO_GIT:-0}" = "1" ]; then
-    PYTHON="$PY" scripts/ci-c0-baseline.sh --no-git "$GUIJU_C0_TREE"
-  else
-    PYTHON="$PY" scripts/ci-c0-baseline.sh "$GUIJU_C0_TREE"
-  fi
-fi
-
 echo "== 2/5 发版文档一致性（docs-only） =="
 "$PY" scripts/check-release.py --docs-only
 

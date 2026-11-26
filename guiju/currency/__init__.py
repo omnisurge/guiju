@@ -16,9 +16,9 @@ index 的本质是**在本地维护一份"公告 ⇄ 编号"的映射**，而这
 
 合规分层（重要）
 ----------------
-`compliance.py` 的白名单只约束**正文下载**（正文只从 *.gov.cn 来）。
+`guiju/net/policy.BodyPolicy` 的白名单只约束**正文下载**（正文只从 *.gov.cn 来）。
 时效适配器只向各自的元数据源取"编号/名称/状态"，不下载任何标准正文、不落文件，
-因此不走 compliance 的闸门 —— 这条边界是刻意的，**不要把它当成合规豁免来复用**。
+因此走独立白名单策略（`MetadataPolicy` / `MetadataClient`），**不要把它当成合规豁免来复用**。
 """
 
 from __future__ import annotations

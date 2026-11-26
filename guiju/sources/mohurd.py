@@ -21,11 +21,11 @@ import re
 import urllib.parse
 from pathlib import Path
 
-from .. import compliance
 from ..domain.announcement import classify_title  # noqa: F401  # 对外 re-export：调用方经 mohurd.classify_title 取域分类
 from ..domain.attachment import Attachment
 from ..domain.codes import html_to_text
 from ..errors import BadAttachment, NeedsHuman
+from ..net.body import BodyClient
 
 BASE = "https://www.mohurd.gov.cn"
 LIST_PAGE = f"{BASE}/gongkai/fdzdgknr/bzgg/index.html"
@@ -57,11 +57,20 @@ MAGIC_HTML = "html"
 MAGIC_UNKNOWN = "unknown"
 
 
-def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int | None]:
+def _body_client(probe_sink=None) -> BodyClient:
+    return BodyClient(probe_sink=probe_sink)
+
+
+def catalog_page(
+    page_no: int,
+    page_size: int = 100,
+    *,
+    client: BodyClient | None = None,
+) -> tuple[list[dict], int | None]:
     """取一页目录。返回 (条目, 总数)。"""
     params = dict(QUERY_DATA)
     params["paramJson"] = json.dumps({"pageNo": page_no, "pageSize": page_size})
-    resp = compliance.get(f"{UNIT_API}?{urllib.parse.urlencode(params)}", referer=LIST_PAGE)
+    resp = (client or _body_client()).get_page(f"{UNIT_API}?{urllib.parse.urlencode(params)}", referer=LIST_PAGE)
     try:
         payload = json.loads(resp.text)
     except json.JSONDecodeError as exc:
@@ -103,9 +112,9 @@ def catalog_page(page_no: int, page_size: int = 100) -> tuple[list[dict], int | 
     return items, total
 
 
-def detail(url: str) -> tuple[str, str]:
+def detail(url: str, *, client: BodyClient | None = None) -> tuple[str, str]:
     """取详情页，返回 (HTML, 纯文本)。"""
-    resp = compliance.get(url, referer=LIST_PAGE)
+    resp = (client or _body_client()).get_page(url, referer=LIST_PAGE)
     html = resp.text
     return html, html_to_text(html)
 
@@ -144,9 +153,17 @@ def magic_of(body: bytes) -> str:
     return MAGIC_UNKNOWN
 
 
-def download(file_url: str, referer: str, probe_sink=None) -> tuple[bytes, str]:
+def download(
+    file_url: str,
+    referer: str,
+    probe_sink=None,
+    *,
+    client: BodyClient | None = None,
+) -> tuple[bytes, str]:
     """下载附件并做魔数判定。非 PDF 一律报错，绝不落盘。"""
-    body, content_type = compliance.download_bytes(file_url, referer=referer, timeout=180, probe_sink=probe_sink)
+    body, content_type = (client or _body_client(probe_sink)).download_bytes(
+        file_url, referer=referer, timeout=180
+    )
     magic = magic_of(body)
     if magic == MAGIC_PDF:
         return body, magic
@@ -158,21 +175,30 @@ def download(file_url: str, referer: str, probe_sink=None) -> tuple[bytes, str]:
     raise BadAttachment(detail_msg)
 
 
-def download_to(file_url: str, part_path: str, referer: str, probe_sink=None) -> tuple[int, str, int]:
+def download_to(
+    file_url: str,
+    part_path: str,
+    referer: str,
+    probe_sink=None,
+    *,
+    client: BodyClient | None = None,
+) -> tuple[int, str, int]:
     """流式下载到 `part_path`（断点续传），返回 (bytes, magic, resumed_from)。"""
-    info = compliance.download(file_url, part_path, referer=referer, timeout=180, probe_sink=probe_sink)
+    result = (client or _body_client(probe_sink)).download(
+        file_url, part_path, referer=referer, timeout=180
+    )
     with open(part_path, "rb") as fp:
         head = fp.read(64)
     magic = magic_of(head)
     if magic == MAGIC_PDF:
-        return int(info["bytes"]), magic, int(info["resumed_from"])
+        return int(result.bytes), magic, int(result.resumed_from)
 
     Path(part_path).unlink(missing_ok=True)   # 错误页不能当续传底子，否则永远拼不出 PDF
     detail_msg = {
         MAGIC_DOC: "附件是 .doc（多为「废止的强制性条文」，不是规范正文）",
         MAGIC_ZIP: "附件是压缩包，需解压后人工确认内容",
         MAGIC_HTML: "附件返回 HTML 错误页，可能链接失效或需重新解析详情页",
-    }.get(magic, f"附件不是 PDF（{info['bytes']} 字节）")
+    }.get(magic, f"附件不是 PDF（{result.bytes} 字节）")
     raise BadAttachment(detail_msg)
 
 

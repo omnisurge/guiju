@@ -11,6 +11,8 @@ from unittest import mock
 
 from guiju.domain import shzjw as core
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
+from guiju.net.body import BodyClient
+from guiju.net.metadata import MetadataClient
 from guiju.sources import shzjw as source
 
 
@@ -459,13 +461,13 @@ class SourceCompatibilityTest(unittest.TestCase):
         for name in ("search", "find", "catalog_page", "download_to", "download"):
             self.assertIs(getattr(source.SOURCE, name), getattr(source, name))
 
-    def test_content_search_injects_compliance_wrapper_and_uses_shared_parser(self):
+    def test_content_search_injects_metadata_client_and_uses_shared_parser(self):
         payload = page([row()], total=100)
         for abolished in (False, True):
             for standard_type in (0, 1):
                 with (
                     self.subTest(abolished=abolished, standard_type=standard_type),
-                    mock.patch.object(source.compliance, "post_json", return_value=payload) as post,
+                    mock.patch.object(MetadataClient, "post_json_dict", return_value=payload) as post,
                     mock.patch.object(core, "search", wraps=core.search) as search,
                     mock.patch.object(core, "parse_page", wraps=core.parse_page) as parse,
                 ):
@@ -484,7 +486,7 @@ class SourceCompatibilityTest(unittest.TestCase):
     def test_catalog_reuses_same_page_parser_and_preserves_projection(self):
         payload = page([row(releaseTime="2026-01-01 00:00:00", standardProjectName=None)], total=100)
         with (
-            mock.patch.object(source.compliance, "post_json", return_value=payload) as post,
+            mock.patch.object(MetadataClient, "post_json_dict", return_value=payload) as post,
             mock.patch.object(core, "parse_page", wraps=core.parse_page) as parse,
         ):
             items, total = source.catalog_page(2)
@@ -513,7 +515,7 @@ class SourceCompatibilityTest(unittest.TestCase):
             with (
                 self.subTest(find=find),
                 mock.patch.object(source, "search", return_value=[rec]) as search,
-                mock.patch.object(source.compliance, "post_json", side_effect=AssertionError("不可联网")),
+                mock.patch.object(MetadataClient, "post_json_dict", side_effect=AssertionError("不可联网")),
             ):
                 self.assertEqual(find(rec["code"]), [rec])
                 search.assert_called_once_with(rec["code"], standard_type=0)
@@ -523,7 +525,7 @@ class SourceCompatibilityTest(unittest.TestCase):
             for query in (lambda: source.search("手构"), lambda: source.catalog_page(1)):
                 with (
                     self.subTest(payload=payload, query=query),
-                    mock.patch.object(source.compliance, "post_json", return_value=payload),
+                    mock.patch.object(MetadataClient, "post_json_dict", return_value=payload),
                     self.assertRaises(NeedsHuman) as caught,
                 ):
                     query()
@@ -533,7 +535,7 @@ class SourceCompatibilityTest(unittest.TestCase):
         for query in (lambda: source.search("手构"), lambda: source.catalog_page(1)):
             with (
                 self.subTest(query=query),
-                mock.patch.object(source.compliance, "post_json", side_effect=json.JSONDecodeError("坏JSON", "", 0)),
+                mock.patch.object(MetadataClient, "post_json_dict", side_effect=json.JSONDecodeError("坏JSON", "", 0)),
                 self.assertRaises(NeedsHuman) as caught,
             ):
                 query()
@@ -541,8 +543,9 @@ class SourceCompatibilityTest(unittest.TestCase):
 
     def test_source_queries_keep_empty_success_and_never_enter_download_code(self):
         with (
-            mock.patch.object(source.compliance, "post_json", return_value=page([])),
-            mock.patch.object(source.compliance, "download", side_effect=AssertionError("不能下载")),
+            mock.patch.object(MetadataClient, "post_json_dict", return_value=page([])),
+            mock.patch.object(BodyClient, "download", side_effect=AssertionError("不能下载")),
+            mock.patch.object(BodyClient, "download_bytes", side_effect=AssertionError("不能下载")),
             mock.patch.object(source, "_token", side_effect=AssertionError("不能签名")),
             mock.patch.object(source, "download_to", side_effect=AssertionError("不能下载")),
             mock.patch.object(source, "download", side_effect=AssertionError("不能下载")),

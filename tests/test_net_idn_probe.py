@@ -10,7 +10,6 @@ import urllib.error
 from pathlib import Path
 from unittest import mock
 
-from guiju import compliance
 from guiju.errors import ComplianceDenied, SourceUnreachable
 from guiju.net.body import BodyClient
 from guiju.net.policy import BodyPolicy, MetadataPolicy
@@ -164,7 +163,8 @@ class LargeStreamTest(unittest.TestCase):
         from guiju.sources import mohurd
         size = 9_437_193
         body = b"%PDF-1.7\n" + b"x" * (size - 9)
-        with mock.patch.object(compliance, "check_url", side_effect=lambda u: u):
+        client = BodyClient(policy=BodyPolicy(check_url_fn=lambda u: u), throttle=Throttle(0))
+        with mock.patch.object(mohurd, "_body_client", return_value=client):
             with LocalServer("ok", body=body) as server:
                 data, magic = mohurd.download(server.url + "/a", "")
         self.assertEqual(len(data), size)

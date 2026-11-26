@@ -7,10 +7,12 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest import mock
 
-from guiju import compliance
 from guiju.errors import SourceUnreachable
+from guiju.net.body import BodyClient
+from guiju.net.headers import header_int, parse_content_range
+from guiju.net.policy import BodyPolicy
+from guiju.net.throttle import Throttle
 
 PAYLOAD = b"%PDF-1.7\n" + b"0123456789" * 200
 
@@ -116,15 +118,15 @@ class DownloadIntegrityTest(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         self.url = f"http://127.0.0.1:{self.server.server_port}/file.pdf"
-        self.addCleanup(mock.patch.stopall)
-        mock.patch.object(compliance, "check_url", lambda url: url).start()
-        mock.patch.object(compliance, "_throttle", lambda host: None).start()
-        mock.patch.object(compliance.time, "sleep", lambda _s: None).start()
+        self.client = BodyClient(
+            policy=BodyPolicy(check_url_fn=lambda url: url),
+            throttle=Throttle(0),
+        )
 
     def test_truncated_body_raises_and_keeps_partial(self):
         part = self.dir / "broken.part"
         with self.assertRaises(SourceUnreachable) as ctx:
-            compliance.download(self.url, part, attempts=2)
+            self.client.download(self.url, part, attempts=2)
         self.assertIn("截断", str(ctx.exception))
         self.assertEqual(part.stat().st_size, 100)
         self.assertFalse((self.dir / "broken.pdf").exists())
@@ -133,7 +135,7 @@ class DownloadIntegrityTest(unittest.TestCase):
         RangeHandler.mode = "missing_content_range"
         part = self.dir / "no-range.part"
         with self.assertRaises(SourceUnreachable) as ctx:
-            compliance.download(self.url, part, attempts=2)
+            self.client.download(self.url, part, attempts=2)
         self.assertIn("Content-Range", str(ctx.exception))
         self.assertFalse(part.exists())
 
@@ -146,7 +148,7 @@ class DownloadIntegrityTest(unittest.TestCase):
                         "last_modified": "Wed, 01 Jan 2025 00:00:00 GMT",
                         "total": 2000, "size": 100}), encoding="utf-8")
         with self.assertRaises(SourceUnreachable) as ctx:
-            compliance.download(self.url, part, attempts=2)
+            self.client.download(self.url, part, attempts=2)
         self.assertIn("起点", str(ctx.exception))
         self.assertEqual(part.stat().st_size, 100)
 
@@ -154,14 +156,14 @@ class DownloadIntegrityTest(unittest.TestCase):
         RangeHandler.mode = "truncated_206"
         part = self.dir / "short-206.part"
         with self.assertRaises(SourceUnreachable):
-            compliance.download(self.url, part, attempts=2)
+            self.client.download(self.url, part, attempts=2)
         self.assertLess(part.stat().st_size, len(PAYLOAD))
 
     def test_206_unknown_total_is_rejected(self):
         RangeHandler.mode = "unknown_total"
         part = self.dir / "unknown-total.part"
         with self.assertRaises(SourceUnreachable) as ctx:
-            compliance.download(self.url, part, attempts=2)
+            self.client.download(self.url, part, attempts=2)
         self.assertIn("总长", str(ctx.exception))
         self.assertFalse(part.exists())
 
@@ -169,19 +171,19 @@ class DownloadIntegrityTest(unittest.TestCase):
         RangeHandler.mode = "partial_known_total"
         part = self.dir / "partial-total.part"
         with self.assertRaises(SourceUnreachable):
-            compliance.download(self.url, part, attempts=2)
+            self.client.download(self.url, part, attempts=2)
 
     def test_206_body_longer_than_declared_range_is_rejected(self):
         RangeHandler.mode = "body_longer_than_range"
         part = self.dir / "longer-body.part"
         with self.assertRaises(SourceUnreachable):
-            compliance.download(self.url, part, attempts=2)
+            self.client.download(self.url, part, attempts=2)
 
     def test_206_uppercase_unit_is_accepted(self):
         RangeHandler.mode = "uppercase_unit"
         part = self.dir / "uppercase.part"
-        result = compliance.download(self.url, part, attempts=2)
-        self.assertEqual(result["bytes"], 100)
+        result = self.client.download(self.url, part, attempts=2)
+        self.assertEqual(result.bytes, 100)
         self.assertEqual(part.stat().st_size, 100)
 
     def test_416_without_head_length_does_not_accept_part(self):
@@ -189,18 +191,18 @@ class DownloadIntegrityTest(unittest.TestCase):
         part = self.dir / "stale.part"
         part.write_bytes(b"%PDF-")
         with self.assertRaises(SourceUnreachable):
-            compliance.download(self.url, part, attempts=2)
+            self.client.download(self.url, part, attempts=2)
         self.assertFalse(part.exists())
 
     def test_header_parsers_are_defensive(self):
-        self.assertIsNone(compliance._header_int("²"))
-        self.assertIsNone(compliance._header_int("9" * 5000))
+        self.assertIsNone(header_int("²"))
+        self.assertIsNone(header_int("9" * 5000))
         self.assertEqual(
-            compliance._parse_content_range("bytes 0-1/" + "9" * 5000),
+            parse_content_range("bytes 0-1/" + "9" * 5000),
             (None, None, None),
         )
         self.assertEqual(
-            compliance._parse_content_range("Bytes 0-99/100"),
+            parse_content_range("Bytes 0-99/100"),
             (0, 99, 100),
         )
 

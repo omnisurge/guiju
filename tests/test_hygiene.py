@@ -67,14 +67,6 @@ class CiConstraintTest(unittest.TestCase):
         self.assertTrue(hook.is_file(), "缺少 pre-push 钩子")
         self.assertTrue(os.access(hook, os.X_OK), "pre-push 钩子没有可执行权限")
 
-    def test_c0_gate_honors_python_override(self):
-        baseline = _read("scripts/ci-c0-baseline.sh")
-        self.assertIn('PY="${PYTHON:-python3}"', baseline)
-        self.assertIn('"$PY" -m unittest -v tests.char_baseline_20261121', baseline)
-        self.assertNotRegex(baseline, r"(?m)^python3 -m unittest", "C0 gate 不得硬编码 python3")
-        ci = _read("scripts/ci.sh")
-        self.assertGreaterEqual(ci.count('PYTHON="$PY" scripts/ci-c0-baseline.sh'), 2)
-
 
 class IgnoreConstraintTest(unittest.TestCase):
     def test_standards_never_enter_repo(self):

@@ -30,10 +30,11 @@ import time
 import urllib.parse
 from pathlib import Path
 
-from .. import compliance
 from ..domain import shzjw as core
 from ..domain.codes import normalize_key as normalize_key
 from ..errors import BadAttachment, NeedsHuman, NotIndexed
+from ..net.body import BodyClient
+from ..net.metadata import MetadataClient
 from .mohurd import MAGIC_PDF, magic_of
 
 BASE = core.BASE
@@ -71,10 +72,18 @@ def _signed_download_url(file_url: str, *, now_ms: int | None = None) -> str:
     )
 
 
-def _fetch(query: dict) -> dict:
-    """内容源仍走原合规传输；无效 JSON 不再漏成 internal 或空命中。"""
+def _metadata_client() -> MetadataClient:
+    return MetadataClient(timeout=60, attempts=2)
+
+
+def _body_client(probe_sink=None) -> BodyClient:
+    return BodyClient(probe_sink=probe_sink)
+
+
+def _fetch(query: dict, *, client: MetadataClient | None = None) -> dict:
+    """直连 net.MetadataClient；无效 JSON 不再漏成 internal 或空命中。"""
     try:
-        return compliance.post_json(QUERY_URL, query, referer=REFERER)
+        return (client or _metadata_client()).post_json_dict(QUERY_URL, query, referer=REFERER)
     except ValueError as exc:
         raise NeedsHuman(
             "上海标准接口未返回有效 JSON",
@@ -104,23 +113,38 @@ def find(ref: str, *, prefer_exact: bool = True) -> list[dict]:
     return core.find(ref, searcher=search, prefer_exact=prefer_exact)
 
 
-def download_to(file_url: str, part_path: str, referer: str = REFERER, probe_sink=None) -> tuple[int, str, int]:
+def download_to(
+    file_url: str,
+    part_path: str,
+    referer: str = REFERER,
+    probe_sink=None,
+    *,
+    client: BodyClient | None = None,
+) -> tuple[int, str, int]:
     """流式下载（支持断点续传）。令牌按当前时间现算，所以归档的 URL 不会带过期令牌。"""
     signed = _signed_download_url(file_url)
-    info = compliance.download(signed, part_path, referer=referer, timeout=180, probe_sink=probe_sink)
+    result = (client or _body_client(probe_sink)).download(
+        signed, part_path, referer=referer, timeout=180
+    )
     with open(part_path, "rb") as fp:
         head = fp.read(64)
     magic = magic_of(head)
     if magic != MAGIC_PDF:
         Path(part_path).unlink(missing_ok=True)
         raise BadAttachment("上海标准接口返回的不是 PDF（可能是错误页或文件已撤下）")
-    return int(info["bytes"]), magic, int(info["resumed_from"])
+    return int(result.bytes), magic, int(result.resumed_from)
 
 
-def download(file_url: str, referer: str = REFERER, probe_sink=None) -> tuple[bytes, str]:
+def download(
+    file_url: str,
+    referer: str = REFERER,
+    probe_sink=None,
+    *,
+    client: BodyClient | None = None,
+) -> tuple[bytes, str]:
     signed = _signed_download_url(file_url)
-    body, _content_type = compliance.download_bytes(
-        signed, referer=referer, timeout=180, probe_sink=probe_sink
+    body, _content_type = (client or _body_client(probe_sink)).download_bytes(
+        signed, referer=referer, timeout=180
     )
     magic = magic_of(body)
     if magic != MAGIC_PDF:

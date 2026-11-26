@@ -10,9 +10,9 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
-from guiju import compliance
 from guiju.currency.csres import CsresCurrency
 from guiju.currency.httpx import HttpClient
+from guiju.net.body import BodyClient
 from tests.currency_helpers import FakeResponse
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,7 +54,7 @@ class NativeMetadataBoundaryTest(unittest.TestCase):
         fail = AssertionError("元数据链路不得触及正文出口、文件、数据库或真实网络")
         with ExitStack() as stack:
             for target, attr in (
-                (compliance, "get"), (compliance, "download"), (compliance, "post_json"),
+                (BodyClient, "get_page"), (BodyClient, "download"), (BodyClient, "download_bytes"),
                 (builtins, "open"), (io, "open"), (Path, "write_text"), (Path, "write_bytes"),
                 (Path, "mkdir"), (sqlite3, "connect"), (socket, "create_connection"),
             ):
@@ -93,7 +93,7 @@ class NativeMetadataBoundaryTest(unittest.TestCase):
             fail = AssertionError("元数据适配器不能访问正文/文件/数据库/真实网络")
             with self.subTest(source=instance.name), ExitStack() as stack:
                 for target, attr in (
-                    (compliance, "get"), (compliance, "download"), (compliance, "post_json"),
+                    (BodyClient, "get_page"), (BodyClient, "download"), (BodyClient, "download_bytes"),
                     (builtins, "open"), (io, "open"), (Path, "write_text"), (Path, "write_bytes"),
                     (Path, "mkdir"), (sqlite3, "connect"), (socket, "create_connection"),
                 ):
@@ -131,7 +131,7 @@ class NativeMetadataBoundaryTest(unittest.TestCase):
         with ExitStack() as stack:
             for target, attr in (
                 (content, "_token"), (content, "download"), (content, "download_to"),
-                (compliance, "get"), (compliance, "download"), (compliance, "post_json"),
+                (BodyClient, "get_page"), (BodyClient, "download"), (BodyClient, "download_bytes"),
                 (builtins, "open"), (io, "open"), (Path, "write_text"), (Path, "write_bytes"),
                 (Path, "mkdir"), (sqlite3, "connect"), (socket, "create_connection"),
             ):

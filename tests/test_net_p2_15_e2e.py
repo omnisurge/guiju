@@ -12,7 +12,6 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from guiju import compliance
 from guiju.errors import ComplianceDenied, SourceUnreachable
 from guiju.net.body import BodyClient, finalize
 from guiju.net.policy import BodyPolicy
@@ -324,25 +323,26 @@ class SidecarE2ETest(unittest.TestCase):
         self.assertEqual(meta.get("size"), 5)
         self.assertFalse(any(self.part.parent.glob("*.meta.tmp")))
 
-    def test_compliance_download_two_stage(self):
+    def test_body_client_download_two_stage(self):
         body = b"%PDF-12345"
-        with mock.patch.object(compliance, "check_url", side_effect=lambda url: url):
-            with self._first(body, etag='"v1"') as first, self.assertRaises(SourceUnreachable):
-                compliance.download(first.url + "/a", self.part, attempts=1)
-            with LocalServer("range_ok", body=body, headers={
-                "ETag": '"v1"', "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
-            }) as second:
-                info = compliance.download(second.url + "/a", self.part, attempts=1)
-                req = second.state.requests[0].headers
-        self.assertEqual(info["bytes"], 10)
-        self.assertEqual(info["resumed_from"], 5)
+        with self._first(body, etag='"v1"') as first, self.assertRaises(SourceUnreachable):
+            _client().download(first.url + "/a", self.part, attempts=1)
+        with LocalServer("range_ok", body=body, headers={
+            "ETag": '"v1"', "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
+        }) as second:
+            info = _client().download(second.url + "/a", self.part, attempts=1)
+            req = second.state.requests[0].headers
+        self.assertEqual(info.bytes, 10)
+        self.assertEqual(info.resumed_from, 5)
         self.assertEqual(req.get("range"), "bytes=5-")
         self.assertEqual(req.get("if-range"), '"v1"')
 
     def test_source_download_to_two_stage(self):
         from guiju.sources import mohurd
         body = b"%PDF-12345"
-        with mock.patch.object(compliance, "check_url", side_effect=lambda url: url):
+        with mock.patch.object(
+            mohurd, "_body_client", side_effect=lambda probe_sink=None: _client(probe_sink=probe_sink)
+        ):
             with self._first(body, etag='"v1"') as first, self.assertRaises(SourceUnreachable):
                 mohurd.download_to(first.url + "/a", str(self.part), "")
             with LocalServer("range_ok", body=body, headers={
@@ -365,6 +365,7 @@ class SidecarE2ETest(unittest.TestCase):
         tmp_home = Path(tempfile.mkdtemp(prefix="guiju-pull-e2e-"))
         self.addCleanup(lambda: __import__("shutil").rmtree(tmp_home, ignore_errors=True))
         store = Store(tmp_home / "catalog.db")
+        self.addCleanup(store.close)
         out_dir = tmp_home / "library"
         out_dir.mkdir()
         args = argparse.Namespace(force=False, readable=False)
@@ -386,7 +387,9 @@ class SidecarE2ETest(unittest.TestCase):
                 return mohurd.download_to(url, part, referer or "")
 
         source = LocalSource()
-        with mock.patch.object(compliance, "check_url", side_effect=lambda url: url):
+        with mock.patch.object(
+            mohurd, "_body_client", side_effect=lambda probe_sink=None: _client(probe_sink=probe_sink)
+        ):
             with LocalServer("two_stage", body=body, headers={
                 "ETag": '"pull-v1"', "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT",
             }) as server:

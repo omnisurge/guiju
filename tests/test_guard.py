@@ -3,11 +3,11 @@
 import unittest
 import urllib.request
 
-from guiju import compliance
 from guiju.errors import ComplianceDenied
 from guiju.net.block import BlockDetector
 from guiju.net.policy import BodyPolicy
 from guiju.net.redirect import RedirectGuard
+from guiju.net.throttle import Throttle
 
 
 class WhitelistTest(unittest.TestCase):
@@ -17,7 +17,7 @@ class WhitelistTest(unittest.TestCase):
             "http://www.gov.cn/a.pdf",
             "https://zjw.sh.gov.cn/cmsres/a.pdf",
         ):
-            self.assertEqual(compliance.check_url(url), url)
+            self.assertEqual(BodyPolicy().check_url(url), url)
 
     def test_rejects_non_gov(self):
         for url in (
@@ -27,18 +27,18 @@ class WhitelistTest(unittest.TestCase):
             "https://www.mohurd.gov.cn.evil.com/x",
         ):
             with self.assertRaises(ComplianceDenied, msg=url):
-                compliance.check_url(url)
+                BodyPolicy().check_url(url)
 
 
 class RedirectTest(unittest.TestCase):
     def test_redirect_to_foreign_host_is_denied(self):
-        handler = RedirectGuard(BodyPolicy(check_url_fn=compliance.check_url), compliance._CompatThrottle(), BlockDetector())
+        handler = RedirectGuard(BodyPolicy(), Throttle(0), BlockDetector())
         req = urllib.request.Request("https://www.mohurd.gov.cn/old")
         with self.assertRaises(ComplianceDenied):
             handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example.com/x")
 
     def test_redirect_relative_url_resolves_against_origin(self):
-        handler = RedirectGuard(BodyPolicy(check_url_fn=compliance.check_url), compliance._CompatThrottle(), BlockDetector())
+        handler = RedirectGuard(BodyPolicy(), Throttle(0), BlockDetector())
         req = urllib.request.Request("https://www.mohurd.gov.cn/a/b")
         # 相对跳转应被解析为同域；不能只用 except Exception: pass 把回归吞掉。
         result = handler.redirect_request(req, None, 302, "Found", {}, "/c/d")

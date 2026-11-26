@@ -29,13 +29,14 @@ class MohurdAttachmentTest(unittest.TestCase):
 
     def test_download_uses_download_bytes_not_get_page(self):
         big = b"%PDF-1.7\n" + b"0" * (9 * 1024 * 1024)
-        with mock.patch.object(mohurd.compliance, "download_bytes", return_value=(big, "application/pdf")) as dl, \
-             mock.patch.object(mohurd.compliance, "get") as get:
+        fake_client = mock.Mock()
+        fake_client.download_bytes.return_value = (big, "application/pdf")
+        with mock.patch.object(mohurd, "_body_client", return_value=fake_client):
             body, magic = mohurd.download("https://x.gov.cn/a.pdf", "https://x.gov.cn/")
         self.assertEqual(magic, "pdf")
         self.assertEqual(len(body), len(big))
-        dl.assert_called_once()
-        get.assert_not_called()
+        fake_client.download_bytes.assert_called_once()
+        fake_client.get_page.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -6,13 +6,15 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest import mock
 
-from guiju import compliance
 from guiju.errors import ComplianceDenied
+from guiju.net.block import BLOCK_MARKERS
+from guiju.net.body import BodyClient
+from guiju.net.policy import BodyPolicy
+from guiju.net.throttle import Throttle
 
 PAYLOAD = b"%PDF-1.7\n" + b"0123456789" * 200
-MARKER = compliance.BLOCK_MARKERS[0]
+MARKER = BLOCK_MARKERS[0]
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -69,13 +71,10 @@ class ResumeTest(unittest.TestCase):
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         self.url = f"http://127.0.0.1:{self.server.server_port}/file.pdf"
-
-        patcher = mock.patch.object(compliance, "check_url", lambda url: url)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        throttle = mock.patch.object(compliance, "_throttle", lambda host: None)
-        throttle.start()
-        self.addCleanup(throttle.stop)
+        self.client = BodyClient(
+            policy=BodyPolicy(check_url_fn=lambda url: url),
+            throttle=Throttle(0),
+        )
 
     def tearDown(self):
         Handler.support_range = True
@@ -88,30 +87,30 @@ class ResumeTest(unittest.TestCase):
             json.dumps({"etag": '"resume-v1"',
                         "last_modified": "Wed, 01 Jan 2025 00:00:00 GMT",
                         "total": len(PAYLOAD), "size": 500}), encoding="utf-8")
-        info = compliance.download(self.url, part)
-        self.assertEqual(info["resumed_from"], 500)
-        self.assertEqual(info["bytes"], len(PAYLOAD))
+        info = self.client.download(self.url, part)
+        self.assertEqual(info.resumed_from, 500)
+        self.assertEqual(info.bytes, len(PAYLOAD))
         self.assertEqual(part.read_bytes(), PAYLOAD)
 
     def test_server_without_range_restarts(self):
         Handler.support_range = False
         part = self.dir / "b.part"
         part.write_bytes(PAYLOAD[:500])
-        info = compliance.download(self.url, part)
-        self.assertEqual(info["bytes"], len(PAYLOAD))
+        info = self.client.download(self.url, part)
+        self.assertEqual(info.bytes, len(PAYLOAD))
         self.assertEqual(part.read_bytes(), PAYLOAD)
 
     def test_html_page_is_denied(self):
         Handler.as_html = True
         part = self.dir / "c.part"
         with self.assertRaises(ComplianceDenied):
-            compliance.download(self.url, part)
+            self.client.download(self.url, part)
         self.assertFalse(part.exists() and part.stat().st_size > 0)
 
     def test_fresh_download_from_zero(self):
         part = self.dir / "d.part"
-        info = compliance.download(self.url, part)
-        self.assertEqual(info["resumed_from"], 0)
+        info = self.client.download(self.url, part)
+        self.assertEqual(info.resumed_from, 0)
         self.assertEqual(part.read_bytes(), PAYLOAD)
 
 

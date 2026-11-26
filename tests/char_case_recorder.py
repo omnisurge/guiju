@@ -1,8 +1,8 @@
-"""Shared real case recorder for the C0 baseline and target suites.
+"""Shared real case recorder for the characterization target suite.
 
 The recorder is intentionally stdlib-only (it imports the local HTTP fixture,
 never guiju.net).  A backend adapter supplies download/get/policy operations
-for either the pre-B2 compliance facade or the post-B2 net facade.
+for the guiju.net facade under test.
 """
 
 from __future__ import annotations

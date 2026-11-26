@@ -1,9 +1,7 @@
-"""Offline real-HTTP fixtures for the B2/W1 baseline characterization.
+"""Offline real-HTTP fixtures for the net characterization target & regression suites.
 
-This module intentionally depends only on the standard library and the
-pre-B2 public modules (guiju.compliance / guiju.currency.httpx).  It must not
-import guiju.net: the C0 baseline must run at 2a7be88 where guiju.net does not
-exist yet.
+This module intentionally depends only on the standard library so socket-backed
+test servers stay decoupled from guiju.net implementation details.
 """
 
 from __future__ import annotations

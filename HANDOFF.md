@@ -129,7 +129,7 @@ JTG             → Fallback( csres → jtst )
 ```
 
 - `csres` 是主源：`GET http://www.csres.com/s.jsp?keyword=<号>`，**GBK 编码 HTML**，首次 TTFB 1–8s（靠重试+备源）。
-- 元数据适配器**禁止**调用 `compliance.get`、**禁止**落文件（ADR 0002 决策 5，要用测试钉住）——`csres.com` 不是 `*.gov.cn`。
+- 元数据适配器**禁止**调用正文出口（`guiju/net/body.BodyClient`）、**禁止**落文件（ADR 0002 决策 5，要用测试钉住）——`csres.com` 不是 `*.gov.cn`。
 - 之后：期 3 `guiju mcp` 服务面（已上线）→ 期 4 归档 spec-currency（已于 2026-11-13 完成：适配器与 cmd:/mcp: 覆盖删除，native 为唯一上游）。
 - **不要修改或构建 `spec-currency` 仓**（历史：已归档，不再涉及）：M1/M2 只读参考其源码与 golden，M3 未操作旧仓，离线回归现在不依赖旧仓；也不要往 guiju 里再塞一份地标解析器（会产生双份实现）。
 

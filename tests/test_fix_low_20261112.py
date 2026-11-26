@@ -28,14 +28,16 @@ import urllib.error
 from pathlib import Path
 from unittest import mock
 
-from guiju import compliance, files, localstatus
-from guiju.domain import codes, naming
+from guiju import files, localstatus
+from guiju.domain import codes, naming, shzjw
 from guiju.domain.attachment import Attachment, _is_pdf
 from guiju.errors import BadUsage, ComplianceDenied, NeedsHuman, SourceUnreachable
 from guiju.net.body import BodyClient
+from guiju.net.metadata import MetadataClient
 from guiju.net.policy import BodyPolicy
 from guiju.net.request import ProbeInfo
 from guiju.net.throttle import Throttle
+from tests.net_harness import FakeResponse, FakeTransport
 
 # ---------- 1. _is_pdf ----------
 
@@ -171,11 +173,27 @@ class AutosyncNotifyTest(unittest.TestCase):
 
 class PostJsonTest(unittest.TestCase):
     def test_post_json_html_body_is_compliance_denied(self) -> None:
-        with mock.patch.object(compliance.MetadataClient, "_request",
-                               return_value=b"<html><body>403 Forbidden</body></html>"), \
-             self.assertRaises(ComplianceDenied) as ctx:
-            compliance.post_json("https://www.ccsn.org.cn/newweb/api/StandardQuery.assx/queryStandard", {"a": 1})
-        self.assertEqual(ctx.exception.exit, 40)
+        with self.assertRaises(ComplianceDenied) as denied_host:
+            MetadataClient(throttle=Throttle(0)).post_json_dict(
+                "https://www.ccsn.org.cn/newweb/api/StandardQuery.assx/queryStandard", {"a": 1}
+            )
+        self.assertEqual(denied_host.exception.exit, 40)
+
+        body = b"<html><body>403 Forbidden</body></html>"
+        transport = FakeTransport(
+            [
+                FakeResponse(
+                    body,
+                    status=200,
+                    url=shzjw.QUERY_URL,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+            ]
+        )
+        client = MetadataClient(throttle=Throttle(0), attempts=1, transport=transport)
+        with self.assertRaises(ComplianceDenied) as html_body:
+            client.post_json_dict(shzjw.QUERY_URL, {"a": 1})
+        self.assertEqual(html_body.exception.exit, 40)
 
 
 # ---------- 10. 416：HEAD 校验，不符则重下 ----------

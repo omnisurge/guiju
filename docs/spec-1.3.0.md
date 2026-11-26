@@ -202,7 +202,7 @@
 - [x] **S0**：迭代基线与开发期门禁（`Unreleased`、`check-release.py`、`test_hygiene.py`）
 - [x] **S1**：M4 改版观测闭环（`body_sha256`、`MetadataClient.probe_sink`、`guiju sources`）
 - [x] **S2**：冗余清理与锁收窄（`CachedCurrency` 死路径、`Store.search()`、`_announcement` 锁、`search`/`show` 输出流）
-- [ ] **S3a**：`guiju/compliance.py` 退场（`sources` 直连 `guiju/net`）
+- [x] **S3a**：`guiju/compliance.py` 退场（`sources` 直连 `guiju/net`）
 - [ ] **S3b**：`guiju/currency/httpx.py` 退场（`currency` 直连 `guiju/net/metadata.py` + `jsonutil`）
 - [ ] **S3c**：`cli/lookup.py` 等 shim 与 `application/` 隐式构造兜底退场
 - [ ] **S4**：MCP 服务面纯净化（上游核验后删 `batch` `list`/`out`、删 `lookup()` 兼容路径、`_ReadOnlyStore` 白名单化）

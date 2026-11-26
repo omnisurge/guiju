@@ -50,7 +50,7 @@ class NetBoundaryTest(unittest.TestCase):
         self.assertEqual(classes.count("RedirectGuard"), 1)
 
     def test_facades_have_no_opener(self):
-        for name in ("guiju/compliance.py", "guiju/currency/httpx.py"):
+        for name in ("guiju/currency/httpx.py",):
             self.assertNotIn("_opener", (ROOT / name).read_text("utf-8"))
 
     def test_body_finalize_is_sole_body_replace(self):
@@ -134,12 +134,39 @@ class NetBoundaryTest(unittest.TestCase):
                         bad.append(f"{rel}:{node.lineno}:RedirectGuard")
         self.assertEqual(bad, [])
 
-    def test_compliance_and_currency_redirect_factories_absent(self):
-        from guiju import compliance
+    def test_currency_redirect_factory_absent(self):
         from guiju.currency import httpx
-        self.assertNotIn("_GuardedRedirect", compliance.__all__)
-        self.assertFalse(hasattr(compliance, "_GuardedRedirect"))
         self.assertFalse(hasattr(httpx, "_MetadataRedirect"))
+
+    def test_compliance_facade_retired(self):
+        self.assertFalse((ROOT / "guiju/compliance.py").exists())
+        self.assertFalse((ROOT / "guiju/compliance").exists())
+        bad = []
+        py_files = [
+            p
+            for base in (ROOT / "guiju", ROOT / "tests")
+            for p in base.rglob("*.py")
+            if "__pycache__" not in p.parts
+        ]
+        for path in py_files:
+            rel = str(path.relative_to(ROOT))
+            in_guiju = path.is_relative_to(ROOT / "guiju")
+            tree = ast.parse(path.read_text("utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "guiju.compliance" or alias.name.startswith("guiju.compliance."):
+                            bad.append(f"{rel}:{node.lineno}:{alias.name}")
+                elif isinstance(node, ast.ImportFrom):
+                    mod = node.module or ""
+                    if (
+                        mod == "guiju.compliance"
+                        or mod.startswith("guiju.compliance.")
+                        or (mod in ("", "guiju") and any(a.name == "compliance" for a in node.names))
+                        or (in_guiju and node.level > 0 and (mod == "compliance" or mod.startswith("compliance.")))
+                    ):
+                        bad.append(f"{rel}:{node.lineno}:from {mod or '.'}")
+        self.assertEqual(bad, [])
 
 
 if __name__ == "__main__":

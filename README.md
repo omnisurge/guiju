@@ -204,7 +204,6 @@ gh workflow run e2e-live.yml               # 或在 GitHub 上手动跑并留档
 ```
 guiju/
 ├── net/                 # 唯一出站层：Transport/RedirectGuard/BodyPolicy/BodyClient/MetadataClient
-├── compliance.py        # 出站合规兼容 facade（真正实现在 net/）
 ├── errors.py            # 错误 → 退出码的唯一映射
 ├── domain/              # 纯逻辑（可单测）：编号角色/附件裁定/引用串/命名/可得性
 ├── store/               # SQLite schema v2 + 迁移

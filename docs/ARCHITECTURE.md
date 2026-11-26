@@ -26,7 +26,7 @@
 | 产品是什么 | 一个**只做三件事**的命令行工具：把政府已公开的工程建设标准**目录**同步到本地、把**正文**按编号取到本地、把**引用串**交给监理文书。 |
 | 实现语言 | **Python 3.10+（CI 矩阵 3.10/3.12/3.13），仅标准库**，不引任何第三方运行时依赖。 |
 | 产品界面语言 | **中文文案 + 英文机器字段**：命令、帮助、人读输出全中文；`--json` 的 key 全英文。主路径是 JSON。 |
-| 架构形态 | 当前：`cli → application → domain/ports → adapters`（B4 已收口，双审通过）；全部出站经唯一 `guiju/net` 层；`compliance` 是兼容 facade。`application/ports/adapters` 已建立，Pull/Cite 主编排与 MCP 内联 batch 已接通。 |
+| 架构形态 | 当前：`cli → application → domain/ports → adapters`（B4 已收口，双审通过）；全部出站直连唯一 `guiju/net` 层（`compliance.py` 已在 v1.3.0-S3a 退场）。`application/ports/adapters` 已建立，Pull/Cite 主编排与 MCP 内联 batch 已接通。 |
 | 数据主体 | **公告**（现实存在物）与**版本号**（引用主体）分层，M:N + 角色；绝不把编号当主键。 |
 | 最核心竞争力 | 不是"能抓"，是**"不抓错"**与**"改版后 24 小时修好"**。 |
 
@@ -40,7 +40,7 @@
 
 1. **不抓错优先于抓不到。** 附件歧义、编号歧义、名称冲突 —— 一律显式失败（非零退出 + 结构化 hint），绝不用"取第一个"兜底。抓不到是空，抓错是事故。
 2. **不猜编号。** 任何编号必须来自页面原文可引用的证据（`evidence` 字段）。判不出角色就标 `ambiguous`，`cite --strict` 直接非零退出。
-3. **单一出站闸门。** 全仓只允许 `guiju/net` 发网络请求（`Transport` / `BodyClient` / `MetadataClient`，`RedirectGuard` 每跳校验）；`guiju.compliance` 只是兼容 facade，白名单对**每一次跳转**生效，无 override 开关。
+3. **单一出站闸门。** 全仓只允许 `guiju/net` 发网络请求（`Transport` / `BodyClient` / `MetadataClient`，`RedirectGuard` 每跳校验；`guiju.compliance` 已退场），白名单对**每一次跳转**生效，无 override 开关。
 
 ---
 
@@ -181,7 +181,7 @@ stderr : 全部日志、进度、警告
               └────────────────────────────────────────────┘
 ```
 
-**依赖方向铁律（现状）**：`guiju/net` 是唯一出站层；`guiju.compliance` 只是保留公共名字的兼容 facade（真正的白名单、限速、重定向与 block 判定都在 `guiju.net`）；`domain` 不碰网络与 DB；`sources` 只把 HTML 变成 DTO，绝不写库；`currency` 适配器不落文件；`store` 不负责网络。违反即评审不通过。
+**依赖方向铁律（现状）**：`guiju/net` 是唯一出站层（白名单、限速、重定向与 block 判定都在 `guiju.net`，`guiju.compliance` 已于 v1.3.0-S3a 退场）；`domain` 不碰网络与 DB；`sources` 只把 HTML 变成 DTO，绝不写库；`currency` 适配器不落文件；`store` 不负责网络。违反即评审不通过。
 
 **B4 进度（2026-11-23 实现，2026-11-23 双审 APPROVE；2026-11-24 随 1.2.0 发布）**：`application/`、`ports/`、`adapters/` 已建立；`application.resolve` 承接编号/名称解析，`application.status` 承接状态投影，`application.sync` 承接同步用例（CLI 注入 crawl/lock），`application.pull`/`application.cite` 承接完整编排，`application.cite.check_currency` 承接时效校验。CLI 的 `lookup.py` 是兼容 shim；MCP 已改用只读 Store，batch 支持内联 `codes[]`，`list/out` 仅保留 1.1.1-1.2.0 过渡。独立双审已 APPROVE，B4 已完成；本节按已落地结构描述。
 

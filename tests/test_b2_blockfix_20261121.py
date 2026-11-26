@@ -13,7 +13,7 @@ from guiju.domain import shzjw as core
 from guiju.errors import ComplianceDenied, NotIndexed, SourceUnreachable
 from guiju.net.body import BodyClient
 from guiju.net.policy import BodyPolicy
-from guiju.net.request import ProbeInfo
+from guiju.net.request import DownloadResult, ProbeInfo
 from guiju.net.throttle import Throttle
 from guiju.sources import shzjw as source
 from tests.char_baseline_harness import LocalServer
@@ -80,13 +80,15 @@ class SignedDownloadUrlTest(unittest.TestCase):
 
     def test_download_sends_signed_url_and_referer(self) -> None:
         captured: dict[str, object] = {}
+        fake_client = mock.Mock()
 
-        def fake_download_bytes(url: str, *, referer=None, timeout=180, probe_sink=None):
+        def fake_download_bytes(url: str, *, referer=None, timeout=180):
             captured["url"] = url
             captured["referer"] = referer
             return self.PDF, "application/pdf"
 
-        with mock.patch.object(source.compliance, "download_bytes", side_effect=fake_download_bytes):
+        fake_client.download_bytes.side_effect = fake_download_bytes
+        with mock.patch.object(source, "_body_client", return_value=fake_client):
             body, magic = source.download(core.download_url("fid-1"), referer="https://ref.example/")
         self.assertEqual((body, magic), (self.PDF, "pdf"))
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(str(captured["url"])).query)
@@ -97,23 +99,16 @@ class SignedDownloadUrlTest(unittest.TestCase):
         self.assertEqual(captured["referer"], "https://ref.example/")
 
     def test_download_request_full_url_contains_query(self) -> None:
-        captured: dict[str, str] = {}
-
-        def run_body(url: str, *, referer=None, timeout=180, probe_sink=None):
-            transport = FakeTransport([FakeResponse(self.PDF)])
-            client = BodyClient(
-                policy=BodyPolicy(check_url_fn=lambda value: value),
-                throttle=Throttle(0),
-                transport=transport,
-            )
-            data = client.download_bytes(url, referer=referer)[0]
-            captured["url"] = transport.calls[0].full_url
-            return data
-
-        with mock.patch.object(source.compliance, "download_bytes", side_effect=lambda url, **kwargs: (run_body(url, **kwargs), "application/pdf")):
+        transport = FakeTransport([FakeResponse(self.PDF)])
+        client = BodyClient(
+            policy=BodyPolicy(check_url_fn=lambda value: value),
+            throttle=Throttle(0),
+            transport=transport,
+        )
+        with mock.patch.object(source, "_body_client", return_value=client):
             body, _ = source.download(core.download_url("fid-1"))
         self.assertEqual(body, self.PDF)
-        query = urllib.parse.parse_qs(urllib.parse.urlsplit(captured["url"]).query)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(transport.calls[0].full_url).query)
         self.assertEqual(query["fileId"], ["fid-1"])
         self.assertIn("timestamp", query)
         self.assertIn("receivedToken", query)
@@ -122,13 +117,15 @@ class SignedDownloadUrlTest(unittest.TestCase):
         captured: dict[str, object] = {}
         with tempfile.TemporaryDirectory() as tmp:
             part = Path(tmp) / "body.part"
+            fake_client = mock.Mock()
 
-            def fake_download(url: str, part_path: str, *, referer=None, timeout=180, probe_sink=None):
+            def fake_download(url: str, part_path: str, *, referer=None, timeout=180):
                 captured["url"] = url
                 Path(part_path).write_bytes(self.PDF)
-                return {"bytes": len(self.PDF), "resumed_from": 0}
+                return DownloadResult(url=url, bytes=len(self.PDF), resumed_from=0, status=200)
 
-            with mock.patch.object(source.compliance, "download", side_effect=fake_download):
+            fake_client.download.side_effect = fake_download
+            with mock.patch.object(source, "_body_client", return_value=fake_client):
                 result = source.download_to(core.download_url("fid-1"), str(part))
         self.assertEqual(result, (len(self.PDF), "pdf", 0))
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(str(captured["url"])).query)
@@ -137,25 +134,18 @@ class SignedDownloadUrlTest(unittest.TestCase):
         self.assertIn("receivedToken", query)
 
     def test_download_to_request_full_url_contains_query(self) -> None:
-        captured: dict[str, str] = {}
         with tempfile.TemporaryDirectory() as tmp:
             part = Path(tmp) / "body.part"
-
-            def run_body(url: str, part_path: str, *, referer=None, timeout=180, probe_sink=None):
-                transport = FakeTransport([FakeResponse(self.PDF)])
-                client = BodyClient(
-                    policy=BodyPolicy(check_url_fn=lambda value: value),
-                    throttle=Throttle(0),
-                    transport=transport,
-                )
-                info = client.download(url, part_path, referer=referer, timeout=timeout)
-                captured["url"] = transport.calls[0].full_url
-                return {"bytes": info.bytes, "resumed_from": info.resumed_from}
-
-            with mock.patch.object(source.compliance, "download", side_effect=run_body):
+            transport = FakeTransport([FakeResponse(self.PDF)])
+            client = BodyClient(
+                policy=BodyPolicy(check_url_fn=lambda value: value),
+                throttle=Throttle(0),
+                transport=transport,
+            )
+            with mock.patch.object(source, "_body_client", return_value=client):
                 result = source.download_to(core.download_url("fid-1"), str(part))
         self.assertEqual(result, (len(self.PDF), "pdf", 0))
-        query = urllib.parse.parse_qs(urllib.parse.urlsplit(captured["url"]).query)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(transport.calls[0].full_url).query)
         self.assertEqual(query["fileId"], ["fid-1"])
         self.assertIn("timestamp", query)
         self.assertIn("receivedToken", query)
@@ -165,19 +155,20 @@ class SignedDownloadUrlTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(source.time, "time", return_value=frozen):
             part = Path(tmp) / "body.part"
             captured: list[str] = []
+            fake_client = mock.Mock()
 
-            def fake_download_bytes(url: str, *, referer=None, timeout=180, probe_sink=None):
+            def fake_download_bytes(url: str, *, referer=None, timeout=180):
                 captured.append(url)
                 return self.PDF, "application/pdf"
 
-            def fake_download(url: str, part_path: str, *, referer=None, timeout=180, probe_sink=None):
+            def fake_download(url: str, part_path: str, *, referer=None, timeout=180):
                 captured.append(url)
                 Path(part_path).write_bytes(self.PDF)
-                return {"bytes": len(self.PDF), "resumed_from": 0}
+                return DownloadResult(url=url, bytes=len(self.PDF), resumed_from=0, status=200)
 
-            with mock.patch.object(source.compliance, "download_bytes", side_effect=fake_download_bytes), mock.patch.object(
-                source.compliance, "download", side_effect=fake_download
-            ):
+            fake_client.download_bytes.side_effect = fake_download_bytes
+            fake_client.download.side_effect = fake_download
+            with mock.patch.object(source, "_body_client", return_value=fake_client):
                 source.download(core.download_url("fid-1"))
                 source.download_to(core.download_url("fid-1"), str(part))
         self.assertEqual(len(captured), 2)
@@ -190,14 +181,13 @@ class SignedDownloadUrlTest(unittest.TestCase):
     def test_missing_file_id_both_entry_points_do_not_request(self) -> None:
         raw = "https://bzjg.zjw.sh.gov.cn:9175/a"
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
-            source.compliance, "download"
-        ) as download, mock.patch.object(source.compliance, "download_bytes") as download_bytes:
+            source, "_body_client"
+        ) as body_client:
             with self.assertRaises(NotIndexed):
                 source.download(raw)
             with self.assertRaises(NotIndexed):
                 source.download_to(raw, str(Path(tmp) / "a.part"))
-        download.assert_not_called()
-        download_bytes.assert_not_called()
+        body_client.assert_not_called()
 
 
 class P2AttemptsRestartTest(unittest.TestCase):

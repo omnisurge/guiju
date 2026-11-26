@@ -463,9 +463,9 @@ class MalformedUrlTest(unittest.TestCase):
 
 class MohurdCatalogShapeTest(unittest.TestCase):
     def _call(self, payload_text):
-        with mock.patch.object(
-            mohurd.compliance, "get", return_value=mock.Mock(text=payload_text)
-        ):
+        fake_client = mock.Mock()
+        fake_client.get_page.return_value = mock.Mock(text=payload_text)
+        with mock.patch.object(mohurd, "_body_client", return_value=fake_client):
             return mohurd.catalog_page(1, 100)
 
     def test_non_object_payload_is_needs_human(self):

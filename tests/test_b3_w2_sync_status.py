@@ -40,9 +40,9 @@ class _FakeSource:
 class MohurdCatalogPageTest(unittest.TestCase):
     def _call(self, fragment):
         payload = {"success": True, "data": {"html": fragment}}
-        with mock.patch.object(
-            mohurd.compliance, "get", return_value=mock.Mock(text=json.dumps(payload))
-        ):
+        fake_client = mock.Mock()
+        fake_client.get_page.return_value = mock.Mock(text=json.dumps(payload))
+        with mock.patch.object(mohurd, "_body_client", return_value=fake_client):
             return mohurd.catalog_page(1, 100)
 
     def test_empty_fragment_has_unknown_total_not_zero(self):

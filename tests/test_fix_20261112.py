@@ -1,4 +1,4 @@
-"""fix_20261112 回归：syncengine 静默停爬掩盖缺口 + compliance 节流并发/重定向缺口。
+"""fix_20261112 回归：syncengine 静默停爬掩盖缺口 + Throttle/RedirectGuard 节流并发/重定向缺口。
 
 两个修复的公共语义：任何"看起来差不多"的提前退出都必须有完整目录佐证，
 任何"换 host"的出站都必须重新计节拍。
@@ -13,10 +13,11 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
-from guiju import compliance, syncengine
+from guiju import syncengine
 from guiju.net.block import BlockDetector as _BD
 from guiju.net.policy import BodyPolicy as _BP
 from guiju.net.redirect import RedirectGuard
+from guiju.net.throttle import Throttle, default_throttle
 from guiju.store.sqlite import Store
 
 
@@ -156,33 +157,27 @@ class CrawlCompleteTest(unittest.TestCase):
 
 
 class ThrottleTest(unittest.TestCase):
-    def setUp(self):
-        self._saved = dict(compliance.default_throttle()._last)
-        compliance.default_throttle()._last.clear()
-        self.addCleanup(compliance.default_throttle()._last.clear)
-        self.addCleanup(compliance.default_throttle()._last.update, self._saved)
-
     def test_throttle_lock_exists(self):
-        """节流读-睡-写必须由模块级锁互斥（并发绕过修复的存在性验证）。"""
-        self.assertIsInstance(compliance.default_throttle()._lock, type(threading.Lock()))
+        """节流读-睡-写必须由锁互斥（并发绕过修复的存在性验证）。"""
+        self.assertIsInstance(default_throttle()._lock, type(threading.Lock()))
 
     def test_concurrent_throttle_same_host_serializes(self):
         """同 host 并发请求必须串行间隔 >= 阈值，不能齐刷刷同刻通过。"""
         interval = 0.05
+        throttle = Throttle(min_interval=interval)
         stamps = []
         gate = threading.Barrier(5)
 
         def worker():
             gate.wait()
-            compliance._throttle("parallel.gov.cn")
+            throttle.wait("parallel.gov.cn")
             stamps.append(time.monotonic())
 
-        with mock.patch.object(compliance, "DEFAULT_MIN_INTERVAL", interval):
-            threads = [threading.Thread(target=worker) for _ in range(5)]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join()
+        threads = [threading.Thread(target=worker) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
         stamps.sort()
         gaps = [b - a for a, b in itertools.pairwise(stamps)]
@@ -192,24 +187,24 @@ class ThrottleTest(unittest.TestCase):
         )
 
     def test_redirect_target_host_is_throttled(self):
-        """白名单过关后，重定向目标 host 也必须先过 _throttle 再放行。"""
+        """白名单过关后，重定向目标 host 也必须先过 Throttle.wait 再放行。"""
         req = urllib.request.Request("https://a.gov.cn/x")
-        handler = RedirectGuard(_BP(check_url_fn=compliance.check_url), compliance._CompatThrottle(), _BD())
-        with mock.patch.object(compliance, "_throttle") as th:
-            handler.redirect_request(
-                req, None, 302, "Found", {}, "https://b.gov.cn/y"
-            )
-        th.assert_called_once_with("b.gov.cn")
+        throttle = mock.Mock()
+        handler = RedirectGuard(_BP(), throttle, _BD())
+        handler.redirect_request(
+            req, None, 302, "Found", {}, "https://b.gov.cn/y"
+        )
+        throttle.wait.assert_called_once_with("b.gov.cn")
 
     def test_redirect_same_host_is_throttled(self):
         """同 host 重定向照样再计一拍（限速按请求数，不按 host 去重）。"""
         req = urllib.request.Request("https://a.gov.cn/x")
-        handler = RedirectGuard(_BP(check_url_fn=compliance.check_url), compliance._CompatThrottle(), _BD())
-        with mock.patch.object(compliance, "_throttle") as th:
-            handler.redirect_request(
-                req, None, 302, "Found", {}, "/x2"
-            )
-        th.assert_called_once_with("a.gov.cn")
+        throttle = mock.Mock()
+        handler = RedirectGuard(_BP(), throttle, _BD())
+        handler.redirect_request(
+            req, None, 302, "Found", {}, "/x2"
+        )
+        throttle.wait.assert_called_once_with("a.gov.cn")
 
 
 if __name__ == "__main__":
