@@ -339,6 +339,19 @@ def _require_currency(args: Any):
 
 
 def _pull_one(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> dict:
+    from ..domain import atlas
+
+    if atlas.is_atlas_code(ref):
+        norm_atlas = atlas.normalize_code(ref)
+        raise NoAttachment(
+            f"图集 {ref} 属受版权保护的标准图集，guiju 不提供图集正文下载",
+            hint=f"请用 guiju which {ref} 或 MCP query 核验现行/废止及替代关系，用 guiju atlas search 检索图集目录",
+            availability=availability.Window.UNKNOWN.value,
+            availability_note="标准图集为付费版权出版物，guiju 仅提供有效期核验与公开目录索引，不下载正文",
+            code=norm_atlas,
+            verdict="copyright_atlas",
+        )
+
     if getattr(source, "api_mode", False):
         return _pull_api(store, args, ref, source, out_dir)
 

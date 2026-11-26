@@ -18,6 +18,7 @@ from ..adapters.store.sqlite import Store
 from ..application import AppContext
 from ..errors import EXIT_OK, EXIT_TABLE, BadUsage, GuijuError, NeedsHuman, SourceUnreachable
 from .commands import (
+    atlas,
     cite,
     mcp,
     pull,
@@ -30,7 +31,7 @@ from .commands import (
     which,
 )
 
-COMMANDS = (sync, search, which, show, pull, cite, status, sources, version, mcp)
+COMMANDS = (sync, search, which, show, pull, cite, atlas, status, sources, version, mcp)
 
 
 def _exit_epilog() -> str:

@@ -25,7 +25,7 @@ def _module_name(node):
 
 class NetBoundaryTest(unittest.TestCase):
     def test_only_body_and_cache_use_os_replace(self):
-        allowed = {"guiju/net/body.py", "guiju/store/currency.py"}
+        allowed = {"guiju/net/body.py", "guiju/store/currency.py", "guiju/store/atlas.py"}
         hits = set()
         for path in (ROOT / "guiju").rglob("*.py"):
             if "os.replace" in path.read_text("utf-8"):
@@ -369,6 +369,37 @@ class NetBoundaryTest(unittest.TestCase):
         props = set(batch_tool["inputSchema"]["properties"])
         self.assertEqual(props, {"codes"})
         self.assertEqual(batch_tool["inputSchema"]["required"], ["codes"])
+
+    def test_atlas_search_mcp_and_store_boundaries(self):
+        from guiju import mcp as mcp_mod
+
+        tree = ast.parse((ROOT / "guiju/mcp.py").read_text("utf-8"))
+        atlas_fn = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_atlas_search"
+        )
+        forbidden_calls = {"save", "sync_atlas", "MetadataClient"}
+        called = []
+        for node in ast.walk(atlas_fn):
+            if isinstance(node, ast.Call):
+                func = node.func
+                cname = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                if cname in forbidden_calls:
+                    called.append(f"{node.lineno}:{cname}")
+        self.assertEqual(called, [])
+
+        atlas_tool = next(t for t in mcp_mod.TOOLS if t["name"] == "atlas_search")
+        self.assertNotIn("cache", atlas_tool["inputSchema"]["properties"])
+        self.assertEqual(set(atlas_tool["inputSchema"]["properties"]), {"query", "prefix", "status", "limit"})
+
+        store_tree = ast.parse((ROOT / "guiju/store/atlas.py").read_text("utf-8"))
+        bad_imports = []
+        for node in ast.walk(store_tree):
+            for name in _module_name(node):
+                if name in BANNED or "sqlite" in name:
+                    bad_imports.append(f"{node.lineno}:{name}")
+        self.assertEqual(bad_imports, [])
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ from ... import currency as currency_mod
 from ... import localstatus
 from ... import report as render
 from ...application.resolve import ref_is_code, resolve
+from ...domain import atlas
 from ...domain.availability import note as availability_note
 from ...domain.availability import state
 from ...domain.currency_check import completeness_of, empty_authoritative_of
@@ -38,7 +39,7 @@ class _ReplayCurrency:
     def lookup(self, code: str) -> list:
         from ...domain.codes import normalize_key
 
-        key = normalize_key(code or "")
+        key = atlas.normalize_code(code) if atlas.is_atlas_code(code or "") else normalize_key(code or "")
         if key in self._memo:
             got = self._memo[key]
             if isinstance(got, Exception):
@@ -108,30 +109,47 @@ def run(store: Store, args: argparse.Namespace) -> int:
         except (NotIndexed, SourceUnreachable):
             records = []
 
+    is_atlas = atlas.is_atlas_code(args.ref) or any(r.source == "chinabuilding" for r in records)
     sources = getattr(ctx, "sources", None) if ctx is not None else None
-    if sources is None:
+    if sources is None and not is_atlas:
         from ...sources import registry
 
         sources = registry()
     target = None
     error = None
-    try:
-        target = resolve(
-            store,
-            args.ref,
-            currency=currency_mod.NullCurrency() if args.offline else cur,
-            allow_network=not args.offline,
-            sources=sources,
-        )
-    except (NotIndexed, AmbiguousTarget) as exc:
-        # 本地定位失败不算命令失败：时效结论仍然要输出，错误只在提示里说明
-        error = exc
-    except (SourceUnreachable, NoCurrencyRecord) as exc:
-        # W3-6：resolve 内部的 20/34 在地标场景降级为 local（时效记录已在上面
-        # 由 localstatus 填好）；其他编号体系仍按原契约上抛。
-        if not localstatus.is_local_code(args.ref):
-            raise
-        error = exc
+    if not is_atlas:
+        try:
+            target = resolve(
+                store,
+                args.ref,
+                currency=currency_mod.NullCurrency() if args.offline else cur,
+                allow_network=not args.offline,
+                sources=sources,
+            )
+        except (NotIndexed, AmbiguousTarget) as exc:
+            # 本地定位失败不算命令失败：时效结论仍然要输出，错误只在提示里说明
+            error = exc
+        except (SourceUnreachable, NoCurrencyRecord) as exc:
+            # W3-6：resolve 内部的 20/34 在地标场景降级为 local（时效记录已在上面
+            # 由 localstatus 填好）；其他编号体系仍按原契约上抛。
+            if not localstatus.is_local_code(args.ref):
+                raise
+            error = exc
+
+    atlas_hint = ""
+    if is_atlas:
+        if records:
+            atlas_hint = (
+                "标准图集属版权出版物，无住建部免费正文公告（guiju pull 不提供下载）；"
+                "以上为国标电子书库权威时效状态"
+            )
+        elif args.offline:
+            atlas_hint = (
+                "离线模式未访问国标电子书库；去掉 --offline 查图集实时有效期，"
+                "或用 guiju atlas search 查本地图集目录"
+            )
+        else:
+            atlas_hint = "国标电子书库未收录该图集编号；可用 guiju atlas search 按关键词在完整目录中核对编号"
 
     ann = target["ann"] if target else None
     # P1-3：多名称公告按第二本名称查询时，展示名也不能固定用第一本 doc_name。
@@ -188,7 +206,7 @@ def run(store: Store, args: argparse.Namespace) -> int:
         },
         "via": target["via"] if target else None,
         "code": target["code_display"] if target else None,
-        "hint": getattr(error, "hint", "") if error else "",
+        "hint": atlas_hint if is_atlas else (getattr(error, "hint", "") if error else ""),
     }
     if isinstance(error, AmbiguousTarget):
         payload["candidates"] = error.extra.get("candidates", [])
@@ -234,15 +252,18 @@ def run(store: Store, args: argparse.Namespace) -> int:
             "unknown": "无法判定",
         }
         for r in records:
+            rep = f"　替代 {r.replaced_by}" if getattr(r, "replaced_by", "") else ""
             render.out(
                 f"{r.code}　{status_cn.get(r.status, r.status)}"
-                f"　{r.name}" + (f"　实施 {r.implement_date}" if r.implement_date else "")
+                f"　{r.name}" + (f"　实施 {r.implement_date}" if r.implement_date else "") + rep
             )
         if ann is not None:
             render.out(f"本地公告：#{ann['id']} {ann['doc_name']}（{ann['published_on']}）")
             render.out(f"  {payload['announcement']['availability_note']}")
         elif error is not None:
             render.out(f"本地未定位：{getattr(error, 'message', str(error))}")
+        elif is_atlas and atlas_hint:
+            render.out(f"提示：{atlas_hint}")
     return 0
 
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import re
 
+from ..domain import atlas
 from ..domain.currency import QueryCancelled, Record
 from ..domain.currency_check import completeness_flags_of, completeness_of, empty_authoritative_of
 from ..domain.search import rank, tokens_of
@@ -77,11 +78,14 @@ def ref_is_code(ref: str) -> bool:
     """编号形态（先问时效服务）还是名称形态（走本地检索）。
 
     与 resolve 的入口判定保持一致：URL/纯数字/CJK 名称都不是编号，
+    汉字省前缀图集号（如 粤25G/T116）识别为编号而非书名；
     which 在问时效服务前必须先做这个判断，否则名称会得到"没收录"（31）。
     """
     ref = (ref or "").strip()
     if not ref or ref.lower().startswith("http") or ref.isdigit():
         return False
+    if atlas.is_atlas_code(ref):
+        return True
     return not (_CJK.search(ref) and not _CODEISH.match(ref))
 
 
@@ -102,7 +106,7 @@ def resolve(
         return _by_url(store, ref)
     if ref.isdigit():
         return _by_id(store, int(ref))
-    if _CJK.search(ref) and not _CODEISH.match(ref):
+    if not ref_is_code(ref):
         return _by_name(
             store, ref, currency, allow_network=allow_network, fetch_detail=fetch_detail, sources=sources
         )

@@ -16,8 +16,10 @@ from unittest import mock
 from guiju.currency import MisconfiguredCurrency, NullCurrency
 from guiju.currency.model import Record
 from guiju.currency.native import Outcome
+from guiju.domain import atlas as atlas_domain
 from guiju.errors import AmbiguousCode, ComplianceDenied, NeedsHuman, NoCurrencyRecord, SourceUnreachable
 from guiju.mcp import McpServer, _query_result, make_http_server, serve_stdio
+from guiju.store.atlas import AtlasCatalogStore
 
 
 def _record(code="GB 50011-2010", status="current", *, source="csres", fallback=""):
@@ -144,8 +146,16 @@ class McpProtocolTest(unittest.TestCase):
         self.assertEqual(init["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual(init["result"]["serverInfo"]["name"], "guiju")
         tools = self.call("tools/list")["result"]["tools"]
-        self.assertEqual([tool["name"] for tool in tools], ["query", "verify", "batch", "announcement"])
-        batch_tool = next(tool for tool in tools if tool["name"] == "batch")
+        self.assertEqual(
+            [tool["name"] for tool in tools],
+            ["query", "verify", "batch", "announcement", "atlas_search"],
+        )
+        by_name = {tool["name"]: tool for tool in tools}
+        self.assertIn("图集", by_name["query"]["description"])
+        self.assertIn("上海地标", by_name["query"]["description"])
+        self.assertIn("国标", by_name["query"]["description"])
+        self.assertIn("atlas-catalog.json", by_name["atlas_search"]["description"])
+        batch_tool = by_name["batch"]
         self.assertEqual(set(batch_tool["inputSchema"]["properties"]), {"codes"})
         self.assertEqual(batch_tool["inputSchema"]["required"], ["codes"])
 
@@ -691,6 +701,112 @@ class CacheWarningTest(unittest.TestCase):
         clean_query = _call(clean, "query", {"code": "GB50011"})["result"]
         self.assertEqual(len(clean_query["content"]), 1)
         self.assertNotIn("# 缓存告警", clean_query["content"][0]["text"])
+
+
+class AtlasMcpSupportTest(unittest.TestCase):
+    """标准图集 replaced_by 透传与只读 atlas_search 工具契约。"""
+
+    def test_query_verify_batch_surface_atlas_replaced_by(self):
+        atlas_old = Record(
+            "16G101-1",
+            "superseded",
+            "混凝土结构施工图平面整体表示方法制图规则和构造详图",
+            "2016-09-01",
+            "chinabuilding",
+            replaced_by="22G101-1",
+        )
+        outcome_cached = Outcome((atlas_old,), "chinabuilding", from_cache=True, cache_age=3600)
+        server = McpServer(_OutcomeBackend({"16G101-1": outcome_cached}))
+        self.addCleanup(server.close)
+
+        q = _call(server, "query", {"code": "16G101-1"})["result"]
+        self.assertFalse(q["isError"])
+        self.assertIn("16G101-1\tsuperseded\t", q["content"][0]["text"])
+        self.assertIn("replaced_by=22G101-1", q["content"][0]["text"])
+
+        # verify 的 content[0] 仍严格只有 code\tstatus，replacements 放进 content[1]。
+        v = _call(server, "verify", {"code": "16G101-1"})["result"]
+        self.assertEqual(v["content"][0]["text"], "16G101-1\tsuperseded\n")
+        meta = json.loads(v["content"][1]["text"])
+        self.assertTrue(meta["from_cache"])
+        self.assertEqual(meta["replacements"], [{"code": "16G101-1", "replaced_by": "22G101-1"}])
+
+        # 无缓存告警时 verify 同样保留精确 content[0] + content[1].replacements。
+        fresh_server = McpServer(_OutcomeBackend({"16G101-1": Outcome((atlas_old,), "chinabuilding")}))
+        self.addCleanup(fresh_server.close)
+        vf = _call(fresh_server, "verify", {"code": "16G101-1"})["result"]
+        self.assertEqual(vf["content"][0]["text"], "16G101-1\tsuperseded\n")
+        self.assertEqual(
+            json.loads(vf["content"][1]["text"]),
+            {"replacements": [{"code": "16G101-1", "replaced_by": "22G101-1"}]},
+        )
+
+        # batch 同步透传 replacements。
+        b = _call(fresh_server, "batch", {"codes": ["16G101-1"]})["result"]
+        self.assertFalse(b["isError"])
+        self.assertIn("完成 1", b["content"][0]["text"])
+        self.assertEqual(
+            json.loads(b["content"][1]["text"]),
+            {"replacements": [{"query": "16G101-1", "code": "16G101-1", "replaced_by": "22G101-1"}]},
+        )
+
+    def test_atlas_search_readonly_missing_corrupt_and_populated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db_path = root / "home" / "catalog.db"
+            atlas_path = root / "home" / "atlas-catalog.json"
+            server = McpServer(NullCurrency(), store_path=db_path)
+            self.addCleanup(server.close)
+
+            # 1) 缺失目录：绝不建目录或写盘，返回清晰提示
+            with mock.patch("socket.create_connection", side_effect=AssertionError("不得联网")), \
+                    mock.patch.object(Path, "mkdir", side_effect=AssertionError("atlas_search 不得建目录")):
+                missing_res = _call(server, "atlas_search", {"query": "22G101-1"})["result"]
+            self.assertFalse(missing_res["isError"])
+            missing_payload = json.loads(missing_res["content"][0]["text"])
+            self.assertFalse(missing_payload["catalog_ready"])
+            self.assertEqual(missing_payload["catalog_state"], "missing")
+            self.assertIn("guiju atlas sync", missing_payload["hint"])
+            self.assertFalse(root.joinpath("home").exists())
+
+            # 2) 损坏目录：降级提示但不删除原文件
+            atlas_path.parent.mkdir(parents=True, exist_ok=True)
+            atlas_path.write_text("{corrupt", encoding="utf-8")
+            corrupt_res = _call(server, "atlas_search", {"query": "22G101-1"})["result"]
+            corrupt_payload = json.loads(corrupt_res["content"][0]["text"])
+            self.assertEqual(corrupt_payload["catalog_state"], "corrupt")
+            self.assertTrue(atlas_path.exists())
+
+            # 3) 写入完整样本后按关键词/前缀/状态/限制条数检索
+            sample_html = (Path(__file__).parent / "fixtures" / "atlas" / "concise_catalogue_sample.html").read_text("utf-8")
+            entries = atlas_domain.parse_concise_catalogue(sample_html)
+            AtlasCatalogStore(atlas_path, clock=lambda: 1_800_000_000.0).save(entries)
+
+            # 验证在只读目录权限下也可正常工作、不建锁文件
+            ok_res = _call(server, "atlas_search", {"query": "16G101-1"})["result"]
+            self.assertFalse(ok_res["isError"])
+            ok_payload = json.loads(ok_res["content"][0]["text"])
+            self.assertTrue(ok_payload["catalog_ready"])
+            self.assertEqual(ok_payload["catalog_total"], 21)
+            self.assertEqual(ok_payload["results"][0]["code"], "16G101-1")
+            self.assertEqual(ok_payload["results"][0]["replaced_by"], "22G101-1")
+
+            prov_res = _call(server, "atlas_search", {"prefix": "粤", "status": "current", "limit": 5})["result"]
+            prov_payload = json.loads(prov_res["content"][0]["text"])
+            self.assertEqual([r["code"] for r in prov_payload["results"]], ["粤25G/T116"])
+
+            # 非法参数一律 isError=True
+            for bad_args in (
+                {"query": 123},
+                {"prefix": []},
+                {"status": "bogus"},
+                {"limit": True},
+                {"limit": -1},
+                {"limit": 201},
+            ):
+                with self.subTest(bad_args=bad_args):
+                    err = _call(server, "atlas_search", bad_args)["result"]
+                    self.assertTrue(err["isError"])
 
 
 if __name__ == "__main__":

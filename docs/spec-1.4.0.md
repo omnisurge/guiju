@@ -81,5 +81,5 @@
 - [x] **S0**：分支 `feat/v1.4.0`、ADR 0007、`spec-1.4.0.md`、`Unreleased` 门禁、`pyproject.toml` PEP 639 与离线黄金夹具
 - [x] **S1**：`guiju/domain/atlas.py` 与全量离线解析/匹配单测
 - [x] **S2**：`chinabuilding` 原生时效适配器（方案 A）、端点上限与缓存兼容
-- [ ] **S3**：`guiju atlas` 索引命令、`which/pull` 图集边界与 MCP `atlas_search`
+- [x] **S3**：`guiju atlas` 索引命令、`which/pull` 图集边界与 MCP `atlas_search`
 - [ ] **S4**：`v1.4.0` 冻结、真链验收、产物构建、本地与 hk 升级/回退演练及发布

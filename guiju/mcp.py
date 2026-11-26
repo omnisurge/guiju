@@ -1,9 +1,9 @@
-"""guiju MCP 服务面：query / verify / batch / announcement 的纯标准库 JSON-RPC。
+"""guiju MCP 服务面：query / verify / batch / announcement / atlas_search 的纯标准库 JSON-RPC。
 
 默认 stdio；--http 时提供 POST /mcp（仅 application/json；Host/Origin 按可配置
 allowlist 校验，防 DNS rebinding）。业务后端强制要求实现并发安全的 query(code) -> Outcome，
 不在这里复制适配器、正文下载或时效路由逻辑（旧 spec-currency 已退役）；
-batch 仅接受内联 codes[] 数组（不读写服务端文件），announcement 只回公告元数据（不落盘）。
+batch 仅接受内联 codes[] 数组（不读写服务端文件），announcement 与 atlas_search 均只读元数据/索引（不落盘）。
 """
 
 from __future__ import annotations
@@ -37,7 +37,11 @@ _CORE_SCHEMA_TABLES = ("announcement", "edition", "mention", "scan", "corpus_met
 TOOLS = (
     {
         "name": "query",
-        "description": "查询规范现行状态：输入规范号，返回全部命中版本及统一状态。",
+        "description": (
+            "查询规范或标准图集现行状态（支持国标GB/行标JGJ/CJJ/JTG/地方标DB、"
+            "上海地标DG/TJ08/DB31，以及标准图集如22G101-1/16G101-1/粤25G/T116/21ZJ111）："
+            "输入编号，返回全部命中版本、统一状态与替代号（replaced_by）。"
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"code": {"type": "string"}},
@@ -46,7 +50,10 @@ TOOLS = (
     },
     {
         "name": "verify",
-        "description": "核验规范状态（jl-docx code_refs 用）：返回 code<TAB>status。",
+        "description": (
+            "核验规范或标准图集状态（jl-docx code_refs 用，支持国标/行标/上海地标及标准图集）："
+            "第一段严格返回 code<TAB>status。"
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"code": {"type": "string"}},
@@ -55,7 +62,10 @@ TOOLS = (
     },
     {
         "name": "batch",
-        "description": "批量盘点规范清单：仅接受内联 codes[] 编号数组（1.3.0 起已移除服务端文件路径模式）。",
+        "description": (
+            "批量盘点规范与标准图集清单：仅接受内联 codes[] 编号数组"
+            "（1.3.0 起已移除服务端文件路径模式；支持国行标/上海地标/图集混排）。"
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -66,11 +76,36 @@ TOOLS = (
     },
     {
         "name": "announcement",
-        "description": "按编号/规范名/公告ID/公告URL定位公告并抓公告页解析附件链接，返回元数据（不下载正文、不落盘）。",
+        "description": (
+            "按编号/规范名/公告ID/公告URL定位住建部与上海地标公告并抓公告页解析附件链接，"
+            "返回元数据（不下载正文、不落盘；图集属版权出版物无免费公告，请改用 query 或 atlas_search）。"
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"ref": {"type": "string"}},
             "required": ["ref"],
+        },
+    },
+    {
+        "name": "atlas_search",
+        "description": (
+            "检索本地已同步的标准图集完整目录索引（含国标图集/废止图集/中南标/省标，"
+            "只读 atlas-catalog.json，不写盘、不触发网络同步；"
+            "查出图集号后可用 query/verify 实时核验官方最新状态）。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "图集号或名称关键词（留空则按过滤条件浏览）"},
+                "prefix": {"type": "string", "description": "可选省别或专业前缀，如 粤、京、G101、ZJ"},
+                "status": {
+                    "type": "string",
+                    "enum": ["all", "current", "withdrawn", "superseded", "upcoming"],
+                    "description": "可选状态过滤，默认 all（withdrawn 包含废止与被替代）",
+                },
+                "limit": {"type": "integer", "description": "返回最大条数（0-200，默认 20）"},
+            },
+            "required": [],
         },
     },
 )
@@ -92,7 +127,10 @@ def _rows_text(rows: list[Record], *, verify: bool = False) -> str:
         if verify:
             lines.append(f"{row.code}\t{row.status}")
         else:
-            lines.append(f"{row.code}\t{row.status}\t{row.name}\t{row.implement_date}\t{row.source}")
+            line = f"{row.code}\t{row.status}\t{row.name}\t{row.implement_date}\t{row.source}"
+            if getattr(row, "replaced_by", ""):
+                line += f"\treplaced_by={row.replaced_by}"
+            lines.append(line)
     return "\n".join(lines) + "\n"
 
 
@@ -297,7 +335,13 @@ def _ensure_readonly_catalog(path: Path):
 class McpServer:
     """与传输无关的 JSON-RPC 处理核心。"""
 
-    def __init__(self, backend: McpCurrencyPort, *, store_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        backend: McpCurrencyPort,
+        *,
+        store_path: str | Path | None = None,
+        atlas_path: str | Path | None = None,
+    ) -> None:
         if not callable(getattr(backend, "query", None)):
             raise TypeError(
                 f"MCP 后端 {type(backend).__name__} 必须实现 query(code) -> Outcome"
@@ -309,8 +353,16 @@ class McpServer:
         # self._store_lock 仅保护共享只读连接的创建与本地目录查询，
         # 不包裹后续 source.detail() 网络 I/O，避免慢请求阻塞其他并发读取。
         self.store_path = Path(store_path) if store_path is not None else None
+        self.atlas_path = Path(atlas_path) if atlas_path is not None else None
         self._store = None
         self._store_lock = threading.Lock()
+
+    def _atlas_catalog_path(self) -> Path:
+        if self.atlas_path is not None:
+            return self.atlas_path
+        if self.store_path is not None:
+            return self.store_path.parent / "atlas-catalog.json"
+        return _default_catalog_path().parent / "atlas-catalog.json"
 
     def _ann_store(self):
         """惰性创建共享的只读 Store（cross_thread 允许连接跨线程使用）。"""
@@ -351,11 +403,19 @@ class McpServer:
             return _as_error(exc)
         result = _text_result(text)
         status = _cache_status(state)
-        if status is not None:
-            # content[0] 是调用方严格解析的 code\tstatus 契约，不得混入告警。
+        replacements = [
+            {"code": row.code, "replaced_by": row.replaced_by}
+            for row in rows
+            if getattr(row, "replaced_by", "")
+        ]
+        if status is not None or replacements:
+            # content[0] 是调用方严格解析的 code\tstatus 契约，不得混入告警或替代明细。
+            meta: dict = dict(status) if status is not None else {}
+            if replacements:
+                meta["replacements"] = replacements
             result["content"].append({
                 "type": "text",
-                "text": json.dumps(status, ensure_ascii=False),
+                "text": json.dumps(meta, ensure_ascii=False),
             })
         return result
 
@@ -375,6 +435,7 @@ class McpServer:
 
         completed = skipped = failed = unmatched = 0
         warnings: list[dict] = []
+        replacements: list[dict] = []
         for code in codes:
             try:
                 rows, state = _query_result(self.backend, code)
@@ -391,6 +452,10 @@ class McpServer:
                 unmatched += 1
                 continue
             for row in rows:
+                if getattr(row, "replaced_by", ""):
+                    replacements.append(
+                        {"query": code, "code": row.code, "replaced_by": row.replaced_by}
+                    )
                 if row.status == "unknown":
                     skipped += 1
                 else:
@@ -398,10 +463,15 @@ class McpServer:
         result = _text_result(
             f"总数 {len(codes)} | 完成 {completed} | 跳过 {skipped} | 失败 {failed} | 无源 {unmatched}"
         )
-        if warnings:
+        if warnings or replacements:
+            extra: dict = {}
+            if warnings:
+                extra["warnings"] = warnings
+            if replacements:
+                extra["replacements"] = replacements
             result["content"].append({
                 "type": "text",
-                "text": json.dumps({"warnings": warnings}, ensure_ascii=False),
+                "text": json.dumps(extra, ensure_ascii=False),
             })
         return result
 
@@ -483,6 +553,39 @@ class McpServer:
             return _text_result(
                 json.dumps(exc.payload(), ensure_ascii=False), error=True)
 
+    def _atlas_search(self, arguments: dict) -> dict:
+        """只读检索本地 atlas-catalog.json（绝不写盘或联网同步）。"""
+        query = arguments.get("query", "")
+        prefix = arguments.get("prefix", "")
+        status = arguments.get("status", "all")
+        raw_limit = arguments.get("limit", 20)
+        if not isinstance(query, str):
+            return _error_result("query 必须是字符串")
+        if not isinstance(prefix, str):
+            return _error_result("prefix 必须是字符串")
+        if not isinstance(status, str):
+            return _error_result("status 必须是字符串")
+        if isinstance(raw_limit, bool) or not isinstance(raw_limit, int) or not (0 <= raw_limit <= 200):
+            return _error_result("limit 必须是 0 到 200 之间的整数")
+
+        from .application.atlas import VALID_STATUSES, search_atlas
+        from .store.atlas import AtlasCatalogStore
+
+        clean_status = status.strip().lower() or "all"
+        if clean_status not in VALID_STATUSES:
+            allowed = " / ".join(sorted(VALID_STATUSES))
+            return _error_result(f"不支持的图集状态：{status}（可选：{allowed}）")
+
+        payload = search_atlas(
+            AtlasCatalogStore(self._atlas_catalog_path()),
+            query=query,
+            status=clean_status,
+            prefix=prefix,
+            limit=raw_limit,
+            show_all=False,
+        )
+        return _text_result(json.dumps(payload, ensure_ascii=False))
+
     def _call(self, name: str, arguments: dict) -> dict:
         try:
             if name == "query":
@@ -493,6 +596,8 @@ class McpServer:
                 return self._batch(arguments)
             if name == "announcement":
                 return self._announcement(arguments)
+            if name == "atlas_search":
+                return self._atlas_search(arguments)
             return _error_result(f"未知工具：{name}")
         except (KeyboardInterrupt, SystemExit):
             raise
