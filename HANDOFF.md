@@ -1,9 +1,9 @@
 # 规矩 guiju — 交接文档
 
 > 一句话：从官方站点取工程建设标准的**目录 + 正文 + 引用串 + 现行状态**，只搬运与校验，不生产内容。
-> 状态：**v1.2.0 已发布**（2026-11-24；tag v1.2.0，发布提交为 tag 指向的发布提交；发版记录 [docs/audit/release-1.2.0-20261124.md](docs/audit/release-1.2.0-20261124.md)）。单测 **1223 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.2.0。
+> 状态：**v1.3.0 已发布**（2026-11-26；tag v1.3.0，发布提交为 tag 指向的发布提交；发版记录 [docs/audit/release-1.3.0-20261126.md](docs/audit/release-1.3.0-20261126.md)）。单测 **1224 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.3.0。
 > 本文件包含版本历史记录；历史行中的 cmd/mcp、NAS spec-currency 是当时事实，不代表当前运行形态。当前形态见 [docs/README.md](docs/README.md)。
-> ADR 0001 / ADR 0002 均已关闭（历史决策，见 [docs/adr/README.md](docs/adr/README.md)）；当前时效只使用 **native**，`GUIJU_CURRENCY` 只认 `native[:off|dir]` / `off`；hk `guiju-mcp` 已部署 1.2.0（2026-11-24 强化 unit），NAS spec-currency 已于 2026-11-01 停用（历史事实，本项目不依赖 NAS）。
+> ADR 0001 / ADR 0002 / ADR 0004 / ADR 0005 均已关闭，v1.3.0 架构与 MCP 纯净化决策见 [docs/adr/0006-v1-3-0-architecture-and-mcp-purification.md](docs/adr/0006-v1-3-0-architecture-and-mcp-purification.md)（索引见 [docs/adr/README.md](docs/adr/README.md)）；当前时效只使用 **native**，`GUIJU_CURRENCY` 只认 `native[:off|dir]` / `off`；hk `guiju-mcp` 当前运行 1.2.0（1.3.0 候选待所有者窗口升级并执行 1.2.0↔1.3.0 回退演练），NAS spec-currency 已于 2026-11-01 停用（历史事实，本项目不依赖 NAS）。
 
 ## 文档地图（各司其职，不要互相抄）
 
@@ -18,7 +18,7 @@
 | `docs/adr/0002-merge-into-one-product.md` | 已关闭（历史决策记录；不再作为施工依据） | 维护者 |
 | `docs/adr/0003-catalog-self-refresh.md` | 目录自保鲜（无 cron/launchd）与 `catalog` 反馈契约 | 维护者 |
 | `docs/ACCEPTANCE.md` | 验收记录（可复跑 `scripts/e2e.py`） | 所有人 |
-| `CHANGELOG.md` | 版本变更（1.2.0 及历史） | 所有人 |
+| `CHANGELOG.md` | 版本变更（1.3.0 及历史） | 所有人 |
 | 本文件 | 交接状态与"已验证/别重犯"的事实清单 | 接手人 |
 
 ## 一、现在怎么跑
@@ -148,7 +148,7 @@ JTG             → Fallback( csres → jtst )
 
 | 项 | 值 |
 |---|---|
-| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（editable 安装，实测 guiju version --json 为 1.2.0） |
+| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（editable 安装，实测 guiju version --json 为 1.3.0） |
 | 数据 | `~/.guiju/catalog.db`（3255 条公告）+ `library/`（内容寻址 PDF） |
 | 时效服务 | native 路由直连各部委站（GUIJU_CURRENCY 默认即 native；旧 NAS `…:18083/mcp` 的 spec-currency 已退役，2026-11-13） |
 | spec-currency 源码 | `~/Development/spec-currency`（Go 1.26），**已退役归档**；guiju 内不再消费 |

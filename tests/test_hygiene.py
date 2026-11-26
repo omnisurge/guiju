@@ -243,7 +243,16 @@ class ReleaseWorkflowConstraintTest(unittest.TestCase):
         assert spec.loader is not None
         spec.loader.exec_module(module)
 
+        real_read = module._read
+
+        def fake_read(rel):
+            text = real_read(rel)
+            if str(rel) == "CHANGELOG.md":
+                return text.replace("# 变更记录\n", "# 变更记录\n\n## Unreleased\n\n- dev\n", 1)
+            return text
+
         with (
+            mock.patch.object(module, "_read", side_effect=fake_read),
             mock.patch.object(module, "_discovered_test_count", return_value=9999),
             contextlib.redirect_stdout(io.StringIO()),
         ):

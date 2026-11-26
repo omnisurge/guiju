@@ -1,17 +1,19 @@
 # 变更记录
 
-## Unreleased
+## 1.3.0 — 2026-11-26（1.3.0 正式发布）
 
-> 目标版本：1.3.0（开发进行中，详见 `docs/spec-1.3.0.md`）。
-
-- S0：开发期 `Unreleased` 门禁解耦（`--docs-only` 放行单测数演进，`--artifacts` 仍拒绝未冻结版本）。
-- S1：M4 改版观测闭环（`announcement.body_sha256` 落库与变更告警、`MetadataClient` `probe_sink`、新增 `guiju sources [--probe] [--json]`）。
-- S2：冗余清理与锁收窄（清理 `CachedCurrency` 不可达的进程/SQLite `currency_cache` 路径与死代码 `Store.search()`；`McpServer._announcement` 缩窄 `_store_lock` 至本地 SQLite 读阶段；统一 `search`/`show` 人读主输出走 `stdout`）。
-- S3a：兼容门面 `guiju/compliance.py` 退场（`sources/{mohurd,shzjw}` 改直连 `guiju/net/{body,metadata}`，清理旧 B2 C0 `compliance` 基线门禁同时保留全部 76 条 target characterization 用例，并在 `test_net_boundaries.py` 增加防回流 AST 守卫）。
-- S3b：兼容门面 `guiju/currency/httpx.py` 退场（抽出纯解码模块 `guiju/currency/jsonutil.py`，将 `DEFAULT_METADATA_FORM_HOSTS` / `MetadataPolicy.check_form_url` 与上下文管理器下沉至 `guiju/net`，7 个 `currency` 模块改直连 `MetadataClient` + `jsonutil`，`test_currency_httpx.py` 迁为 `test_net_metadata_client.py` 并新增防回流 AST 守卫）。
-- S3c：CLI shim 与 `application/` 隐式构造兜底退场（删除 `guiju/cli/lookup.py`、`guiju/cli/render.py` 与 `cli/commands/{pull,cite}.py` 的 `sys.modules[__name__]` alias，移除 `application/{__init__,context,resolve,cite,pull}.py` 内隐式 `CachedCurrency` / `NullCurrency` / `registry()` / `default_out_dir` 兜底构造，统一由入口 `AppContext` 显式注入，并在 `test_net_boundaries.py` 与 `test_fix_med_20261112.py` 补充防回流 AST 守卫与显式注入契约单测）。
-- S4：MCP 服务面彻底纯净化（删除 `batch` 的 `list`/`out` 文件路径模式、`_mcp_io_root` 与 `_safe_mcp_path`，移除 `_query_result()` 中的 `backend.lookup()` 单线程兼容路径并要求 `NullCurrency`/`MisconfiguredCurrency` 等全部 MCP 后端提供 `query(code) -> Outcome`，`_ReadOnlyStore` 由 `_WRITES` 黑名单收敛为 `_ALLOWED_READS` 白名单代理，并在 `test_net_boundaries.py` 与 MCP 测试补充契约/AST 守卫）。
-- S5：测试体系收敛（将 33 个 `test_fix_*`/`test_b2_*`/`test_b3_*`/`test_w1_*` 按批次命名的临时回归文件零删减归并入对应领域单测套件，并在 `tests/test_hygiene.py` 新增防回流命名守卫 `test_no_batch_named_fix_test_files`）。
+- **新增能力（M4 改版观测闭环）**：`announcement.body_sha256` 落库并在页面内容指纹变化时记录 `body_changed` 与提示、`pull` 成功 JSON 附带 `body_sha256`/`body_changed`（HTML 公告页）、`MetadataClient` 接入 `probe_sink`、新增 `guiju sources [--probe] [--json]`（默认零联网汇总本地目录水位与探针台账，`--probe` 按 `1.2s/host` 限速发只读探活）。
+- **架构演进与冗余清理**：
+  - 清理 `CachedCurrency` 默认路径下已不可达的进程内 memo 与 SQLite `currency_cache` 读写路径，并移除生产无调用方的 `Store.search()`；
+  - 缩窄 `McpServer._announcement` 的 `_store_lock` 至只读 SQLite 解析阶段，网络抓取 `detail()` 移出锁外以支持并发；
+  - 退场过渡兼容门面 `guiju/compliance.py`（`sources/{mohurd,shzjw}` 改直连 `guiju/net/{body,metadata}`）、`guiju/currency/httpx.py`（抽出纯解码模块 `guiju/currency/jsonutil.py`，7 个时效模块直连 `MetadataClient` 并下沉 `MetadataPolicy.check_form_url` 至 `guiju/net`）、`guiju/cli/lookup.py`、`guiju/cli/render.py` 与 `cli/commands/{pull,cite}.py` 模块 alias，同时移除 `application/` 隐式构造 `Store`/`CachedCurrency`/`registry()` 兜底，统一由入口 `AppContext` 装配并补齐 AST 防回流守卫；
+  - 测试体系收敛：将 33 个 `test_fix_*`/`test_b2_*`/`test_b3_*`/`test_w1_*` 按批次命名的回归文件零删减归并进对应领域单测套件，新增防回流命名守卫 `test_no_batch_named_fix_test_files`。
+- **破坏性变更与升级指引**：
+  - **MCP 服务面彻底纯净化**：`batch` 工具移除服务端文件路径参数 `list`/`out`（仅接受内联 `codes[]`），删除 `_safe_mcp_path` 及 `/var/lib/guiju/mcp` 读写逻辑；`deploy/guiju-mcp.service` 移除 `ExecStartPre=/bin/mkdir -p /var/lib/guiju/mcp`。MCP 后端移除 `_query_result()` 中单线程 `backend.lookup()` 兼容路径，要求全部后端实现并发安全的 `query(code) -> Outcome`；`_ReadOnlyStore` 由黑名单收敛为 `_ALLOWED_READS` 白名单代理。
+  - **内部门面与死代码移除**：删除 `guiju.compliance`、`guiju.currency.httpx`、`guiju.cli.lookup`、`guiju.cli.render` 与 `Store.search()`（检索统一走 `store.catalog_entries() + domain.search.rank()`）。
+  - **CLI 输出流统一**：`guiju search` / `guiju show` 人读主结果改为走 `stdout`（诊断提示/警告留在 `stderr`，`--quiet` 不吞主结果，`--json` 不变）。
+  - **零数据库迁移升级**：数据库 `SCHEMA_VERSION` 保持 `2`，存量库中 `currency_cache` 作为无害孤儿表留存，升级至 `1.3.0` 与回退至 `1.2.0` 均无需迁移存量 `catalog.db`。
+- **验证与分发**：本版本为 POSIX-only（Linux / macOS）；全量 **1224 项单测**（Python 3.10/3.13）、ruff、本地 CI 与完整联网 e2e **39/39** 通过；ADR 0006 见 `docs/adr/0006-v1-3-0-architecture-and-mcp-purification.md`。
 
 ## 1.2.0 — 2026-11-24（1.2.0 正式发布）
 

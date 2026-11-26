@@ -3,14 +3,15 @@
 > 定稿：2026-10-30。取代 `docs/建筑规范CLI-蓝图.md` 的第三～七节。
 > 文件裁定见 `docs/audit-2026-10-30.md`。
 >
-> **文档状态（2026-11-20）**：本文是当前架构说明；历史 ADR 0001/0002 与 `docs/audit/*` 只作背景，不代表当前实现。
+> **文档状态（2026-11-26）**：本文是当前架构说明（v1.3.0 已对齐）；历史 ADR 0001/0002/0004/0005 与 `docs/audit/*` 只作背景，当前实施约束见 [ADR 0006](adr/0006-v1-3-0-architecture-and-mcp-purification.md) 与 [docs/spec-1.3.0.md](spec-1.3.0.md)。
 >
-> **修订状态（2026-11-23）**：B2/W1 已完成 `guiju/net/` 出站收口（见 `docs/audit/net-layer-b2-w1-20261121.md`）；
-> B4 已通过独立双审（2026-11-23 APPROVE）：`application/`、`ports/`、`adapters/` 已建立并接通，
-> `resolve`/`status`/`sync`/`pull`/`cite` 的编排已迁入应用层，AppContext 已贯通 CLI 入口，
-> MCP 只读 Store 与 batch 内联 `codes[]` 已就位（`list/out` 已于 v1.3.0-S4 移除，服务面纯只读）。
-> B5/1.2.0 已于 2026-11-24 发布，hk 强化 unit 与 1.2.0 已部署并完成真实回退/再部署。ADR 0004（已批准，2026-11-18）仍是实施依据，
-> `docs/remediation-2026-11-18.md` 跟踪 B2-B5。
+> **修订状态（2026-11-26 / v1.3.0）**：v1.3.0（ADR 0006）完成五项收敛：
+> S1 补齐 M4 改版观测闭环（`announcement.body_sha256`、`MetadataClient.probe_sink`、`guiju sources [--probe]`）；
+> S2 清理 `CachedCurrency` 不可达缓存与 `Store.search()`、缩窄 `McpServer._announcement` 锁至 SQLite 读阶段、统一 `search`/`show` 人读输出走 `stdout`；
+> S3 退场 `guiju/compliance.py`、`guiju/currency/httpx.py`、`guiju/cli/{lookup,render}.py` 与 `application/` 隐式构造兜底并由 `AppContext` 显式装配；
+> S4 彻底净化 MCP 服务面（`batch` 仅内联 `codes[]`，强制后端提供并发安全 `query(code) -> Outcome`，`_ReadOnlyStore` 白名单化）；
+> S5 将 33 个按批次命名的回归文件零删减收敛入领域测试套件并设防回流守卫。
+> B4/B5（1.2.0）基础见 [b4-application-mcp-20261123.md](audit/b4-application-mcp-20261123.md) 与 [release-1.2.0-20261124.md](audit/release-1.2.0-20261124.md)；hk `guiju-mcp` 运行 1.2.0（1.3.0 待所有者窗口升级与回退演练），NAS 绝不访问。
 
 > **修订（2026-11-09）**：归档责任划给 kb-system 后，本地不再有正文注册表：
 > `artifact` 表、`verify`/`provenance` 命令已删除，幂等改由文件名里的
@@ -183,16 +184,17 @@ stderr : 全部日志、进度、警告
 
 **依赖方向铁律（现状）**：`guiju/net` 是唯一出站层（白名单、限速、重定向与 block 判定都在 `guiju.net`，`guiju.compliance` 已于 v1.3.0-S3a 退场，`guiju/currency/httpx.py` 已于 S3b 退场）；`domain` 不碰网络与 DB；`sources` 只把 HTML 变成 DTO，绝不写库；`currency` 适配器不落文件；`store` 不负责网络。违反即评审不通过。
 
-**B4 进度与 S3c/S4 收口**：`application/`、`ports/`、`adapters/` 已建立；`application.resolve` 承接编号/名称解析，`application.status` 承接状态投影，`application.sync` 承接同步用例（CLI 注入 crawl/lock），`application.pull`/`application.cite` 承接完整编排，`application.cite.check_currency` 承接时效校验。v1.3.0-S3c 起，过渡期的 `cli/lookup.py`、`cli/render.py` 与 `cli/commands/{pull,cite}.py` 的 `sys.modules` alias 已全部删除，`application/` 不再隐式构造 `Store` / `CachedCurrency` / `registry()`，统一由入口 `AppContext` 显式装配；v1.3.0-S4 起，MCP 服务面完成纯净化——删除 `batch` 的 `list/out` 服务端文件路径模式与 `backend.lookup()` 兼容路径，强制后端提供并发安全的 `query(code) -> Outcome`，并将 `_ReadOnlyStore` 收敛为显式只读白名单代理。
+**v1.3.0 分层收口（S1–S5 + ADR 0006）**：`application/`、`ports/`、`adapters/` 已建立并统一由入口 `AppContext` 显式装配；`application.resolve`/`status`/`sync`/`pull`/`cite`/`sources` 承接全部用例编排。`cli/lookup.py`、`cli/render.py`、`cli/commands/{pull,cite}.py` alias、`guiju/compliance.py`、`guiju/currency/httpx.py` 及 `application/` 隐式构造兜底已全部删除并设 AST 防回流守卫；S1 落地 `body_sha256`、`MetadataClient.probe_sink` 与 `guiju sources [--probe]`；S2 清除 `CachedCurrency` 不可达缓存与 `Store.search()`、收窄 `McpServer._announcement` 锁至本地读阶段并统一 `search`/`show` 人读输出至 `stdout`；S4 完成 MCP 服务面纯净化——`batch` 仅接受内联 `codes[]`（移除 `list`/`out`），删除 `backend.lookup()` 兼容路径并强制后端提供并发安全 `query(code) -> Outcome`，将 `_ReadOnlyStore` 收敛为显式 `_ALLOWED_READS` 白名单代理；S5 将 33 个批次测试零删减收敛进领域单测套件并设命名守卫。
 
-### 目录结构（v1.3.0-S3c 现状对齐）
+### 目录结构（v1.3.0 现状对齐）
 
 ```
 guiju/
 ├── __init__.py            # 只导出 __version__
 ├── __main__.py
-├── _version.py            # 版本单一来源
+├── _version.py            # 版本单一来源（1.3.0）
 ├── report.py              # JSON 与人读两种投影（stdout/stderr）
+├── mcp.py                 # MCP stdio/HTTP 服务面（只读白名单 Store + 内联 batch）
 ├── cli/
 │   ├── __init__.py        # build_parser / main（统一装配 AppContext）
 │   └── commands/          # 每命令一文件：sync.py pull.py cite.py sources.py ...
@@ -207,14 +209,15 @@ guiju/
 │   └── source.py          # Source/Catalog/Store/Currency/Fetcher Protocol
 ├── adapters/
 │   └── store/sqlite.py    # schema + 迁移
-├── sources/               # 站点适配器（mohurd / shzjw）
+├── sources/               # 站点适配器（mohurd / shzjw，直连 guiju/net）
+├── currency/              # 时效适配器（native 默认，直连 MetadataClient + jsonutil）
 └── net/
     ├── body.py            # BodyClient（唯一正文下载与 finalize）
-    └── metadata.py        # MetadataClient（JSON/网页元数据请求）
+    └── metadata.py        # MetadataClient（JSON/网页元数据请求 + probe_sink）
 migrations/0001_init.sql
 tests/
-  fixtures/catalog-page-1.html      # 列表页解析的离线夹具（唯一的测试固件）
-  test_cite.py  test_codes.py  test_net_boundaries.py  test_parse_catalog.py
+  fixtures/catalog-page-1.html      # 列表页解析的离线夹具
+  test_cite.py  test_codes.py  test_net_boundaries.py  test_mcp.py ...  # 62 个领域套件（无 test_fix_*）
 ```
 
 > 拆分不是为了好看：`cite` 与 `codes` 是唯一值得写单测的纯逻辑，混在 536 行的 cli 里就永远测不了。
