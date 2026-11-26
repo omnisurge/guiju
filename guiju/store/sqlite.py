@@ -161,7 +161,12 @@ class Store:
                 hint="把数据库复制到可写目录后重新打开，或让 guiju 在可写 GUIJU_HOME 重建",
             )
         if version == 0 and self._has_tables():
-            backup = self.path.with_name(f"{self.path.name}.legacy-{now().replace(':', '').replace(' ', '-')}")
+            stamp = now().replace(":", "").replace(" ", "-")
+            backup = self.path.with_name(f"{self.path.name}.legacy-{stamp}")
+            suffix = 1
+            while backup.exists():
+                backup = self.path.with_name(f"{self.path.name}.legacy-{stamp}-{suffix}")
+                suffix += 1
             self.db.close()
             shutil.copy2(self.path, backup)
             self.path.unlink()
@@ -189,16 +194,20 @@ class Store:
             # 只读库即使缺表/缺列也不能补 DDL；读命令继续可用，写缓存时
             # 由调用方得到明确的只读写失败（CLI 映射 50）。
             return
+        changed = False
         if not self._table_exists("currency_cache"):
             self.db.execute(
                 "CREATE TABLE IF NOT EXISTS currency_cache ("
                 "code_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at TEXT NOT NULL)"
             )
+            changed = True
         # v1.2.0a4：mention 增加按公告的 confidence。老 v2 库只补列不动数据；
         # 旧行保持 NULL，读路径 COALESCE 回退 edition.confidence。
         if self._table_exists("mention") and not self._mention_has_confidence():
             self.db.execute("ALTER TABLE mention ADD COLUMN confidence TEXT")
-        self.db.commit()
+            changed = True
+        if changed:
+            self.db.commit()
 
     def _table_exists(self, name: str) -> bool:
         row = self.db.execute(

@@ -51,6 +51,17 @@ class HttpClient:
         self._client = MetadataClient(timeout=timeout, throttle=_CompatThrottle())
         self.transport = self._client.transport
 
+    def close(self) -> None:
+        close = getattr(self._client, "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> HttpClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     def get(self, url: str, *, accept: str | None = "text/html,application/xhtml+xml") -> bytes:
         self._client.transport = self.transport
         return self._client.get(url, accept=accept)

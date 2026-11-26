@@ -151,10 +151,8 @@ class NativeCurrency:
             return None  # 缓存是加速手段，不是查询的新单点（OSError/ValueError/sqlite3.Error 等后端故障同理）
 
     def _memo_ttl(self) -> float:
-        ttl = getattr(self.cache, "ttl", None)
-        if isinstance(ttl, (int, float)) and math.isfinite(ttl) and ttl > 0:
-            return float(ttl)
-        return 60.0  # 无缓存后端时收敛到一个短窗口，memo 不得让结果"永不过期"
+        # _memo 仅在 self.cache is None 时启用；无缓存后端时收敛到短窗口，不让结果永不过期。
+        return 60.0
 
     def query(self, code: str) -> Outcome:
         self.last_outcome = None

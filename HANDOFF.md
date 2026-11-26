@@ -148,7 +148,7 @@ JTG             → Fallback( csres → jtst )
 
 | 项 | 值 |
 |---|---|
-| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（v1.2.0-alpha.4；本次发版未重装本机） |
+| 本机 | macOS；`guiju` 经 `uv tool install --editable` 装在 `~/.local/bin`（editable 安装，实测 guiju version --json 为 1.2.0） |
 | 数据 | `~/.guiju/catalog.db`（3255 条公告）+ `library/`（内容寻址 PDF） |
 | 时效服务 | native 路由直连各部委站（GUIJU_CURRENCY 默认即 native；旧 NAS `…:18083/mcp` 的 spec-currency 已退役，2026-11-13） |
 | spec-currency 源码 | `~/Development/spec-currency`（Go 1.26），**已退役归档**；guiju 内不再消费 |

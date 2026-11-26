@@ -668,9 +668,18 @@ class PullOneCachedShapeTest(unittest.TestCase):
                 payload2 = _pull_one(store, _args(force=True), "某标准", source, out)
             self.assertEqual(payload2["exit"], 0)
             store.log_probe.assert_any_call(source.id, "https://x/a.pdf", 200, len(PDF), "ok")
+            self.assertEqual(store.log_probe.call_count, 1)
             self.assertTrue(Path(payload2["path"]).exists())
             self.assertEqual(Path(payload2["path"]).read_bytes(), PDF)
             self.assertFalse((out / ".partial").exists() and any((out / ".partial").iterdir()))
+
+            from guiju.application.pull import _probe_sink
+
+            clean_store = mock.Mock()
+            sink = _probe_sink(clean_store, "shzjw", url="https://clean/dl")
+            sink(ProbeRecord(url="https://clean/dl?receivedToken=tmp", status=200, bytes=len(PDF), outcome="ok"))
+            self.assertTrue(sink.ok_emitted)
+            clean_store.log_probe.assert_called_once_with("shzjw", "https://clean/dl", 200, len(PDF), "ok")
 
         self.assertEqual(payload["exit"], 10)
         self.assertTrue(payload["already"])

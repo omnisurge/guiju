@@ -22,6 +22,13 @@ class PickTest(unittest.TestCase):
         got = pick(items, "建筑防火通用规范", announcement_title="关于发布国家标准的公告")
         self.assertIs(got.verdict, Verdict.OK)
         self.assertEqual(got.choice.label, "建筑防火通用规范")
+        decorated = [
+            Attachment(url="https://x.gov.cn/a.doc", label="废止的强制性条文"),
+            Attachment(url="https://x.gov.cn/b.pdf", label="《建筑防火通用规范（2022年版）》.pdf"),
+        ]
+        got_decorated = pick(decorated, "建筑防火通用规范", announcement_title="关于发布国家标准的公告")
+        self.assertIs(got_decorated.verdict, Verdict.OK)
+        self.assertEqual(got_decorated.choice.url, "https://x.gov.cn/b.pdf")
 
     def test_english_version_announcement_is_rejected(self):
         # 实测 2022-01-18：4 个附件，旧逻辑兜底选中了无关的《建筑设计防火规范（2018年版）》

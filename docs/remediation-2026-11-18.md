@@ -395,7 +395,7 @@ CI 门禁：
 
 - [x] ADR 0004 批准（2026-11-18 所有者按默认批准）
 - [x] 建 A1 分支 fix/a1-safety-20261118（P2 前再建 refactor/root-cause）
-- [ ] 补 characterization 测试（同步/下载/附件/cite/MCP）
+- [x] 补 characterization 测试（同步/下载/附件/cite/MCP；已随 B2 C0 76-case 与 B3 W2/W4 baseline 落地）
 - [x] 记录当前 3256 条目录 baseline（评审报告 §0；历史值，当前上游 3255）
 - [x] 建立缺陷→工作流→阶段的跟踪表（本文件第七节）
 
@@ -472,5 +472,5 @@ B1 非阻塞残余清理（2026-11-20）：显式 sync 与 autosync 共用 flock
 - [x] W2/W3/W4 状态/空值/存储收口（B3 实施完成并通过独立 review；证据 `docs/audit/b3-w2-w3-w4-20261122.md`）
 - [x] W5 application/MCP 收口（B4 rev2，2026-11-23 双审 APPROVE；证据 `docs/audit/b4-application-mcp-20261123.md`）
 - [x] W6 领域收口（B3 已完成；见 `docs/audit/b3-w2-w3-w4-20261122.md`）
-- [ ] W7 文档/CI/发布（B5 工程门禁已演练，正式 1.2.0 发版待所有者 tag/push/部署窗口；见 `docs/audit/b5-release-gate-20261123.md`）
-- [ ] 1.2.0 回退演练（wheel+DB 本地演练已通过；hk 真实 systemd 重启/回滚待所有者窗口）
+- [x] W7 文档/CI/发布（1.2.0 已于 2026-11-24 正式发布，tag v1.2.0；见 `docs/audit/b5-release-gate-20261123.md` 与 `docs/audit/release-1.2.0-20261124.md`）
+- [x] 1.2.0 回退演练（本地 wheel+DB 与 hk 1.2.0a4↔1.2.0 真实 systemd 回退/再部署均已通过，2026-11-24；见 `docs/audit/b5-release-gate-20261123.md`）

@@ -28,7 +28,6 @@ DEPRECATED_WORDS = ("废止", "作废", "条文废止")
 NOT_APPLICABLE_WORDS = ("英文版", "英文译本")
 
 _NAME_NOISE = re.compile(r"[《》〈〉\s（）()【】\[\]]")
-_VERSION_SUFFIX = re.compile(r"[（(][^）)]*年版[）)]$")
 
 
 class Verdict(StrEnum):
@@ -74,8 +73,7 @@ class Pick:
 
 
 def _norm(s: str) -> str:
-    s = _NAME_NOISE.sub("", s or "")
-    return _VERSION_SUFFIX.sub("", s)
+    return _NAME_NOISE.sub("", s or "")
 
 
 def _is_pdf(att: Attachment) -> bool:

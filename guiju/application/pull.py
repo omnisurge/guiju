@@ -53,16 +53,19 @@ def _finalize_body(part_path, dest_path) -> None:
     finalize(part_path, dest_path)
 
 
-def _probe_sink(store, source_id):
+def _probe_sink(store, source_id, *, url: str | None = None):
     """把 BodyClient 的 ProbeRecord 接到 Store.log_probe；观测失败不阻断下载。"""
     log = getattr(store, "log_probe", None)
 
     def sink(record):
         if record is None or log is None:
             return
+        if getattr(record, "outcome", None) == "ok":
+            sink.ok_emitted = True
         with contextlib.suppress(Exception):
-            log(source_id, record.url, record.status, record.bytes, record.outcome)
+            log(source_id, url or record.url, record.status, record.bytes, record.outcome)
 
+    sink.ok_emitted = False
     return sink
 
 #: 批量失败体必须原样交给人/调用方的字段（W4-1）：缺一个都可能让交接断链。
@@ -271,9 +274,10 @@ def _pull_api(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
     partial_dir = out_dir / ".partial"
     key = sha256_bytes(f"{source.id}|{rec['code'] or rec['name']}|{rec['download_url']}".encode())[:10]
     part = partial_dir / f"{key}.part"
+    sink = _probe_sink(store, source.id, url=rec["download_url"])
     try:
         nbytes, magic, resumed = source.download_to(
-            rec["download_url"], str(part), probe_sink=_probe_sink(store, source.id)
+            rec["download_url"], str(part), probe_sink=sink
         )
     except GuijuError as exc:
         raise _attach_availability(exc, rec["published_on"]) from None
@@ -290,7 +294,8 @@ def _pull_api(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
     _finalize_body(part, dest)
 
     _remember()
-    store.log_probe(source.id, rec["download_url"], 200, nbytes, "ok", rec["name"])
+    if not sink.ok_emitted:
+        store.log_probe(source.id, rec["download_url"], 200, nbytes, "ok", rec["name"])
     store.commit()
 
     return {
@@ -499,9 +504,10 @@ def _pull_one(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
     partial_dir = out_dir / ".partial"
     key = sha256_bytes(f"{ann_id}|{choice.url}".encode())[:10]
     part = partial_dir / f"{key}.part"
+    sink = _probe_sink(store, source.id)
     try:
         nbytes, magic, resumed = source.download_to(
-            choice.url, str(part), referer=ann["url"], probe_sink=_probe_sink(store, source.id)
+            choice.url, str(part), referer=ann["url"], probe_sink=sink
         )
     except GuijuError as exc:
         if isinstance(exc, BadAttachment):
@@ -520,7 +526,8 @@ def _pull_one(store: StorePort, args: Any, ref: str, source, out_dir: Path) -> d
     )
     dest.parent.mkdir(parents=True, exist_ok=True)
     _finalize_body(part, dest)
-    store.log_probe(source.id, choice.url, 200, nbytes, "ok", choice.label)
+    if not sink.ok_emitted:
+        store.log_probe(source.id, choice.url, 200, nbytes, "ok", choice.label)
     store.commit()
 
     return {

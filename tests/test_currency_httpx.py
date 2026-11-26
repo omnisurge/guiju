@@ -47,6 +47,9 @@ class HttpClientTest(unittest.TestCase):
         for timeout in (0, -1, float("inf"), float("nan")):
             with self.subTest(timeout=timeout), self.assertRaises(ValueError):
                 httpx.HttpClient(timeout=timeout)
+        with httpx.HttpClient() as client:
+            self.assertIsInstance(client, httpx.HttpClient)
+            client.close()
 
     def test_500_then_200_retries_once(self):
         err = status_error(500)

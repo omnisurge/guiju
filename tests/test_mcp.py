@@ -116,8 +116,13 @@ class McpProtocolTest(unittest.TestCase):
 
     def test_notifications_and_unknown_methods(self):
         self.assertIsNone(self.call("notifications/initialized", include_id=False))
+        self.assertIsNone(self.call("notifications/unknown", include_id=False))
+        self.assertIsNone(self.call("unknown/notify", include_id=False))
         unknown = self.call("unknown/method")
         self.assertEqual(unknown["error"]["code"], -32601)
+        unknown_zero = self.call("unknown/method", request_id=0)
+        self.assertEqual(unknown_zero["id"], 0)
+        self.assertEqual(unknown_zero["error"]["code"], -32601)
 
     def test_http_transport_round_trip(self):
         httpd = make_http_server(self.server, "127.0.0.1", 0)
@@ -133,6 +138,23 @@ class McpProtocolTest(unittest.TestCase):
             with urllib.request.urlopen(request, timeout=3) as response:
                 payload = json.loads(response.read().decode())
             self.assertIn("GB/T 50011-2010", payload["result"]["content"][0]["text"])
+            notify_body = json.dumps({"jsonrpc": "2.0", "method": "unknown/notify", "params": {}}).encode()
+            notify_req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/mcp", data=notify_body,
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(notify_req, timeout=3) as response:
+                self.assertEqual(response.status, 202)
+                self.assertEqual(response.read(), b"")
+            err_body = json.dumps({"jsonrpc": "2.0", "id": 9, "method": "ping"}).encode()
+            err_req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/mcp", data=err_body,
+                headers={"Content-Type": "application/json"}, method="POST")
+            with mock.patch.object(self.server, "handle", side_effect=RuntimeError("boom")), \
+                    urllib.request.urlopen(err_req, timeout=3) as response:
+                self.assertEqual(response.status, 200)
+                err_payload = json.loads(response.read().decode())
+            self.assertEqual(err_payload["id"], 9)
+            self.assertEqual(err_payload["error"]["code"], -32603)
         finally:
             httpd.shutdown()
             httpd.server_close()

@@ -601,6 +601,8 @@ class McpServer:
                                "serverInfo": {"name": "guiju", "version": __version__}}}
         if method == "ping":
             return {"jsonrpc": "2.0", "id": request_id, "result": {}}
+        if "id" not in payload or request_id is None:
+            return None
         return {"jsonrpc": "2.0", "id": request_id,
                 "error": {"code": -32601, "message": f"未知方法：{method}"}}
 
@@ -939,9 +941,15 @@ def make_http_server(
             try:
                 response = server.handle(payload)
             except Exception:
-                # 兜底：handle 内部异常也不能断连裸奔
-                response = {"jsonrpc": "2.0", "id": None,
-                            "error": {"code": -32603, "message": "服务端内部错误"}}
+                # 兜底：handle 内部异常也不能断连裸奔；通知不回包，请求回显 id。
+                if isinstance(payload, dict) and ("id" not in payload or payload.get("id") is None):
+                    response = None
+                else:
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": payload.get("id") if isinstance(payload, dict) else None,
+                        "error": {"code": -32603, "message": "服务端内部错误"},
+                    }
             if response is None:
                 self._send(202, b"")
                 return
