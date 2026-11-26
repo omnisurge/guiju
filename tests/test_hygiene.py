@@ -148,10 +148,18 @@ class ReleaseVersionConstraintTest(unittest.TestCase):
     def test_changelog_top_matches_current_version(self):
         version = _current_version()
         text = _read("CHANGELOG.md")
-        headings = re.findall(r"^##\s+(\S+)", text, flags=re.MULTILINE)
+        headings = [
+            heading
+            for heading in re.findall(r"^##\s+(\S+)", text, flags=re.MULTILINE)
+            if heading != "Unreleased"
+        ]
+        self.assertTrue(headings, "CHANGELOG 没有任何已发布版本条目")
         self.assertEqual(headings[0], version, "CHANGELOG 最新版本与 _version.py 不一致")
-        top_heading = next(line for line in text.splitlines() if line.startswith("## "))
-        self.assertIn(_pretty_version(version), top_heading, "CHANGELOG 顶部条目未写预发布别名")
+        top_heading = next(
+            line for line in text.splitlines()
+            if line.startswith("## ") and line.split()[1] != "Unreleased"
+        )
+        self.assertIn(_pretty_version(version), top_heading, "CHANGELOG 顶部条目未写版本别名")
 
     def test_pyproject_is_posix_only(self):
         pyproject = _read("pyproject.toml")
@@ -230,6 +238,33 @@ class ReleaseWorkflowConstraintTest(unittest.TestCase):
             "CapabilityBoundingSet=",
         ):
             self.assertIn(directive, unit, f"deploy/guiju-mcp.service 缺少 {directive}")
+
+    def test_check_release_unreleased_allows_docs_only_but_blocks_artifacts(self):
+        import contextlib
+        import importlib.util
+        import io
+        from unittest import mock
+
+        script = ROOT / "scripts" / "check-release.py"
+        spec = importlib.util.spec_from_file_location("check_release_unreleased", script)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+
+        with (
+            mock.patch.object(module, "_discovered_test_count", return_value=9999),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            dev_checker = module.Checker("dev")
+            module.check_docs(dev_checker, allow_unreleased=True)
+            self.assertEqual(dev_checker.failures, [], dev_checker.failures)
+
+            rel_checker = module.Checker("release")
+            module.check_docs(rel_checker, allow_unreleased=False)
+            self.assertTrue(
+                any("Unreleased" in msg for msg in rel_checker.failures),
+                rel_checker.failures,
+            )
 
 
 class IndexCommandRemovedTest(unittest.TestCase):

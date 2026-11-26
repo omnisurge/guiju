@@ -22,6 +22,7 @@
 | [docs/audit/release-1.2.0a4-20261122.md](audit/release-1.2.0a4-20261122.md) | 历史发版记录 | 1.2.0a4（v1.2.0-alpha.4）发版事实与产物 |
 | [docs/audit/external-review-2026-11-22.md](audit/external-review-2026-11-22.md) | 当前复核记录 | 外部评审逐条验证、证据与错误反驳 |
 | [docs/remediation-2026-11-18.md](remediation-2026-11-18.md) | 历史计划（B2-B5 已完成；1.2.0 发版） | 1.2.0 契约整改的过程记录 |
+| [docs/spec-1.3.0.md](spec-1.3.0.md) | 实施中（v1.3.0 分步执行） | v1.3.0 迭代 Spec（M4 观测、去冗余、兼容门面退场、MCP 纯净化、测试收敛） |
 | [docs/adr/README.md](adr/README.md) | 当前索引 | 本项目 ADR 0001–0005 的唯一状态入口 |
 | [CHANGELOG.md](../CHANGELOG.md) | 当前 | 版本变更 |
 

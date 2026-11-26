@@ -79,9 +79,13 @@ def _pretty_version(version: str) -> str:
     return f"{base}-{labels[pre]}.{number}"
 
 
+def _headings(text: str) -> list[str]:
+    return [match.group(1).strip() for match in re.finditer(r"^##\s+(.+)$", text, flags=re.MULTILINE)]
+
+
 def _first_heading(text: str) -> str:
-    match = re.search(r"^##\s+(.+)$", text, flags=re.MULTILINE)
-    return match.group(1).strip() if match else ""
+    headings = _headings(text)
+    return headings[0] if headings else ""
 
 
 def _section(text: str, title: str) -> str:
@@ -123,7 +127,7 @@ def _extract_count(pattern: str, text: str, label: str, checker: Checker) -> int
     return int(match.group(1))
 
 
-def check_docs(checker: Checker) -> tuple[str, str, int | None]:
+def check_docs(checker: Checker, *, allow_unreleased: bool = True) -> tuple[str, str, int | None]:
     version = _source_version()
     pretty = _pretty_version(version)
     print(f"== 发版检查 · docs-only ==  version={version}  tag=v{pretty}")
@@ -135,9 +139,17 @@ def check_docs(checker: Checker) -> tuple[str, str, int | None]:
         "pyproject.toml 的 dynamic version 没有指向 guiju._version.__version__",
     )
 
-    # 2) CHANGELOG 顶部必须就是当前版本
+    # 2) CHANGELOG 顶部：开发期允许 ## Unreleased，发版产物检查必须已冻结版本
     changelog = _read("CHANGELOG.md")
-    top = _first_heading(changelog)
+    headings = _headings(changelog)
+    is_unreleased = bool(headings and headings[0].split()[0] == "Unreleased")
+    if not allow_unreleased:
+        checker.check(
+            not is_unreleased,
+            "CHANGELOG 顶部仍为 Unreleased：发版产物检查（--artifacts）前必须冻结版本号",
+        )
+    released = [heading for heading in headings if heading.split()[0] != "Unreleased"]
+    top = released[0] if released else ""
     checker.check(
         top.startswith(version),
         f"CHANGELOG 最新版本条目是 {top!r}，不是当前的 {version}",
@@ -223,10 +235,17 @@ def check_docs(checker: Checker) -> tuple[str, str, int | None]:
         current_count = counts[0]
         checker.check(current_count > 0, "当前单测计数必须大于 0")
         actual_count = _discovered_test_count()
-        checker.check(
-            actual_count == current_count,
-            f"文档写 {current_count} 项单测，但当前工作树实际发现 {actual_count} 项",
-        )
+        checker.check(actual_count > 0, "当前工作树发现的单测数量必须大于 0")
+        if is_unreleased and allow_unreleased:
+            print(
+                f"开发期（CHANGELOG 含 Unreleased）：当前发现 {actual_count} 项单测，"
+                f"已发版基线 {current_count} 项；发版冻结时恢复精确比对"
+            )
+        else:
+            checker.check(
+                actual_count == current_count,
+                f"文档写 {current_count} 项单测，但当前工作树实际发现 {actual_count} 项",
+            )
     else:
         current_count = None
 
@@ -379,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     checker = Checker("check-release")
-    version, pretty, _ = check_docs(checker)
+    version, pretty, _ = check_docs(checker, allow_unreleased=not args.artifacts)
     if args.artifacts:
         check_artifacts(
             checker,

@@ -1,5 +1,11 @@
 # 变更记录
 
+## Unreleased
+
+> 目标版本：1.3.0（开发进行中，详见 `docs/spec-1.3.0.md`）。
+
+- S0：开发期 `Unreleased` 门禁解耦（`--docs-only` 放行单测数演进，`--artifacts` 仍拒绝未冻结版本）。
+
 ## 1.2.0 — 2026-11-24（1.2.0 正式发布）
 
 - B4 application/ports/adapters 收口与 B5 工程门禁通过；全量 **1223 项单测**（Python 3.10/3.13）、ruff、本地 CI、离线 e2e 4/4、完整联网 e2e **39/39** 通过。
