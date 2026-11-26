@@ -6,7 +6,6 @@ import io
 import urllib.request
 from typing import Any
 
-from guiju.currency import httpx as _httpx
 from guiju.net.body import BodyClient
 from guiju.net.policy import BodyPolicy, MetadataPolicy
 from guiju.net.redirect import RedirectGuard
@@ -65,9 +64,9 @@ class FakeTransport:
 
 
 
-def metadata_redirect():
+def metadata_redirect(throttle=None):
     """Test-only RedirectGuard construction; production has no factory."""
-    return RedirectGuard(MetadataPolicy(), _httpx._CompatThrottle())
+    return RedirectGuard(MetadataPolicy(), throttle or Throttle(0))
 
 
 def build_metadata_opener(memory_transport, handler=None):

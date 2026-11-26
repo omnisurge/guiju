@@ -49,9 +49,15 @@ class NetBoundaryTest(unittest.TestCase):
             classes.extend(n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef))
         self.assertEqual(classes.count("RedirectGuard"), 1)
 
-    def test_facades_have_no_opener(self):
-        for name in ("guiju/currency/httpx.py",):
-            self.assertNotIn("_opener", (ROOT / name).read_text("utf-8"))
+    def test_no_opener_outside_net(self):
+        bad = []
+        for path in _files():
+            rel = str(path.relative_to(ROOT))
+            if rel.startswith("guiju/net/"):
+                continue
+            if "_opener" in path.read_text("utf-8"):
+                bad.append(rel)
+        self.assertEqual(bad, [])
 
     def test_body_finalize_is_sole_body_replace(self):
         text = (ROOT / "guiju/net/body.py").read_text("utf-8")
@@ -134,9 +140,43 @@ class NetBoundaryTest(unittest.TestCase):
                         bad.append(f"{rel}:{node.lineno}:RedirectGuard")
         self.assertEqual(bad, [])
 
-    def test_currency_redirect_factory_absent(self):
-        from guiju.currency import httpx
-        self.assertFalse(hasattr(httpx, "_MetadataRedirect"))
+    def test_currency_httpx_facade_retired(self):
+        self.assertFalse((ROOT / "guiju/currency/httpx.py").exists())
+        self.assertFalse((ROOT / "guiju/currency/httpx").exists())
+        bad = []
+        py_files = [
+            p
+            for base in (ROOT / "guiju", ROOT / "tests")
+            for p in base.rglob("*.py")
+            if "__pycache__" not in p.parts
+        ]
+        for path in py_files:
+            rel = str(path.relative_to(ROOT))
+            in_currency = path.is_relative_to(ROOT / "guiju/currency")
+            tree = ast.parse(path.read_text("utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "guiju.currency.httpx" or alias.name.startswith("guiju.currency.httpx."):
+                            bad.append(f"{rel}:{node.lineno}:{alias.name}")
+                elif isinstance(node, ast.ImportFrom):
+                    mod = node.module or ""
+                    if (
+                        mod == "guiju.currency.httpx"
+                        or mod.startswith("guiju.currency.httpx.")
+                        or (mod == "guiju.currency" and any(a.name == "httpx" for a in node.names))
+                        or (
+                            in_currency
+                            and node.level > 0
+                            and (
+                                mod == "httpx"
+                                or mod.startswith("httpx.")
+                                or (mod == "" and any(a.name == "httpx" for a in node.names))
+                            )
+                        )
+                    ):
+                        bad.append(f"{rel}:{node.lineno}:from {mod or '.'}")
+        self.assertEqual(bad, [])
 
     def test_compliance_facade_retired(self):
         self.assertFalse((ROOT / "guiju/compliance.py").exists())

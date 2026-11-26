@@ -11,9 +11,9 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
 from ..errors import NeedsHuman
+from ..net.metadata import MetadataClient
 from .codes import query_with_base_fallback
 from .contract import Completeness, CompletenessMixin, page_error
-from .httpx import HttpClient
 from .model import Record
 
 SEARCH_URL = "https://jtst.mot.gov.cn/search/stdPage"
@@ -136,8 +136,8 @@ class JtstCurrency(CompletenessMixin):
     name = "jtst"
     url = SEARCH_URL
 
-    def __init__(self, client: HttpClient | None = None) -> None:
-        self.client = client if client is not None else HttpClient()
+    def __init__(self, client: MetadataClient | None = None) -> None:
+        self.client = client if client is not None else MetadataClient()
         # HTML 列表页无总数字段：has_more=None 表示"无法判定"，不猜 False。
         self._completeness = Completeness()
 

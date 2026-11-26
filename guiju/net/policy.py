@@ -7,7 +7,7 @@ import urllib.parse
 from collections.abc import Callable, Mapping
 
 from ..errors import ComplianceDenied, SourceUnreachable
-from .endpoints import DEFAULT_METADATA_ENDPOINTS, SHANGHAI_HOST, SHANGHAI_PORT
+from .endpoints import DEFAULT_METADATA_ENDPOINTS, DEFAULT_METADATA_FORM_HOSTS, SHANGHAI_HOST, SHANGHAI_PORT
 
 
 class BodyPolicy:
@@ -89,7 +89,9 @@ class MetadataPolicy:
             host: dict(paths) for host, paths in (endpoints or DEFAULT_METADATA_ENDPOINTS).items()
         }
         self.max_bytes = int(max_bytes)
-        self.form_hosts = form_hosts
+        self.form_hosts: frozenset[str] = (
+            DEFAULT_METADATA_FORM_HOSTS if form_hosts is None else frozenset(form_hosts)
+        )
 
     def check_url(self, url: str) -> str:
         try:
@@ -111,6 +113,12 @@ class MetadataPolicy:
             or parts.fragment
         ):
             raise ComplianceDenied(f"非已批准元数据查询端点，拒绝访问：{url}")
+        return host
+
+    def check_form_url(self, url: str) -> str:
+        host = self.check_url(url)
+        if host not in self.form_hosts:
+            raise ComplianceDenied(f"此元数据端点不接受查询表单：{url}")
         return host
 
     def check_headers(self, headers, url: str, *, redirect: bool = False) -> None:

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import warnings
 
+from ..net.metadata import MetadataClient
 from .codes import code_num_key, date_only, query_with_base_fallback
 from .contract import Completeness, CompletenessMixin, json_error, parse_or_fail, require_keys
-from .httpx import HttpClient, decode_json, json_flag, json_int, json_rows, json_string
+from .jsonutil import decode_json, json_flag, json_int, json_rows, json_string
 from .model import Record
 
-# .assx 疑似站方把 .ashx 打错的端点；但白名单（httpx._ENDPOINTS）与历史可用性都以
+# .assx 疑似站方把 .ashx 打错的端点；但白名单（guiju/net/endpoints.DEFAULT_METADATA_ENDPOINTS）与历史可用性都以
 # 这个字面量为准，贸然"修正"反而会断开服务 —— 保持原样，仅留此注释。
 SEARCH_URL = "https://www.ccsn.org.cn/newweb/api/StandardQuery.assx/queryStandard"
 # 「在编」是编制中，不是「即将实施」（W3/P2-18）：只能判 unknown。
@@ -83,8 +84,8 @@ class CcsnCurrency(CompletenessMixin):
     #: 可把 Total 拉到上千，翻 80+ 页既慢又浪费——超过上限直接记 truncated 交人复核。
     MAX_PAGES = 5
 
-    def __init__(self, client: HttpClient | None = None) -> None:
-        self.client = client if client is not None else HttpClient()
+    def __init__(self, client: MetadataClient | None = None) -> None:
+        self.client = client if client is not None else MetadataClient()
         # 分页契约（2026-11-13 实测 .assx 站）：pageIndex 1-based，返回 PageInfo
         # {Total, List, PageNum, Pages, HasNextPage}；HasNextPage 为真时按 pageIndex+1
         # 续页，直到无下页或 MAX_PAGES 封顶。truncated=True 表示被封顶截断（结果不完整，

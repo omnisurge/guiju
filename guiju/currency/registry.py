@@ -7,10 +7,10 @@ import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ..net.metadata import MetadataClient
 from .cache import CACHE_NAMESPACE
 from .csres import CsresCurrency
 from .fallback import FallbackCurrency
-from .httpx import HttpClient
 from .model import Currency
 
 
@@ -85,7 +85,7 @@ class Registry:
                           ensure_ascii=True, separators=(",", ":"))
 
 
-def default_registry(client: HttpClient | None = None, *, cancelled: Callable[[], bool] | None = None,
+def default_registry(client: MetadataClient | None = None, *, cancelled: Callable[[], bool] | None = None,
                      admit: Callable[[str], None] | None = None) -> Registry:
     # 延迟导入只为避免兼容门面在启动旧 CLI 时装配所有原生源；这里没有网络动作。
     from .ccsn import CcsnCurrency
@@ -120,8 +120,8 @@ def default_registry(client: HttpClient | None = None, *, cancelled: Callable[[]
     registry.register(Route("shzjw", (*SHANGHAI_PREFIXES, "DB31"),
                             lambda: ShzjwCurrency(client, cancelled=cancelled),
                             normalizer=normalize_code, code_filter=is_shanghai_code))
-    # 端点级路由：prefixes=()/factory=None，不参与编号匹配，只声明这些 host 接受表单 POST；
-    # httpx.post_form 据此把关（替代已删除的 _FORM_HOSTS）。
+    # 端点级路由：prefixes=()/factory=None，不参与编号匹配，与 guiju/net/endpoints.DEFAULT_METADATA_FORM_HOSTS
+    # 保持同步，声明这些 host 接受表单 POST。
     registry.register(Route("ccsn", (), None, hosts=("www.ccsn.org.cn",), form_post=True))
     registry.register(Route("dbba", (), None, hosts=("dbba.sacinfo.org.cn",), form_post=True))
     return registry

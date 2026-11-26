@@ -14,6 +14,11 @@ DEFAULT_METADATA_ENDPOINTS: dict[str, dict[str, frozenset[str]]] = {
     "bzjg.zjw.sh.gov.cn": {"/JGBStandardWebApi/external/localStandard/list": JSON},
 }
 
+DEFAULT_METADATA_FORM_HOSTS: frozenset[str] = frozenset({
+    "www.ccsn.org.cn",
+    "dbba.sacinfo.org.cn",
+})
+
 SHANGHAI_HOST = "bzjg.zjw.sh.gov.cn"
 SHANGHAI_PORT = 9175
 SHANGHAI_ORIGIN = f"https://{SHANGHAI_HOST}:{SHANGHAI_PORT}"

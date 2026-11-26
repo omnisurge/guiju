@@ -17,7 +17,6 @@ from guiju.application import AppContext
 from guiju.application import pull as pull_app
 from guiju.application import resolve as resolve_app
 from guiju.cli import main
-from guiju.currency.httpx import HttpClient
 from guiju.currency.model import Record
 from guiju.domain.attachment import Attachment
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
@@ -252,7 +251,7 @@ class PullAndResolveBodyHashTest(unittest.TestCase):
 
 
 class MetadataProbeSinkTest(unittest.TestCase):
-    def test_metadata_client_probe_sink_records_outcomes_and_httpx_passthrough(self):
+    def test_metadata_client_probe_sink_records_outcomes_and_context_manager(self):
         # 1) 200 OK
         records = []
         c = MetadataClient(
@@ -350,18 +349,21 @@ class MetadataProbeSinkTest(unittest.TestCase):
         self.assertEqual(records[0].outcome, "network_error")
         self.assertEqual(records[0].attempts, 2)
 
-        # 7) HttpClient(probe_sink=...) passthrough
+        # 7) MetadataClient context manager & post_form endpoint enforcement
         records.clear()
-        with HttpClient(probe_sink=records.append) as hx:
-            hx.transport = FakeTransport([
+        with MetadataClient(
+            policy=MetadataPolicy.default(),
+            throttle=Throttle(0),
+            transport=FakeTransport([
                 FakeResponse(b'{"Total":0}', url=URL_CCSN,
                              headers={"Content-Type": "application/json", "Content-Length": "11"})
-            ])
-            hx._client.transport = hx.transport
-            hx._client.throttle = Throttle(0)
-            self.assertEqual(hx.post_form(URL_CCSN, {"a": "1"}), b'{"Total":0}')
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0].outcome, "ok")
+            ]),
+            probe_sink=records.append,
+        ) as client:
+            self.assertEqual(client.post_form(URL_CCSN, {"a": "1"}), b'{"Total":0}')
+            with self.assertRaises(ComplianceDenied):
+                client.post_form("https://www.csres.com/s.jsp", {"a": "1"})
+        self.assertEqual([r.outcome for r in records], ["ok", "blocked"])
 
 
 class SourcesCommandTest(unittest.TestCase):

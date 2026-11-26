@@ -8,8 +8,8 @@ from pathlib import Path
 from unittest import mock
 
 from guiju.currency.ccsn import SEARCH_URL, CcsnCurrency, parse_ccsn, status_ccsn
-from guiju.currency.httpx import HttpClient
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
+from guiju.net.metadata import MetadataClient
 
 FIXTURES = Path(__file__).parent / "fixtures" / "currency"
 # 人工照录旧 ccsn_test.go 与原始响应：编号、名称、两日期、状态、来源、替代关系、原状态词。
@@ -73,7 +73,7 @@ class CcsnGoldenTest(OfflineTestCase):
                         self.assertEqual(getattr(record, field), value)
 
     def test_golden_lookup_posts_numeric_query_only(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.post_form.return_value = (FIXTURES / "ccsn_gb50011.json").read_bytes()
         source = CcsnCurrency(client)
         self.assertEqual(source.name, "ccsn")
@@ -175,7 +175,7 @@ class CcsnParseTest(OfflineTestCase):
 
 class CcsnLookupTest(OfflineTestCase):
     def test_no_digits_do_not_query_full_catalog(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         for code in ("", " \t", "GB", "JGJ/T", "标准"):
             with self.subTest(code=code):
                 self.assertEqual(CcsnCurrency(client).lookup(code), [])
@@ -183,7 +183,7 @@ class CcsnLookupTest(OfflineTestCase):
         client.get.assert_not_called()
 
     def test_numeric_query_omits_nature_and_edition_suffix(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.post_form.return_value = (FIXTURES / "ccsn_gb50011.json").read_bytes()
         self.assertEqual([r.code for r in CcsnCurrency(client).lookup("GB/T 50011-2010（2024年版）")],
                          ["GB/T50011-2010（2024年版）"])
@@ -191,7 +191,7 @@ class CcsnLookupTest(OfflineTestCase):
         client.post_form.assert_called_once()
 
     def test_fuzzy_hits_are_filtered_before_return(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.post_form.return_value = response(
             {"StandardCode": "GB50141-2008", "StandardState": "现行"},
             {"StandardCode": "GB/T50011-2010（2024年版）", "StandardState": "现行"},
@@ -200,7 +200,7 @@ class CcsnLookupTest(OfflineTestCase):
         client.post_form.assert_called_once()
 
     def test_old_year_retries_base_once_without_inventing_old_status(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.post_form.side_effect = [response(), (FIXTURES / "ccsn_jgj147.json").read_bytes()]
         records = CcsnCurrency(client).lookup("JGJ147-2004")
         self.assertEqual([asdict(record) for record in records], GOLDEN["ccsn_jgj147.json"])
@@ -208,20 +208,20 @@ class CcsnLookupTest(OfflineTestCase):
         self.assertNotIn("JGJ147-2004", [record.code for record in records])
 
     def test_unrelated_first_response_also_triggers_base_fallback(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.post_form.side_effect = [response({"StandardCode": "JGJ1147-2004"}), response({"StandardCode": "JGJ147-2016", "StandardState": "现行"})]
         self.assertEqual([r.code for r in CcsnCurrency(client).lookup("JGJ147-2004")], ["JGJ147-2016"])
         self.assertEqual([call.args[1]["gjz"] for call in client.post_form.call_args_list], ["147-2004", "147"])
 
     def test_same_family_first_hit_does_not_retry_even_if_year_differs(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.post_form.return_value = (FIXTURES / "ccsn_jgj147.json").read_bytes()
         self.assertEqual([r.code for r in CcsnCurrency(client).lookup("JGJ147-2004")], ["JGJ147-2016"])
         client.post_form.assert_called_once()
 
     def test_no_year_makes_one_request_and_old_year_makes_at_most_two(self):
         for code, expected in (("JGJ147", ["147"]), ("JGJ147-2004", ["147-2004", "147"])):
-            client = mock.Mock(spec=HttpClient)
+            client = mock.Mock(spec=MetadataClient)
             client.post_form.return_value = response()
             with self.subTest(code=code):
                 self.assertEqual(CcsnCurrency(client).lookup(code), [])
@@ -229,7 +229,7 @@ class CcsnLookupTest(OfflineTestCase):
 
     def test_failures_propagate_without_base_retry(self):
         for error in (SourceUnreachable("offline"), ComplianceDenied("stop"), NeedsHuman("ccsn bad JSON")):
-            client = mock.Mock(spec=HttpClient)
+            client = mock.Mock(spec=MetadataClient)
             client.post_form.side_effect = error
             with self.subTest(error=type(error).__name__), self.assertRaises(type(error)) as ctx:
                 CcsnCurrency(client).lookup("JGJ147-2004")
@@ -237,7 +237,7 @@ class CcsnLookupTest(OfflineTestCase):
             client.post_form.assert_called_once()
 
     def test_decode_failure_does_not_fall_back_or_refetch(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.post_form.return_value = b"{"
         with self.assertRaises(NeedsHuman):
             CcsnCurrency(client).lookup("JGJ147-2004")
@@ -259,7 +259,7 @@ class CcsnPaginationTest(OfflineTestCase):
         return {"StandardCode": f"GB50000-{year}", "StandardState": "现行", "StandardCNName": "n"}
 
     def test_follows_pages_until_no_next(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         # 45 条同族记录跨 3 页；页内数据混若干异族行（真实站会回），过滤后仍应取全 45 条。
         flat = [self._code(1900 + i) for i in range(45)]
         client.post_form.side_effect = [
@@ -277,7 +277,7 @@ class CcsnPaginationTest(OfflineTestCase):
         self.assertTrue(cur.complete)  # 取全 + 无截断 = 可以写缓存
 
     def test_truncated_at_max_pages_warns(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.post_form.return_value = page_response(
             [self._code(1900 + i) for i in range(20)], total=500, has_next=True,
         )

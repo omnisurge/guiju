@@ -138,7 +138,7 @@ JTG             → Fallback( csres → jtst )
 ## 五、红线（不可绕过，不要加 override 开关）
 
 - **正文/内容抓取**只允许 `*.gov.cn`，且**每一次重定向**都要过白名单（`guiju/net` 的 `RedirectGuard`）；内容源 POST 走同一道闸门。
-- 时效元数据仅允许 `currency/httpx.py` 的固定查询端点；不得复用为正文出口，适配器不得落文件。
+- 时效元数据仅允许 `guiju/net/endpoints.py`（`MetadataPolicy` / `MetadataClient`）的固定查询端点；不得复用为正文出口，适配器不得落文件。
 - 限速 1.2s/请求/按 host，不调快。
 - 命中验证码/人机校验即放弃（exit 40），**不尝试绕过**。
 - 只搬运不生产；不承诺条文准确性。

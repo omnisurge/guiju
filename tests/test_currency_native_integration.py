@@ -1,4 +1,4 @@
-"""真实编排 + HttpClient + 原始 golden + 临时磁盘缓存的离线整链路。"""
+"""真实编排 + MetadataClient + 原始 golden + 临时磁盘缓存的离线整链路。"""
 
 import io
 import tempfile
@@ -8,10 +8,11 @@ from pathlib import Path
 from unittest import mock
 
 from guiju.currency.cache import DEFAULT_STALE_LIMIT
-from guiju.currency.httpx import HttpClient
 from guiju.currency.native import NativeCurrency, NoCurrencySource
 from guiju.currency.registry import default_registry
 from guiju.errors import ComplianceDenied, SourceUnreachable
+from guiju.net.metadata import MetadataClient
+from guiju.net.throttle import Throttle
 from guiju.store.currency import DiskCurrencyCache
 from tests.currency_helpers import FakeResponse
 
@@ -34,12 +35,10 @@ class NativeDiskIntegrationTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name) / "currency"
         self.now = 1_800_000_000.0
-        self.client = HttpClient()
-        self.client.transport = mock.Mock()
+        self.client = MetadataClient(throttle=Throttle(0), transport=mock.Mock())
         self.cache = DiskCurrencyCache(self.directory, clock=lambda: self.now)
         self.native = NativeCurrency(default_registry(self.client), self.cache, clock=lambda: self.now)
-        mock.patch("guiju.currency.httpx._throttle").start()
-        mock.patch("guiju.currency.httpx.time.sleep").start()
+        mock.patch("guiju.net.metadata.time.sleep").start()
         mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")).start()
         self.addCleanup(mock.patch.stopall)
 
@@ -94,7 +93,7 @@ class NativeDiskIntegrationTest(unittest.TestCase):
     def test_primary_success_empty_stops_fallback_but_is_not_negative_cached(self):
         # ADR 0002：主源成功空仍是终局，不转备源。
         # W3/P1-4：但"没有总页数证据的空页"不是权威空结果，不许写 24h 负缓存。
-        # 每次请求都给一个新响应对象：HttpClient 会关闭 resp，复用同一个会报 closed file。
+        # 每次请求都给一个新响应对象：MetadataClient 会关闭 resp，复用同一个会报 closed file。
         self.client.transport.open.side_effect = lambda *args, **kwargs: FakeResponse(b"<html></html>", url=CSRES)
         first = self.native.query(CODE)
         self.assertEqual(first.results, ())

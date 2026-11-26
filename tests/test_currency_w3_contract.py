@@ -22,13 +22,15 @@ from guiju.currency.contract import Completeness, parse_or_fail, require_keys
 from guiju.currency.csres import CsresCurrency, parse_csres, parse_csres_page
 from guiju.currency.dbba import DbbaCurrency, parse_dbba
 from guiju.currency.fallback import FallbackCurrency
-from guiju.currency.httpx import HttpClient, _check_url
 from guiju.currency.jtst import parse_jtst
 from guiju.currency.model import Record
 from guiju.currency.native import NativeCurrency, Outcome
 from guiju.currency.registry import Registry, Route
 from guiju.currency.stdsamr import StdSamrCurrency, parse_stdsamr
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
+from guiju.net.metadata import MetadataClient
+from guiju.net.policy import MetadataPolicy
+from guiju.net.throttle import Throttle
 
 FIXTURES = Path(__file__).parent / "fixtures" / "currency"
 CODE = "GB 50011-2010"
@@ -369,8 +371,9 @@ class CsresTransportTest(OfflineTestCase):
 
     def test_both_transports_are_allowlisted_metadata_endpoints(self):
         # 传输策略不等于放宽白名单：https 与明文回退都必须是已批准端点。
-        self.assertEqual(_check_url(CsresCurrency.url), "www.csres.com")
-        self.assertEqual(_check_url("http://www.csres.com/s.jsp?keyword=GB1&pageNum=1"), "www.csres.com")
+        policy = MetadataPolicy()
+        self.assertEqual(policy.check_url(CsresCurrency.url), "www.csres.com")
+        self.assertEqual(policy.check_url("http://www.csres.com/s.jsp?keyword=GB1&pageNum=1"), "www.csres.com")
 
     def test_plaintext_downgrade_requires_explicit_opt_in(self):
         client = FakeClient(SourceUnreachable("tls 不可用"))
@@ -486,6 +489,7 @@ class JsessionIdTest(OfflineTestCase):
     """P2-17：/s.jsp;jsessionid=... 是同一个已批准端点，不能判成 40。"""
 
     def test_check_url_normalizes_session_id_and_duplicate_slashes(self):
+        policy = MetadataPolicy()
         for url in (
             "https://www.csres.com/s.jsp;jsessionid=ABC",
             "https://www.csres.com//s.jsp",
@@ -493,22 +497,20 @@ class JsessionIdTest(OfflineTestCase):
             "http://www.csres.com/s.jsp;jsessionid=ABC",
         ):
             with self.subTest(url=url):
-                self.assertEqual(_check_url(url), "www.csres.com")
+                self.assertEqual(policy.check_url(url), "www.csres.com")
         for url in (
             "https://www.csres.com/other.jsp;jsessionid=ABC",
             "https://www.csres.com/s.jsp/extra",
             "https://evil.example/s.jsp;jsessionid=ABC",
         ):
             with self.subTest(url=url), self.assertRaises(ComplianceDenied):
-                _check_url(url)
+                policy.check_url(url)
 
     def test_session_id_url_passes_client_and_final_url_check(self):
-        client = HttpClient()
-        client.transport = mock.Mock()
+        client = MetadataClient(throttle=Throttle(0), transport=mock.Mock())
         final = "https://www.csres.com/s.jsp;jsessionid=ABC"
         client.transport.open.return_value = FakeResponseFor(b"<html></html>", final)
-        with mock.patch("guiju.currency.httpx._throttle"):
-            self.assertEqual(client.get(final), b"<html></html>")
+        self.assertEqual(client.get(final), b"<html></html>")
 
 
 def FakeResponseFor(body, url):

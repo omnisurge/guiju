@@ -18,9 +18,9 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
 from ..errors import NeedsHuman, SourceUnreachable
+from ..net.metadata import MetadataClient
 from .codes import filter_by_code
 from .contract import Completeness, CompletenessMixin, page_error
-from .httpx import HttpClient
 from .model import Record
 
 SEARCH_URL = "https://www.csres.com/s.jsp"
@@ -197,8 +197,8 @@ class CsresCurrency(CompletenessMixin):
     url = SEARCH_URL
     MAX_PAGES = 5
 
-    def __init__(self, client: HttpClient | None = None, *, plaintext_fallback: bool = False) -> None:
-        self.client = client if client is not None else HttpClient()
+    def __init__(self, client: MetadataClient | None = None, *, plaintext_fallback: bool = False) -> None:
+        self.client = client if client is not None else MetadataClient()
         self.plaintext_fallback = plaintext_fallback
         self.transport = "https"
         self.plaintext_risk = ""

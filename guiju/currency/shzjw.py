@@ -7,7 +7,8 @@ from collections.abc import Callable
 from ..domain import shzjw as official
 from ..domain.shzjw import normalize_code
 from ..errors import NeedsHuman
-from .httpx import HttpClient, decode_json
+from ..net.metadata import MetadataClient
+from .jsonutil import decode_json
 from .model import QueryCancelled, Record
 
 # DG/TJ08、DBJT08、DB31/T 有既有识别/样例；其余08形式按上海历史家族保守预留。
@@ -89,8 +90,8 @@ class ShzjwCurrency:
     cache_namespace = "shzjw:official-single-v2:strict-code-all-base-versions"
     matches = staticmethod(matches)
 
-    def __init__(self, client: HttpClient | None = None, *, cancelled: Callable[[], bool] | None = None) -> None:
-        self.client = client if client is not None else HttpClient()
+    def __init__(self, client: MetadataClient | None = None, *, cancelled: Callable[[], bool] | None = None) -> None:
+        self.client = client if client is not None else MetadataClient()
         self.cancelled = cancelled
 
     def _check(self) -> None:

@@ -8,9 +8,9 @@ from dataclasses import asdict
 from pathlib import Path
 from unittest import mock
 
-from guiju.currency.httpx import HttpClient
 from guiju.currency.stdsamr import SEARCH_URL, StdSamrCurrency, parse_stdsamr, status_stdsamr, strip_tags
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
+from guiju.net.metadata import MetadataClient
 
 FIXTURE = Path(__file__).parent / "fixtures" / "currency" / "stdsamr_gbt19001.json"
 # 人工照录旧 stdsamr_test.go 与原始响应；包括不属于查询号族的行，不能拿第一条当答案。
@@ -84,7 +84,7 @@ class StdSamrGoldenTest(OfflineTestCase):
                     self.assertEqual(getattr(record, field), value)
 
     def test_golden_lookup_uses_search_text_and_std_samr_source(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.get.return_value = FIXTURE.read_bytes()
         source = StdSamrCurrency(client)
         self.assertEqual(source.name, "std_samr")
@@ -189,14 +189,14 @@ class StdSamrParseTest(OfflineTestCase):
 
 class StdSamrLookupTest(OfflineTestCase):
     def test_blank_query_never_requests(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         for code in ("", " \t\n"):
             self.assertEqual(StdSamrCurrency(client).lookup(code), [])
         client.get.assert_not_called()
         client.post_form.assert_not_called()
 
     def test_old_year_retries_base_once_and_keeps_record_own_status(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.get.side_effect = [response(), response({"C_STD_CODE": "GB/T 19001-2016", "STATE": "现行"})]
         records = StdSamrCurrency(client).lookup("GB/T 19001-2008")
         self.assertEqual([(r.code, r.status) for r in records], [("GB/T 19001-2016", "current")])
@@ -204,28 +204,28 @@ class StdSamrLookupTest(OfflineTestCase):
         self.assertEqual(records[0].replaces, "")
 
     def test_fuzzy_first_response_must_be_filtered_before_fallback(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.get.side_effect = [FIXTURE.read_bytes(), response({"C_STD_CODE": "GB/T 19001-2016", "STATE": "未知词"})]
         records = StdSamrCurrency(client).lookup("GB/T 19001-2008")
         self.assertEqual([(r.code, r.status) for r in records], [("GB/T 19001-2016", "unknown")])
         self.assertEqual(self.terms(client), ["GB/T 19001-2008", "GB/T 19001"])
 
     def test_same_family_first_response_does_not_repeat(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.get.return_value = response({"C_STD_CODE": "GB 19001-2016", "STATE": "现行"}, {"C_STD_CODE": "GB/T 19002-2018"})
         self.assertEqual([r.code for r in StdSamrCurrency(client).lookup("GB/T 19001-2008")], ["GB 19001-2016"])
         client.get.assert_called_once()
 
     def test_no_year_requests_once_old_year_requests_at_most_twice(self):
         for code, terms in (("GB/T 19001", ["GB/T 19001"]), ("GB/T 19001-2008", ["GB/T 19001-2008", "GB/T 19001"])):
-            client = mock.Mock(spec=HttpClient)
+            client = mock.Mock(spec=MetadataClient)
             client.get.return_value = response()
             with self.subTest(code=code):
                 self.assertEqual(StdSamrCurrency(client).lookup(code), [])
                 self.assertEqual(self.terms(client), terms)
 
     def test_user_text_cannot_inject_query_parameters(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.get.return_value = response()
         code = "GB/T 19001（年版）&state=现行#尾"
         self.assertEqual(StdSamrCurrency(client).lookup(code), [])
@@ -238,7 +238,7 @@ class StdSamrLookupTest(OfflineTestCase):
 
     def test_failures_propagate_without_base_retry(self):
         for error in (SourceUnreachable("offline"), ComplianceDenied("stop"), NeedsHuman("std_samr bad JSON")):
-            client = mock.Mock(spec=HttpClient)
+            client = mock.Mock(spec=MetadataClient)
             client.get.side_effect = error
             with self.subTest(error=type(error).__name__), self.assertRaises(type(error)) as ctx:
                 StdSamrCurrency(client).lookup("GB/T 19001-2008")
@@ -253,7 +253,7 @@ class StdSamrLookupTest(OfflineTestCase):
         })
 
     def test_decode_failure_does_not_fall_back_or_refetch(self):
-        client = mock.Mock(spec=HttpClient)
+        client = mock.Mock(spec=MetadataClient)
         client.get.return_value = b"{"
         with self.assertRaises(NeedsHuman):
             StdSamrCurrency(client).lookup("GB/T 19001-2008")

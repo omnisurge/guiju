@@ -1,11 +1,10 @@
-"""A1：元数据出口的限速必须对并发线程生效（与 compliance 同一模式）。"""
+"""A1：元数据出口的限速必须对并发线程生效。"""
 
 import contextlib
 import threading
 import unittest
-from unittest import mock
 
-from guiju.currency import httpx
+from guiju.net.throttle import Throttle
 
 
 class _SyncDict(dict):
@@ -27,26 +26,18 @@ class _SyncDict(dict):
 
 class CurrencyThrottleTest(unittest.TestCase):
     def setUp(self):
-        self.addCleanup(mock.patch.stopall)
-        self.original_last = httpx.default_throttle()._last
-        mock.patch.object(httpx, "MIN_INTERVAL", 0.5).start()
         self.sleeps = []
-        mock.patch.object(httpx.time, "sleep", lambda s: self.sleeps.append(round(s, 3))).start()
-
-    def tearDown(self):
-        httpx.default_throttle()._last = self.original_last
-        httpx.default_throttle()._last.clear()
+        self.throttle = Throttle(min_interval=0.5, sleep=lambda s: self.sleeps.append(round(s, 3)))
 
     def test_serial_calls_wait(self):
-        httpx.default_throttle()._last.clear()
-        httpx._throttle("www.csres.com")
-        httpx._throttle("www.csres.com")
+        self.throttle.wait("www.csres.com")
+        self.throttle.wait("www.csres.com")
         self.assertEqual(len(self.sleeps), 1)
         self.assertGreaterEqual(self.sleeps[0], 0.4)
 
     def test_concurrent_calls_are_serialized(self):
-        httpx.default_throttle()._last = _SyncDict()
-        threads = [threading.Thread(target=httpx._throttle, args=("www.csres.com",)) for _ in range(2)]
+        self.throttle._last = _SyncDict()
+        threads = [threading.Thread(target=self.throttle.wait, args=("www.csres.com",)) for _ in range(2)]
         for thread in threads:
             thread.start()
         for thread in threads:

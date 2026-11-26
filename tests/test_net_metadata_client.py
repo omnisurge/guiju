@@ -8,8 +8,11 @@ import urllib.request
 from unittest import mock
 
 from guiju._version import __version__
-from guiju.currency import httpx
+from guiju.currency import jsonutil
 from guiju.errors import ComplianceDenied, NeedsHuman, SourceUnreachable
+from guiju.net import metadata as net_metadata
+from guiju.net.metadata import MAX_RESPONSE_BYTES, UA, MetadataClient
+from guiju.net.throttle import Throttle
 from tests.currency_helpers import URL, FakeResponse, real_response
 from tests.net_harness import build_metadata_opener, metadata_redirect
 
@@ -18,12 +21,11 @@ def status_error(status, body=b"temporary error"):
     return urllib.error.HTTPError(URL, status, "upstream error", {}, io.BytesIO(body))
 
 
-class HttpClientTest(unittest.TestCase):
+class MetadataClientTest(unittest.TestCase):
     def setUp(self):
-        self.client = httpx.HttpClient()
-        self.client.transport = mock.Mock()
-        self.sleep = mock.patch.object(httpx.time, "sleep").start()
-        self.throttle = mock.patch.object(httpx, "_throttle").start()
+        self.throttle = mock.Mock()
+        self.client = MetadataClient(throttle=self.throttle, transport=mock.Mock())
+        self.sleep = mock.patch.object(net_metadata.time, "sleep").start()
         self.no_socket = mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")).start()
         self.addCleanup(mock.patch.stopall)
 
@@ -33,22 +35,22 @@ class HttpClientTest(unittest.TestCase):
         self.assertEqual(self.client.get(URL), b"<html>ok</html>")
         req = self.client.transport.open.call_args.args[0]
         self.assertEqual(req.get_method(), "GET")
-        self.assertEqual(req.get_header("User-agent"), httpx.UA)
-        self.assertTrue(httpx.UA.isascii())
-        self.assertIn("guiju/" + __version__, httpx.UA)
+        self.assertEqual(req.get_header("User-agent"), UA)
+        self.assertTrue(UA.isascii())
+        self.assertIn("guiju/" + __version__, UA)
         self.assertEqual(req.get_header("Accept"), "text/html,application/xhtml+xml")
         self.assertEqual(self.client.transport.open.call_args.kwargs, {"timeout": 25.0})
-        self.assertEqual(resp.read_sizes, [httpx.MAX_RESPONSE_BYTES + 1, httpx.MAX_RESPONSE_BYTES + 1 - 15])
+        self.assertEqual(resp.read_sizes, [MAX_RESPONSE_BYTES + 1, MAX_RESPONSE_BYTES + 1 - 15])
         self.assertTrue(resp.closed)
         self.sleep.assert_not_called()
 
     def test_timeout_is_configurable_but_must_be_positive_and_finite(self):
-        self.assertEqual(httpx.HttpClient(timeout=0.1).timeout, 0.1)
+        self.assertEqual(MetadataClient(timeout=0.1).timeout, 0.1)
         for timeout in (0, -1, float("inf"), float("nan")):
             with self.subTest(timeout=timeout), self.assertRaises(ValueError):
-                httpx.HttpClient(timeout=timeout)
-        with httpx.HttpClient() as client:
-            self.assertIsInstance(client, httpx.HttpClient)
+                MetadataClient(timeout=timeout)
+        with MetadataClient() as client:
+            self.assertIsInstance(client, MetadataClient)
             client.close()
 
     def test_500_then_200_retries_once(self):
@@ -58,7 +60,7 @@ class HttpClientTest(unittest.TestCase):
         self.assertEqual(self.client.transport.open.call_count, 2)
         self.sleep.assert_called_once_with(0.5)
         self.assertTrue(err.closed)
-        self.assertEqual(self.throttle.call_count, 2)
+        self.assertEqual(self.throttle.wait.call_count, 2)
 
     def test_502_exhausts_exactly_three_attempts(self):
         self.client.transport.open.side_effect = [status_error(502) for _ in range(3)]
@@ -223,11 +225,11 @@ class HttpClientTest(unittest.TestCase):
         self.sleep.assert_not_called()
 
     def test_response_size_is_bounded_and_not_retried(self):
-        resp = FakeResponse(b"x" * (httpx.MAX_RESPONSE_BYTES + 10))
+        resp = FakeResponse(b"x" * (MAX_RESPONSE_BYTES + 10))
         self.client.transport.open.return_value = resp
         with self.assertRaises(NeedsHuman):
             self.client.get(URL)
-        self.assertEqual(resp.read_sizes, [httpx.MAX_RESPONSE_BYTES + 1])
+        self.assertEqual(resp.read_sizes, [MAX_RESPONSE_BYTES + 1])
         self.client.transport.open.assert_called_once()
         self.assertTrue(resp.closed)
 
@@ -240,21 +242,21 @@ class HttpClientTest(unittest.TestCase):
 
 class RedirectAndThrottleTest(unittest.TestCase):
     def test_redirect_checks_every_target_before_following(self):
-        handler = metadata_redirect()
-        req = urllib.request.Request(URL, headers={"User-Agent": httpx.UA})
-        with mock.patch.object(httpx, "_throttle") as throttle:
-            redirect = handler.redirect_request(req, None, 302, "Found", {}, "/s.jsp?keyword=GB1")
-            self.assertEqual(redirect.full_url, "http://www.csres.com/s.jsp?keyword=GB1")
-            throttle.assert_called_once_with("www.csres.com")
-            for target in ("https://evil.example/s.jsp", "/standard/1.pdf", "//evil.example/s.jsp"):
-                with self.subTest(target=target), self.assertRaises(ComplianceDenied):
-                    handler.redirect_request(redirect, None, 302, "Found", {}, target)
-            self.assertEqual(throttle.call_count, 1)
+        throttle = mock.Mock()
+        handler = metadata_redirect(throttle)
+        req = urllib.request.Request(URL, headers={"User-Agent": UA})
+        redirect = handler.redirect_request(req, None, 302, "Found", {}, "/s.jsp?keyword=GB1")
+        self.assertEqual(redirect.full_url, "http://www.csres.com/s.jsp?keyword=GB1")
+        throttle.wait.assert_called_once_with("www.csres.com")
+        for target in ("https://evil.example/s.jsp", "/standard/1.pdf", "//evil.example/s.jsp"):
+            with self.subTest(target=target), self.assertRaises(ComplianceDenied):
+                handler.redirect_request(redirect, None, 302, "Found", {}, target)
+        self.assertEqual(throttle.wait.call_count, 1)
         self.assertEqual(handler.max_redirections, 5)
 
     def test_csres_error_page_redirect_is_source_unreachable_for_fallback(self):
         handler = metadata_redirect()
-        req = urllib.request.Request(URL, headers={"User-Agent": httpx.UA})
+        req = urllib.request.Request(URL, headers={"User-Agent": UA})
         for target in ("/error/noright.html", "/error/noright.html;jsessionid=abc.wwwcsres"):
             with self.subTest(target=target), self.assertRaises(SourceUnreachable):
                 handler.redirect_request(req, None, 302, "Found", {}, target)
@@ -263,8 +265,8 @@ class RedirectAndThrottleTest(unittest.TestCase):
         for status in (301, 302, 303, 307, 308):
             first = real_response(
                 f"HTTP/1.1 {status} Found\r\nLocation: /s.jsp?keyword=GB1\r\n"
-                f"Content-Type: text/html\r\nContent-Length: {httpx.MAX_RESPONSE_BYTES + 100}\r\n\r\n".encode()
-                + b"x" * (httpx.MAX_RESPONSE_BYTES + 100)
+                f"Content-Type: text/html\r\nContent-Length: {MAX_RESPONSE_BYTES + 100}\r\n\r\n".encode()
+                + b"x" * (MAX_RESPONSE_BYTES + 100)
             )
             first.read = mock.Mock(wraps=first.read)
             last = real_response(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 4\r\n\r\ntest")
@@ -274,16 +276,15 @@ class RedirectAndThrottleTest(unittest.TestCase):
                 def http_open(self, req, replies=replies):
                     return next(replies)
 
-            client = httpx.HttpClient()
-            client.transport = build_metadata_opener(MemoryTransport())
-            with self.subTest(status=status), mock.patch.object(httpx, "_throttle"), \
+            client = MetadataClient(throttle=Throttle(0), transport=build_metadata_opener(MemoryTransport()))
+            with self.subTest(status=status), \
                     mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")):
                 self.assertEqual(client.get(URL), b"test")
                 first.read.assert_called_once_with(65536)
                 self.assertTrue(first.closed)
 
     def test_real_opener_redirect_attachment_is_denied_without_read_or_follow(self):
-        body = b"%PDF-" + b"x" * (httpx.MAX_RESPONSE_BYTES + 100)
+        body = b"%PDF-" + b"x" * (MAX_RESPONSE_BYTES + 100)
         first = real_response(
             b"HTTP/1.1 302 Found\r\nLocation: /s.jsp?keyword=GB1\r\nContent-Type: application/pdf\r\n"
             b"Content-Disposition: attachment; filename=code.pdf\r\n"
@@ -297,10 +298,8 @@ class RedirectAndThrottleTest(unittest.TestCase):
                 calls.append(req)
                 return first
 
-        client = httpx.HttpClient()
-        client.transport = build_metadata_opener(MemoryTransport())
-        with mock.patch.object(httpx, "_throttle"), \
-                mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")), \
+        client = MetadataClient(throttle=Throttle(0), transport=build_metadata_opener(MemoryTransport()))
+        with mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")), \
                 self.assertRaises(ComplianceDenied):
             client.get(URL)
         self.assertEqual(len(calls), 1)
@@ -321,9 +320,8 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     calls.append(req)
                     return first
 
-            client = httpx.HttpClient()
-            client.transport = build_metadata_opener(MemoryTransport())
-            with self.subTest(body=body), mock.patch.object(httpx, "_throttle"), \
+            client = MetadataClient(throttle=Throttle(0), transport=build_metadata_opener(MemoryTransport()))
+            with self.subTest(body=body), \
                     mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")), \
                     self.assertRaises(ComplianceDenied):
                 client.get(URL)
@@ -343,9 +341,8 @@ class RedirectAndThrottleTest(unittest.TestCase):
                 calls.append(req)
                 return first
 
-        client = httpx.HttpClient()
-        client.transport = build_metadata_opener(MemoryTransport())
-        with mock.patch.object(httpx, "_throttle"), self.assertRaises(SourceUnreachable) as ctx:
+        client = MetadataClient(throttle=Throttle(0), transport=build_metadata_opener(MemoryTransport()))
+        with self.assertRaises(SourceUnreachable) as ctx:
             client.get(URL)
         self.assertIn("响应截断", str(ctx.exception))
         self.assertEqual(len(calls), 1)
@@ -363,9 +360,11 @@ class RedirectAndThrottleTest(unittest.TestCase):
                 )
 
         handler = metadata_redirect()
-        client = httpx.HttpClient()
-        client.transport = build_metadata_opener(MemoryTransport(), handler=handler)
-        with mock.patch.object(httpx, "_throttle"), self.assertRaises(SourceUnreachable) as ctx:
+        client = MetadataClient(
+            throttle=Throttle(0),
+            transport=build_metadata_opener(MemoryTransport(), handler=handler),
+        )
+        with self.assertRaises(SourceUnreachable) as ctx:
             client.get(URL)
         self.assertEqual(ctx.exception.exit, 20)
         self.assertLessEqual(len(calls), handler.max_redirections + 1)
@@ -383,9 +382,8 @@ class RedirectAndThrottleTest(unittest.TestCase):
                     calls.append(req)
                     return first
 
-            client = httpx.HttpClient()
-            client.transport = build_metadata_opener(MemoryTransport())
-            with self.subTest(location=location), mock.patch.object(httpx, "_throttle"), \
+            client = MetadataClient(throttle=Throttle(0), transport=build_metadata_opener(MemoryTransport()))
+            with self.subTest(location=location), \
                     mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")), \
                     self.assertRaises(error):
                 client.get(URL)
@@ -394,29 +392,25 @@ class RedirectAndThrottleTest(unittest.TestCase):
             self.assertTrue(first.closed)
 
     def test_throttle_never_shortens_host_interval(self):
-        with (
-            mock.patch.dict(httpx.default_throttle()._last, {}, clear=True),
-            mock.patch.object(httpx.time, "monotonic", side_effect=[10.0, 10.0, 10.3, 11.2, 20.0, 20.0]),
-            mock.patch.object(httpx.time, "sleep") as sleep,
-        ):
-            httpx._throttle("www.csres.com")
-            httpx._throttle("www.csres.com")
-            httpx._throttle("other-host")
-            sleep.assert_called_once()
-            self.assertAlmostEqual(sleep.call_args.args[0], 0.9)
-            self.assertEqual(httpx.MIN_INTERVAL, 1.2)
+        ticks = iter([10.0, 10.0, 10.3, 11.2, 20.0, 20.0])
+        sleeps: list[float] = []
+        throttle = Throttle(clock=lambda: next(ticks), sleep=sleeps.append)
+        throttle.wait("www.csres.com")
+        throttle.wait("www.csres.com")
+        throttle.wait("other-host")
+        self.assertEqual(len(sleeps), 1)
+        self.assertAlmostEqual(sleeps[0], 0.9)
+        self.assertEqual(throttle.min_interval, 1.2)
 
 
-class M2HttpClientTest(unittest.TestCase):
+class M2MetadataClientTest(unittest.TestCase):
     CCSN = "https://www.ccsn.org.cn/newweb/api/StandardQuery.assx/queryStandard"
     SAMR = "https://std.samr.gov.cn/gb/search/gbQueryPage"
     DBBA = "https://dbba.sacinfo.org.cn/stdQueryList"
 
     def setUp(self):
-        self.client = httpx.HttpClient()
-        self.client.transport = mock.Mock()
-        self.sleep = mock.patch.object(httpx.time, "sleep").start()
-        mock.patch.object(httpx, "_throttle").start()
+        self.client = MetadataClient(throttle=Throttle(0), transport=mock.Mock())
+        self.sleep = mock.patch.object(net_metadata.time, "sleep").start()
         mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")).start()
         self.addCleanup(mock.patch.stopall)
 
@@ -444,7 +438,7 @@ class M2HttpClientTest(unittest.TestCase):
                 self.assertEqual(req.get_header("Content-type"), "application/x-www-form-urlencoded")
                 self.assertEqual(urllib.parse.parse_qs(req.data.decode("ascii")),
                                  {"key": ["DB31/T 792-2015"], "备注": ["中文"]})
-                self.assertEqual(req.get_header("User-agent"), httpx.UA)
+                self.assertEqual(req.get_header("User-agent"), UA)
 
     def test_post_retry_rebuilds_identical_query_body(self):
         self.client.transport.open.side_effect = [status_error(503), self.response(self.CCSN)]
@@ -494,21 +488,26 @@ class M2HttpClientTest(unittest.TestCase):
             self.client.get(self.SAMR, accept="application/json")
 
     def test_json_structure_helpers_are_strict_but_preserve_go_null_zero_values(self):
-        from guiju.errors import NeedsHuman
-
-        self.assertEqual(httpx.json_rows({}, "rows", "test"), [])
-        self.assertEqual(httpx.json_rows({"rows": [None]}, "rows", "test"), [{}])
-        self.assertEqual(httpx.json_string({"x": None}, "x", "test"), "")
-        self.assertEqual(httpx.json_int({}, "x", "test"), 0)
+        self.assertEqual(jsonutil.json_rows({}, "rows", "test"), [])
+        self.assertEqual(jsonutil.json_rows({"rows": [None]}, "rows", "test"), [{}])
+        self.assertEqual(jsonutil.json_string({"x": None}, "x", "test"), "")
+        self.assertEqual(jsonutil.json_int({}, "x", "test"), 0)
         for raw in (b"[]", b"null", b"{bad", b'{"x":NaN}', b"\xff"):
             with self.subTest(raw=raw), self.assertRaises(NeedsHuman):
-                httpx.decode_json("test", raw)
+                jsonutil.decode_json("test", raw)
         for value in (True, 1.5, "2", 2**63):
             with self.subTest(value=value), self.assertRaises(NeedsHuman):
-                httpx.json_int({"x": value}, "x", "test")
+                jsonutil.json_int({"x": value}, "x", "test")
         for value in (True, 1, []):
             with self.subTest(value=value), self.assertRaises(NeedsHuman):
-                httpx.json_string({"x": value}, "x", "test")
+                jsonutil.json_string({"x": value}, "x", "test")
+        self.assertIsNone(jsonutil.json_flag({}, "x", "test"))
+        self.assertIs(jsonutil.json_flag({"x": True}, "x", "test"), True)
+        self.assertIs(jsonutil.json_flag({"x": 0}, "x", "test"), False)
+        self.assertIs(jsonutil.json_flag({"x": 1}, "x", "test"), True)
+        for value in ("true", 2, -1, 1.0):
+            with self.subTest(flag=value), self.assertRaises(NeedsHuman):
+                jsonutil.json_flag({"x": value}, "x", "test")
 
     def test_deep_json_source_shape_is_needs_human_not_recursion_error(self):
         from guiju.currency.ccsn import parse_ccsn
@@ -534,8 +533,7 @@ class M2HttpClientTest(unittest.TestCase):
                     response.geturl = lambda url=req.full_url: url
                     return response
 
-            client = httpx.HttpClient()
-            client.transport = build_metadata_opener(MemoryTransport())
+            client = MetadataClient(throttle=Throttle(0), transport=build_metadata_opener(MemoryTransport()))
             with self.subTest(status=status):
                 self.assertEqual(client.post_form(self.CCSN, {"gjz": "50011"}), b"{}")
                 self.assertEqual(len(requests), 2)
@@ -552,10 +550,8 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
     URL = "https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWebApi/external/localStandard/list"
 
     def setUp(self):
-        self.client = httpx.HttpClient()
-        self.client.transport = mock.Mock()
-        mock.patch.object(httpx, "_throttle").start()
-        mock.patch.object(httpx.time, "sleep").start()
+        self.client = MetadataClient(throttle=Throttle(0), transport=mock.Mock())
+        mock.patch.object(net_metadata.time, "sleep").start()
         mock.patch("socket.create_connection", side_effect=AssertionError("不应真实联网")).start()
         self.addCleanup(mock.patch.stopall)
 
@@ -574,14 +570,14 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
         self.assertEqual(req.get_header("Origin"), "https://bzjg.zjw.sh.gov.cn:9175")
         self.assertEqual(req.get_header("Referer"), "https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWeb/pc/")
         self.assertEqual(req.get_header("Accept"), "application/json")
-        self.assertEqual(req.get_header("User-agent"), httpx.UA)
+        self.assertEqual(req.get_header("User-agent"), UA)
         self.assertTrue(req.get_header("User-agent").isascii())
         self.assertTrue(response.closed)
 
     def test_no_port_scheme_file_or_foreign_endpoint_expansion(self):
         for url in (self.URL.replace(":9175", ""), self.URL.replace(":9175", ":443"),
                     self.URL.replace("https:", "http:"), self.URL.replace("/external/localStandard/list", "/api/files/webDownload"),
-                    "https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWeb/pc/", M2HttpClientTest.CCSN):
+                    "https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWeb/pc/", M2MetadataClientTest.CCSN):
             with self.subTest(url=url), self.assertRaises(ComplianceDenied):
                 self.client.post_json(url, {})
         self.client.transport.open.assert_not_called()
@@ -626,8 +622,7 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
                     response.geturl = lambda url=req.full_url: url
                     return response
 
-            client = httpx.HttpClient()
-            client.transport = build_metadata_opener(MemoryTransport())
+            client = MetadataClient(throttle=Throttle(0), transport=build_metadata_opener(MemoryTransport()))
             with self.subTest(status=status):
                 if status in (307, 308):
                     self.assertEqual(client.post_json(self.URL, {"condition": "DG/TJ08-2007"}), b"{}")
@@ -645,7 +640,7 @@ class ShanghaiJsonTransportTest(unittest.TestCase):
     def test_redirects_cannot_go_to_other_source_port_or_download(self):
         handler = metadata_redirect()
         req = urllib.request.Request(self.URL, data=b"{}", method="POST")
-        for target in (M2HttpClientTest.SAMR, self.URL.replace(":9175", ":443"),
+        for target in (M2MetadataClientTest.SAMR, self.URL.replace(":9175", ":443"),
                        self.URL.replace("/external/localStandard/list", "/api/files/webDownload")):
             response = FakeResponse(b"not read", url=self.URL)
             with self.subTest(target=target), self.assertRaises(ComplianceDenied):

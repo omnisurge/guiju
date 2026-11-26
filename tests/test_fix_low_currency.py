@@ -1,6 +1,6 @@
 """Low 修复项回归测试：currency 域（L1-L8 + 上轮遗留）。
 
-全部离线：不联网、不读真实凭据；用假 HttpClient / 打桩 urlopen。
+全部离线：不联网、不读真实凭据；用假 MetadataClient / 打桩 urlopen。
 
 覆盖：
   L1  裸 DB31（非 /T）进上海路由；DB31/… 仍被拒，不走 DB 外源
@@ -32,7 +32,6 @@ from guiju.currency.cache import CACHE_NAMESPACE, DEFAULT_TTL, CacheEntry
 from guiju.currency.csres import CsresCurrency, parse_csres
 from guiju.currency.dbba import DbbaCurrency
 from guiju.currency.fallback import FallbackCurrency
-from guiju.currency.httpx import HttpClient
 from guiju.currency.jtst import JtstCurrency, parse_jtst
 from guiju.currency.model import QueryCancelled, Record
 from guiju.currency.native import NativeCurrency, NoCurrencyRecord, NoCurrencySource
@@ -40,6 +39,9 @@ from guiju.currency.registry import Registry, Route, default_registry
 from guiju.currency.shzjw import _valid_query, is_shanghai_code, normalize_code
 from guiju.currency.stdsamr import StdSamrCurrency
 from guiju.errors import ComplianceDenied, GuijuError, NeedsHuman, NotIndexed, SourceUnreachable
+from guiju.net.endpoints import DEFAULT_METADATA_FORM_HOSTS
+from guiju.net.metadata import MetadataClient
+from guiju.net.throttle import Throttle
 
 CODE = "GB 1-2000"
 NOW = 10_000_000.0
@@ -469,8 +471,9 @@ class R4FormPostRegistryDrivenTest(unittest.TestCase):
 
     def test_default_registry_flags_ccsn_and_dbba_only(self):
         reg = default_registry()
-        self.assertTrue(reg.form_post_for_host("www.ccsn.org.cn"))
-        self.assertTrue(reg.form_post_for_host("dbba.sacinfo.org.cn"))
+        self.assertEqual(DEFAULT_METADATA_FORM_HOSTS, frozenset({"www.ccsn.org.cn", "dbba.sacinfo.org.cn"}))
+        for host in DEFAULT_METADATA_FORM_HOSTS:
+            self.assertTrue(reg.form_post_for_host(host))
         for host in ("www.csres.com", "std.samr.gov.cn", "jtst.mot.gov.cn",
                      "bzjg.zjw.sh.gov.cn", "unlisted.example.org"):
             with self.subTest(host=host):
@@ -487,17 +490,20 @@ class R4FormPostRegistryDrivenTest(unittest.TestCase):
         self.assertFalse(reg2.form_post_for_host("www.csres.com"))
 
     def test_registered_form_host_passes_gate_and_posts(self):
-        client = HttpClient()
-        with mock.patch.object(client._client, "post_form", return_value=b"{}") as req:
+        client = MetadataClient(throttle=Throttle(0))
+        with mock.patch.object(client, "_request", return_value=b"{}") as req:
             client.post_form("https://www.ccsn.org.cn/newweb/api/StandardQuery.assx/queryStandard",
                              {"key": "GB 50011"})
         req.assert_called_once()
 
     def test_non_form_host_keeps_original_deny_and_get_unaffected(self):
-        client = HttpClient()
+        client = MetadataClient(throttle=Throttle(0))
         # 非 form_post 端点：仍走拒发分支（GET 行为不变，不打上游即可验证）
         with self.assertRaises(ComplianceDenied):
             client.post_form("https://www.csres.com/s.jsp", {"key": "GB 50011"})
+        with self.assertRaises(ComplianceDenied):
+            client.post_form("https://bzjg.zjw.sh.gov.cn:9175/JGBStandardWebApi/external/localStandard/list",
+                             {"key": "DG/TJ08-2007"})
         with self.assertRaises(ComplianceDenied):
             client.post_form("https://bzjg.zjw.sh.gov.cn/JGBStandardWebApi/external/localStandard/list",
                              {"key": "DG/TJ08-2007"})

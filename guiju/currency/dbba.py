@@ -6,9 +6,10 @@ import warnings
 from datetime import datetime, timedelta, timezone
 
 from ..errors import NeedsHuman
+from ..net.metadata import MetadataClient
 from .codes import query_with_base_fallback
 from .contract import Completeness, CompletenessMixin, json_error, parse_or_fail, require_keys
-from .httpx import HttpClient, decode_json, json_int, json_rows, json_string
+from .jsonutil import decode_json, json_int, json_rows, json_string
 from .model import Record
 
 SEARCH_URL = "https://dbba.sacinfo.org.cn/stdQueryList"
@@ -69,8 +70,8 @@ class DbbaCurrency(CompletenessMixin):
     name = "dbba"
     url = SEARCH_URL
 
-    def __init__(self, client: HttpClient | None = None) -> None:
-        self.client = client if client is not None else HttpClient()
+    def __init__(self, client: MetadataClient | None = None) -> None:
+        self.client = client if client is not None else MetadataClient()
         self._completeness = Completeness()
 
     def close(self) -> None:

@@ -1,6 +1,6 @@
 """Medium 修复项回归测试：currency + ccsn 域（M1/M11/M12b/M18/M19/M20/M22；原 M7 mcp 测试随 spec-currency 退役移除）。
 
-全部离线：不联网、不读真实凭据；用假 HttpClient / 打桩 urlopen。
+全部离线：不联网、不读真实凭据；用假 MetadataClient / 打桩 urlopen。
 """
 
 import json

@@ -88,11 +88,21 @@ class MetadataClient:
         """Compatibility hook; MetadataClient owns no persistent connection."""
         return None
 
+    def __enter__(self) -> MetadataClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     def get(self, url: str, *, accept: str | None = "text/html,application/xhtml+xml") -> bytes:
         return self._request(url, method="GET", accept=accept)
 
     def post_form(self, url: str, fields: dict[str, str], *, accept: str | None = "application/json") -> bytes:
-        self.policy.check_url(url)
+        try:
+            self.policy.check_form_url(url)
+        except ComplianceDenied:
+            self._emit(url, None, None, "blocked", attempts=1)
+            raise
         data = urllib.parse.urlencode(fields).encode("ascii")
         return self._request(url, method="POST", data=data, accept=accept)
 
