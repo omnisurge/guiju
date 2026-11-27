@@ -1,5 +1,11 @@
 # 变更记录
 
+## Unreleased
+
+> 目标版本：1.5.0（开发准备中，详见 `docs/spec-1.5.0.md` 与 ADR 0008）。
+
+- S0：切出 `feat/v1.5.0`（基线 `main` @ `dc13268`），新增 [ADR 0008](docs/adr/0008-agent-skills-and-usage-decoupling.md) 与 [docs/spec-1.5.0.md](docs/spec-1.5.0.md)，规划「开发态约束/技能 vs 产品使用态契约/通用 Agent Skills」正式解耦、包内使用态资产 `guiju/agent_assets/` 与显式导出命令 `guiju agent`（零安装期静默写盘，通用于任意 agent/harness）。
+
 ## 1.4.0 — 2026-11-27（1.4.0 正式发布）
 
 - **标准图集有效期与替代关系校验（ADR 0007 / S1–S2）**：
