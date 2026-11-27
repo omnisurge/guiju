@@ -1,6 +1,6 @@
 # guiju v1.5.0 迭代规格（Spec）
 
-- 状态：**准备就绪（2026-11-27，S0 已按 B1–B4 与 R1–R4 完成修订；待所有者审阅复查放行后进入 S1）**
+- 状态：**S1 施工中（2026-11-27，ADR 0008 已接受）**
 - 分支：`feat/v1.5.0`
 - 基线：`main` @ `dc13268`（`v1.4.0` 正式版）
 - 目标版本：`1.5.0`
@@ -50,7 +50,7 @@
   1. 更新 `guiju/mcp.py`：`initialize` 响应运行期直接从 `contract.md` 标记区间提取并返回 `instructions`（不改动 MCP 工具逻辑，MCP 永不返回 `11`）；
   2. 新增跨 5 处消费方可见输出（`agent_assets/*` 与拼装 `SKILL.md`、`initialize.instructions`、`TOOLS` 描述、`guiju --help`、`hint`）的内容级词法/相对死链守卫测试；
   3. 新增 `set(EXIT_TABLE.keys()) | {EXIT_INTERNAL} == codes_in(README.md) == codes_in(contract.md)` 退出码集合一致测试，更新 `tests/test_hygiene.py` 相关文档与契约卫生校验；
-  4. 扩展 `scripts/check-release.py --artifacts` 增加真实 wheel 路径白/黑名单检验（确认含 `guiju/agent_assets/` 且绝不含根 `AGENTS.md`/`.agents/`/`docs/`/`scripts/`/`tests/`）及 `history_hashes.json` 必须包含当前 `__version__` 且哈希等于运行时派生资产哈希校验；
+  4. 扩展 `scripts/check-release.py --artifacts` 增加真实 wheel 路径白/黑名单检验（确认含 `guiju/agent_assets/` 且绝不含根 `AGENTS.md`/`.agents/`/`docs/`/`scripts/`/`tests/`）及 `history_hashes.json` 必须包含当前 `__version__` 且哈希等于运行时派生资产哈希校验；并自已发布历史 tag（`>= v1.5.0`）取回对应 `contract.md` 与 `skill_frontmatter.yaml` 重新派生哈希，逐条核对 `history_hashes.json` 已发布历史条目只增不改；
   5. 按 `.agents/skills/red-team-review/SKILL.md` 执行全量红队代码审查与修复复查。
 
 ### S4 · `v1.5.0` 冻结、验收、产物构建、本地与 hk 演练及发布
@@ -61,7 +61,7 @@
 
 ## 三、进度跟踪清单
 
-- [x] **S0**：`feat/v1.5.0` 基线、ADR 0008（按 B1–B4 与 R1–R4 完成修订，待复查放行）、`spec-1.5.0.md`、`CHANGELOG.md` `Unreleased` 与索引登记
+- [x] **S0**：`feat/v1.5.0` 基线、ADR 0008（按 B1–B4 与 R1–R4 定稿并已接受）、`spec-1.5.0.md`、`CHANGELOG.md` `Unreleased` 与索引登记
 - [ ] **S1**：`guiju/agent_assets/` 唯一真源、指针页、`EXIT_CONFLICT = 11`（+`README.md` 补 `34`/`11`）、`domain/agent_assets.py` 纯状态机与 `store/agent_receipts.py` 持久化/锁
 - [ ] **S2**：`guiju/application/agent.py`、CLI `guiju agent` 与全场景单测
 - [ ] **S3**：MCP `initialize.instructions` 运行时直读、5 处内容级净化/SSOT 守卫、`test_hygiene.py`/`check-release.py` 扩展与红队审查

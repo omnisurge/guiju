@@ -1,6 +1,6 @@
 # ADR 0008 · 开发态与使用态 Agent 约束/技能解耦及跨 Harness 分发
 
-- 状态：**提议中（待所有者审阅复查通过后启动 S1）**（2026-11-27 修订）
+- 状态：**已接受（2026-11-27）**
 - 决策人：所有者
 - 触发：`v1.4.0` 收口时已将仓库根 `AGENTS.md`（开发者/发版约束）与 [AGENT-USAGE.md](../AGENT-USAGE.md)（消费方使用契约）拆分，并在本仓 `.agents/skills/red-team-review/SKILL.md` 沉淀了开发审查技能；但下游消费者安装 `guiju` 后，仍缺少随产品包分发、通用于任意 AI agent / harness 且内容彻底净化的产品态使用契约与可移植 Agent Skills。
 - 影响：`pyproject.toml`、`guiju/errors.py`、`guiju/mcp.py`、`guiju/cli/__init__.py`、新增 `guiju/agent_assets/`（含 `__init__.py`）、新增 `guiju/domain/agent_assets.py`（纯逻辑）、新增 `guiju/store/agent_receipts.py`（持久化与文件锁）、新增 `guiju/application/agent.py`（路径解析与编排）、新增 `guiju/cli/commands/agent.py`、`scripts/check-release.py`、`README.md`、[AGENT-USAGE.md](../AGENT-USAGE.md)、`tests/`

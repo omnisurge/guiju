@@ -13,7 +13,7 @@
 | [0005](0005-external-review-2026-11-22.md) | 2026-11-22 外部评审复核：MCP 并发/完整性修复与 B4 收口 | **已关闭（I1–I4 已于 1.2.0 闭环）** | P1-1 与 B4/B5 已闭环，P2-4 保持安全默认，P2-5 probe_sink 已接线；I3 非阻塞技术债（body_sha256、CachedCurrency 旧分支、test_fix_* 收敛）转入下版本迭代；P2-6 403/429 建议不采纳 |
 | [0006](0006-v1-3-0-architecture-and-mcp-purification.md) | v1.3.0 架构收口、M4 观测闭环与 MCP 纯净化 | **已关闭（1.3.0 已于 2026-11-26 正式发布；D1–D6 为现行契约）** | S0–S6 已全部闭环：M4 观测、`guiju sources`、冗余清理、过渡门面退场、MCP 服务面纯净化、测试收敛及 hk 升级/真实回退演练完成 |
 | [0007](0007-atlas-currency-and-catalog.md) | 工程建设标准图集时效校验、完整目录索引与打包元数据治理 | **已关闭（1.4.0 已于 2026-11-27 正式发布；D1–D6 为现行契约）** | 对应 `docs/spec-1.4.0.md` S0–S4：接入国标电子书库（`chinabuilding`）只读图集有效期/替代链校验、`guiju atlas` / MCP `atlas_search`、PEP 639 打包修复 |
-| [0008](0008-agent-skills-and-usage-decoupling.md) | 开发态与使用态 Agent 约束/技能解耦及跨 Harness 分发 | **提议中（待所有者审阅复查）** | 对应 `docs/spec-1.5.0.md` S0–S4：双层净化守卫、`contract.md` 单一正文真源、`store/agent_receipts.py` 带外收据/`flock`、跨机认领与平滑升级、`EXIT_CONFLICT = 11` 及显式 `guiju agent` 分发 |
+| [0008](0008-agent-skills-and-usage-decoupling.md) | 开发态与使用态 Agent 约束/技能解耦及跨 Harness 分发 | **已接受（2026-11-27）** | 对应 `docs/spec-1.5.0.md` S0–S4：双层净化守卫、`contract.md` 单一正文真源、`store/agent_receipts.py` 带外收据/`flock`、跨机认领与平滑升级、`EXIT_CONFLICT = 11` 及显式 `guiju agent` 分发 |
 
 ## 规则
 
