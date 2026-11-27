@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
+from collections.abc import Callable
 
 from .. import autosync
 from .. import report as render
@@ -18,6 +19,7 @@ from ..adapters.store.sqlite import Store
 from ..application import AppContext
 from ..errors import EXIT_OK, EXIT_TABLE, BadUsage, GuijuError, NeedsHuman, SourceUnreachable
 from .commands import (
+    agent,
     atlas,
     cite,
     mcp,
@@ -31,7 +33,7 @@ from .commands import (
     which,
 )
 
-COMMANDS = (sync, search, which, show, pull, cite, atlas, status, sources, version, mcp)
+COMMANDS = (sync, search, which, show, pull, cite, atlas, agent, status, sources, version, mcp)
 
 
 def _exit_epilog() -> str:
@@ -78,11 +80,49 @@ def _fail(exc: GuijuError) -> int:
     return exc.exit
 
 
+def _run_guarded(fn: Callable[[], int]) -> int:
+    try:
+        return fn()
+    except GuijuError as exc:
+        return _fail(exc)
+    except sqlite3.DatabaseError as exc:
+        # 写路径（set_meta/cache/commit）的锁/只读/完整性错误都属于数据库类别，
+        # 不能穿透成 exit 1“程序缺陷”；locked/busy 可重试，其余交人处理。
+        text = str(exc).lower()
+        if "locked" in text or "busy" in text:
+            return _fail(SourceUnreachable(
+                f"数据库正被其他进程占用：{type(exc).__name__}: {exc}",
+                hint="稍后重试一次；若持续出现，检查是否有另一个 guiju 进程在长期写库",
+            ))
+        return _fail(NeedsHuman(
+            f"数据库操作失败：{type(exc).__name__}: {exc}",
+            hint="备份数据库并检查磁盘/目录权限；只读库请移走或改到可写 GUIJU_HOME",
+        ))
+    except KeyboardInterrupt:
+        render.warn("已中断")
+        return 130
+    except Exception as exc:
+        import traceback
+
+        from ..errors import EXIT_INTERNAL
+
+        traceback.print_exc(file=sys.stderr)
+        render.emit(
+            {"ok": False, "exit": EXIT_INTERNAL, "reason": "internal",
+             "error": f"{type(exc).__name__}: {exc}", "hint": "这是程序缺陷，请带上 stderr 的 traceback 上报"}
+        )
+        return EXIT_INTERNAL
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     render.configure(as_json=bool(getattr(args, "json", False)),
                      quiet=bool(getattr(args, "quiet", False)))
+    render.set_catalog(None)
+
+    if getattr(args, "cmd", None) == "agent" and not getattr(args, "version", False):
+        return _run_guarded(lambda: int(args.func(None, args)))
 
     try:
         store = Store(getattr(args, "db", None))
@@ -92,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     if store.legacy_backup is not None:
         render.warn(f"检测到旧版数据库，已备份为 {store.legacy_backup} 并按 schema v2 重建")
 
-    try:
+    def _run_with_store() -> int:
         if getattr(args, "version", False):
             return version.run(store, args)
         if not getattr(args, "cmd", False):
@@ -153,35 +193,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "pull":
             return int(pull.run(store, args, sources=sources_map))
         return int(args.func(store, args))
-    except GuijuError as exc:
-        return _fail(exc)
-    except sqlite3.DatabaseError as exc:
-        # 写路径（set_meta/cache/commit）的锁/只读/完整性错误都属于数据库类别，
-        # 不能穿透成 exit 1“程序缺陷”；locked/busy 可重试，其余交人处理。
-        text = str(exc).lower()
-        if "locked" in text or "busy" in text:
-            return _fail(SourceUnreachable(
-                f"数据库正被其他进程占用：{type(exc).__name__}: {exc}",
-                hint="稍后重试一次；若持续出现，检查是否有另一个 guiju 进程在长期写库",
-            ))
-        return _fail(NeedsHuman(
-            f"数据库操作失败：{type(exc).__name__}: {exc}",
-            hint="备份数据库并检查磁盘/目录权限；只读库请移走或改到可写 GUIJU_HOME",
-        ))
-    except KeyboardInterrupt:
-        render.warn("已中断")
-        return 130
-    except Exception as exc:
-        import traceback
 
-        from ..errors import EXIT_INTERNAL
-
-        traceback.print_exc(file=sys.stderr)
-        render.emit(
-            {"ok": False, "exit": EXIT_INTERNAL, "reason": "internal",
-             "error": f"{type(exc).__name__}: {exc}", "hint": "这是程序缺陷，请带上 stderr 的 traceback 上报"}
-        )
-        return EXIT_INTERNAL
+    try:
+        return _run_guarded(_run_with_store)
     finally:
         store.close()
 

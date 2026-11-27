@@ -44,6 +44,7 @@ class DiskSnapshot:
     has_symlink: bool
     files: Mapping[str, str]
     non_regular_entries: tuple[str, ...] = ()
+    empty_dirs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -217,7 +218,7 @@ def parse_history_hashes(raw_json: str) -> dict[str, dict[str, str]]:
 
 
 def _snapshot_is_clean_match(disk: DiskSnapshot, expected_hashes: Mapping[str, str]) -> bool:
-    if not disk.exists or disk.has_symlink or disk.non_regular_entries:
+    if not disk.exists or disk.has_symlink or disk.non_regular_entries or disk.empty_dirs:
         return False
     return dict(disk.files) == dict(expected_hashes)
 
@@ -285,7 +286,11 @@ def plan_install(
             )
 
         stale_or_extra = tuple(
-            sorted((set(disk.files) - set(normalized_current)) | set(disk.non_regular_entries))
+            sorted(
+                (set(disk.files) - set(normalized_current))
+                | set(disk.non_regular_entries)
+                | set(disk.empty_dirs)
+            )
         )
         if _snapshot_is_clean_match(disk, effective_receipt.files) or _matches_any_history(
             disk, history_hashes
@@ -304,6 +309,7 @@ def plan_install(
                 sorted(
                     (set(disk.files) - set(normalized_current) - set(effective_receipt.files))
                     | set(disk.non_regular_entries)
+                    | set(disk.empty_dirs)
                 )
             )
             return InstallPlan(
@@ -329,7 +335,11 @@ def plan_install(
         )
 
     stale_or_extra = tuple(
-        sorted((set(disk.files) - set(normalized_current)) | set(disk.non_regular_entries))
+        sorted(
+            (set(disk.files) - set(normalized_current))
+            | set(disk.non_regular_entries)
+            | set(disk.empty_dirs)
+        )
     )
     if _matches_any_history(disk, history_hashes):
         return InstallPlan(
@@ -439,7 +449,11 @@ def inspect_target_status(
     file_items = tuple(sorted(disk.files.items()))
     expected_keys = set(normalized_current) | (set(receipt.files) if receipt is not None else set())
     extra_files = tuple(
-        sorted((set(disk.files) - expected_keys) | set(disk.non_regular_entries))
+        sorted(
+            (set(disk.files) - expected_keys)
+            | set(disk.non_regular_entries)
+            | set(disk.empty_dirs)
+        )
     )
 
     if disk.has_symlink:

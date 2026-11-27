@@ -6,6 +6,7 @@
 
 - S0：切出 `feat/v1.5.0`（基线 `main` @ `dc13268`），立项并修订 [ADR 0008](docs/adr/0008-agent-skills-and-usage-decoupling.md) 与 [docs/spec-1.5.0.md](docs/spec-1.5.0.md)，完成「开发态 vs 使用态」解耦定稿（5 处内容级净化守卫、`guiju/agent_assets/contract.md` 真正唯一正文真源、严格分层 `domain` 纯判定/`store/agent_receipts.py` `fcntl.flock` 带外持久化、跨机认领与平滑升级、`EXIT_CONFLICT = 11`、symlink/`--force`/坏收据完整边界）。
 - S1：新增包内使用态单一真源 `guiju/agent_assets/`（`contract.md` / `skill_frontmatter.yaml` / `history_hashes.json`）并在 `pyproject.toml` 声明 package-data，将 `docs/AGENT-USAGE.md` 改为极简指针页；在 `guiju/errors.py` 新增 `EXIT_CONFLICT = 11`（`AgentConflict`）并在 `README.md` 补齐 `34` 与 `11`；新增纯领域状态机 `guiju/domain/agent_assets.py` 与带外收据存储 `guiju/store/agent_receipts.py`（POSIX `fcntl.flock` + `.corrupt-<ts>` + 原子替换）及对应 AST 边界与单测。
+- S2：新增应用层 `guiju/application/agent.py` 与 CLI 子命令 `guiju agent {show|install|uninstall|status}`（完全绕开 `catalog.db` 与 `autosync`），实现路径解析、`--dir` 与 `--target`/`--scope` 互斥 `exit 2`、`lstat`/`O_NOFOLLOW` 递归防 symlink 与端到端单测覆盖（R1 团队同步/切分支、B3 跨机认领、R4 缺失目录清收据与悬空 symlink 拒绝、`--force` 与同级目录隔离）。
 
 ## 1.4.0 — 2026-11-27（1.4.0 正式发布）
 

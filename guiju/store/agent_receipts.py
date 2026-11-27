@@ -393,3 +393,74 @@ class AgentReceiptStore:
             exists=True,
             installs=MappingProxyType(normalized),
         )
+
+
+def atomic_write_managed_file(target_path: Path, raw: bytes) -> None:
+    """以临时文件 + fsync + os.replace 原子写入单个受管技能文件（拒绝符号链接）。"""
+    try:
+        st = target_path.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise NeedsHuman(
+            f"无法检查受管技能文件状态：{target_path}（{type(exc).__name__}: {exc}）",
+            hint="检查目标目录权限后重试",
+        ) from exc
+    else:
+        if stat.S_ISLNK(st.st_mode):
+            raise AgentConflict(
+                f"拒绝通过符号链接写入受管技能文件：{target_path}",
+                reason="agent_symlink_rejected",
+                path=str(target_path),
+            )
+
+    temporary: Path | None = None
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            parent_st = target_path.parent.lstat()
+        except OSError as exc:
+            raise NeedsHuman(
+                f"无法检查受管技能目录状态：{target_path.parent}（{type(exc).__name__}: {exc}）",
+                hint="检查目标技能目录写权限后重试",
+            ) from exc
+        if stat.S_ISLNK(parent_st.st_mode):
+            raise AgentConflict(
+                f"拒绝通过符号链接目录写入受管技能文件：{target_path.parent}",
+                reason="agent_symlink_rejected",
+                path=str(target_path.parent),
+            )
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=target_path.parent,
+            prefix=f".{target_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            st = target_path.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            if stat.S_ISLNK(st.st_mode):
+                raise AgentConflict(
+                    f"拒绝通过符号链接写入受管技能文件：{target_path}",
+                    reason="agent_symlink_rejected",
+                    path=str(target_path),
+                )
+        os.replace(temporary, target_path)
+    except AgentConflict:
+        raise
+    except OSError as exc:
+        raise NeedsHuman(
+            f"写入受管技能文件失败：{target_path}（{type(exc).__name__}: {exc}）",
+            hint="检查目标技能目录写权限或磁盘空间",
+        ) from exc
+    finally:
+        if temporary is not None:
+            with contextlib.suppress(OSError):
+                temporary.unlink()
