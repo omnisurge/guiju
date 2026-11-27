@@ -1,9 +1,9 @@
 # 规矩 guiju — 交接文档
 
 > 一句话：从官方站点取工程建设标准的**目录 + 正文 + 引用串 + 现行状态**，只搬运与校验，不生产内容。
-> 状态：**v1.5.0 已发布**（2026-11-27；本地冻结基线 `feat/v1.5.0`，待所有者明确授权合入 `main` 并打 tag `v1.5.0` 推送；发版记录 [docs/audit/release-1.5.0-20261127.md](docs/audit/release-1.5.0-20261127.md)）。单测 **1318 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.5.0。
+> 状态：**v1.5.0 已发布**（2026-11-27；tag v1.5.0，发布提交为 tag 指向的发布提交；发版记录 [docs/audit/release-1.5.0-20261127.md](docs/audit/release-1.5.0-20261127.md)）。单测 **1318 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.5.0。
 > 本文件包含版本历史记录；历史行中的 cmd/mcp、NAS spec-currency 是当时事实，不代表当前运行形态。当前形态见 [docs/README.md](docs/README.md)。
-> ADR 0001–0008 均已关闭（v1.5.0 开发/使用态约束与技能解耦及跨 Harness 分发见 [docs/adr/0008-agent-skills-and-usage-decoupling.md](docs/adr/0008-agent-skills-and-usage-decoupling.md)，索引见 [docs/adr/README.md](docs/adr/README.md)）；当前时效只使用 **native**，`GUIJU_CURRENCY` 只认 `native[:off|dir]` / `off`；`hk` `guiju-mcp` 当前生产运行 `1.4.0`（2026-11-27 完成 `/var/lib/guiju/atlas-catalog.json` 4,252 条预热及 `1.3.0 ↔ 1.4.0` 真实回退/再部署；v1.5.0 不变更 DB schema 与 systemd unit，按 `AGENTS.md §4` 待所有者另行授权升级），NAS spec-currency 已于 2026-11-01 停用（历史事实，本项目不依赖 NAS）。
+> ADR 0001–0008 均已关闭（v1.5.0 开发/使用态约束与技能解耦及跨 Harness 分发见 [docs/adr/0008-agent-skills-and-usage-decoupling.md](docs/adr/0008-agent-skills-and-usage-decoupling.md)，索引见 [docs/adr/README.md](docs/adr/README.md)）；当前时效只使用 **native**，`GUIJU_CURRENCY` 只认 `native[:off|dir]` / `off`；hk `guiju-mcp` 已部署 1.5.0（2026-11-27 20:25:04 CST 升级并完成 `1.5.0 ↔ 1.4.0` 真实 systemd 回退/再部署、MCP `initialize.instructions` 与 5 工具点查，`/var/lib/guiju/catalog.db` 与 `atlas-catalog.json` 保持原样），NAS spec-currency 已于 2026-11-01 停用（历史事实，本项目不依赖 NAS）。
 
 ## 文档地图（各司其职，不要互相抄）
 

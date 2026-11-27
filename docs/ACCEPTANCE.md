@@ -1,6 +1,6 @@
 # 验收记录
 
-> 最新发布验收：**v1.5.0（2026-11-27）** —— **1318 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；发布产物见下（本地冻结收口，待授权打 tag 推送与升级 hk）。
+> 最新发布验收：**v1.5.0（2026-11-27）** —— **1318 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与发布产物见下。
 > 上一发布：**v1.4.0（2026-11-27）**；更早 v1.3.0 / v1.2.0 / v1.2.0-alpha.* / v1.1.0 / v1.0.0 的验收记录保留作历史对照。
 > 默认时效为 **native**；hk 服务与消费者切换沿用 v1.0.0 验证，NAS spec-currency 已停用（文件保留可回退）。后续各版本记录保留作历史对照。
 >
@@ -13,13 +13,13 @@
 
 | 项 | 值 |
 |---|---|
-| 代码基线 | `feat/v1.5.0`（S0–S4 收口 + 红队审查修复 `451f1d9`，待授权合入 `main` 并打 tag `v1.5.0`） |
-| 版本 | `1.5.0`（目标 tag `v1.5.0`） |
+| 代码基线 | `main`（S0–S4 收口 + 红队审查修复 `451f1d9`，发布 tag `v1.5.0` 指向最终发布提交） |
+| 版本 | `1.5.0`（发布 tag `v1.5.0`） |
 | 单测 | Python 3.10.21 / 3.13.5 **各 1318/1318 通过**（`-W error::ResourceWarning`）；`scripts/ci.sh` exit 0（含 ruff、docs-only、离线 e2e 4/4） |
 | 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39** 通过，exit 0（2026-11-27 实测，同步 `db=3257 上游=3257`，二次幂等 `new=0`；日志 `/tmp/guiju-e2e-20261127-v150.log`，2,781 B，SHA-256 `f7fc898a2e06fa6ba53bfb212b127fb5847fc7c4262fa4fba9394aaaeb3f2756`） |
 | 发布产物 | wheel `guiju-1.5.0-py3-none-any.whl` SHA-256 `8da078b33b0be1e80436d98d7fc97311b5fc609bac7a3599ed2b30dcb45ae54d`（254,417 bytes，108 个文件，PEP 639 零弃用警告，含 `guiju/agent_assets/*`、零开发态路径泄露）；sdist `guiju-1.5.0.tar.gz` SHA-256 `bd95649973cc593861cb06ebb3f6dd5d1431d95555acb9db687569ec09dfb485`（426,047 bytes，199 个条目，不含 `docs/`） |
 | 本地回退演练 | `/tmp/guiju-rollback-drill-1.5.0-20261127` 实测 `1.5.0 → 1.4.0 → 1.5.0` wheel 切换、`SCHEMA_VERSION=2` `catalog.db` 直读与标记保留（`before-rollback-1.5.0`）、独立 `atlas-catalog.json` 与 `agent-receipts.json`/`.agents/skills/guiju-standards/SKILL.md` 共存（再升回 `1.5.0` 后 `agent status` `clean` / `agent install` `unchanged`）及离仓 `guiju agent show`/`McpServer.initialize.instructions` 均完整通过；本机 editable `guiju --version` 实测 `guiju 1.5.0` |
-| hk 生产部署 | 本地冻结收口，按 `AGENTS.md §4` 权限闸门待所有者明确授权后再执行 tag 推送、GitHub Release 及 `hk` `guiju-mcp` 升级（当前 `hk` 运行 `1.4.0`，不涉及 DB schema 或 unit 变更，未访问 NAS） |
+| hk 生产部署 | 2026-11-27 20:25:04 CST 已升级 1.5.0（`/opt/guiju`，Python 3.11.2，沿用强化 unit SHA-256 `a91fcd79d9fec2b726aabc586bca2f514b96ed3785d656fe2ce3ba4d238ffc6c`）；本地 health `{"ok":true}`，MCP `initialize` 返回 `serverInfo.version=1.5.0` 与同源 `instructions`（1,114 字符），`tools/list` 返回 5 工具、`query` `GB 55037-2022`（current）、`query` `22G101-1`（current / `chinabuilding`）、`query` `16G101-1`（superseded / `replaced_by=22G101-1`）、`atlas_search` `16G101-1`（`ok=true`, `catalog_total=4252`, `total=3`）、`announcement` `22G101-1`（`isError=true`, `exit=30`, `verdict=copyright_atlas`）及公网无 Bearer `401` 均通过；完成 `1.5.0 → 1.4.0 → 1.5.0` 真实 systemd 回退/再部署演练（回退期实测 `1.4.0` / `has_instructions=false` / `query GB 55037-2022` current）。备份 `/opt/guiju/backup-1.4.0-20261127-202504/`（另留 `/opt/guiju/guiju.prev-1.4.0-20261127-202504/`）；`/var/lib/guiju/catalog.db`（77,824 B）与 `/var/lib/guiju/atlas-catalog.json`（1,088,317 B）保持原样，未访问 NAS |
 | 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.5.0 |
 
 ## v1.4.0（2026-11-27）
