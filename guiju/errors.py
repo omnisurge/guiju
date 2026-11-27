@@ -24,7 +24,7 @@ FAILURE_RESERVED_FIELDS = frozenset({"ok", "exit", "reason", "error", "hint"})
 #: 成功结果专属的顶层字段；失败体（ok=false）绝不携带（P3-7）
 SUCCESS_ONLY_FIELDS = frozenset({"cite"})
 
-#: 给 agent 的决策表，同时被 README / AGENTS.md / --help 引用，保持单一来源
+#: 给 agent 的决策表，同时被 README / docs/AGENT-USAGE.md / --help 引用，保持单一来源
 EXIT_TABLE = {
     EXIT_OK: ("成功", "继续"),
     EXIT_USAGE: ("输入无法解析（参数/条款号）", "按 hint 修正输入，不要重试同样的输入"),

@@ -11,7 +11,8 @@
 | 文档 | 状态 | 用途 |
 |---|---|---|
 | [README.md](../README.md) | 当前 | 用户手册：安装、命令、退出码、合规边界 |
-| [AGENTS.md](../AGENTS.md) | 当前 | agent 操作契约：命令选择、退出码动作、必知事实 |
+| [AGENTS.md](../AGENTS.md) | 当前 | 本仓开发与审查约束：架构红线、门禁命令、红队审查 |
+| [docs/AGENT-USAGE.md](AGENT-USAGE.md) | 当前 | agent 操作契约：命令选择、退出码动作、必知事实 |
 | [INSTALL.md](../INSTALL.md) | 当前 | 安装、自部署、回退 |
 | [HANDOFF.md](../HANDOFF.md) | 当前 | 交接状态、已验证事实、踩坑记录 |
 | [deploy/README.md](../deploy/README.md) | 当前 | hk 生产服务部署与验证 |

@@ -10,7 +10,8 @@
 | 文件 | 唯一职责 | 谁读 |
 |---|---|---|
 | `README.md` | 用户手册：安装、命令、退出码、合规与不做的事 | 人 |
-| `AGENTS.md` | agent 操作契约：命令选择、退出码动作、必知事实 | agent |
+| `AGENTS.md` | 本仓开发约束与审查入口：合规红线、门禁命令、红队审查与权限边界 | 开发 agent / 维护者 |
+| [docs/AGENT-USAGE.md](docs/AGENT-USAGE.md) | 工具操作契约：命令选择、退出码动作、必知事实 | 调用方 agent |
 | [docs/README.md](docs/README.md) | 文档索引：当前文档 / 历史证据 / ADR0048 跨项目边界 | 维护者 |
 | `docs/sources.md` | 四个数据源的现状与边界（含"为什么某些源不接"）+ 多源仲裁实测结论 | 维护者 |
 | `docs/ARCHITECTURE.md` | 架构决策：分层、数据模型、里程碑 | 维护者 |

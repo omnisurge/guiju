@@ -24,7 +24,7 @@ scripts/ci.sh              # ruff + 单测 + 离线冒烟 + 入口自检
 ## 分支与合并
 
 - `main` 永远可发布；改动走分支 + PR。
-- PR 合并前必须：`ruff` 干净、单测全绿、`e2e --offline` 通过。
+- PR 合并前必须：`ruff` 干净、单测全绿、`e2e --offline` 通过；发版冻结或核心改动前按 [red-team-review](.agents/skills/red-team-review/SKILL.md) 完成红队代码审查。
 - 提交信息：`<type>: <中文摘要>`，type 用 `feat|fix|docs|chore|test|refactor`；
   行为变化要写清"为什么"和"实测证据"，不要只写"优化"。
 
@@ -47,4 +47,4 @@ scripts/ci.sh              # ruff + 单测 + 离线冒烟 + 入口自检
 ## 红线（不要加 override 开关）
 
 只抓 `*.gov.cn`、逐跳校验重定向、1.2s/请求限速、命中验证码即放弃、不伪造 UA。
-细节见 `README.md`「边界」与 `AGENTS.md`「不要做的事」。
+细节见 `README.md`「边界」与 `docs/AGENT-USAGE.md`「不要做的事」，开发与架构约束见 `AGENTS.md`。
