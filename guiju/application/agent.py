@@ -81,6 +81,30 @@ def _raise_conflict(
     )
 
 
+def _resolve_parent_checked(raw_parent: Path) -> Path:
+    try:
+        return raw_parent.resolve()
+    except RuntimeError as exc:
+        raise AgentConflict(
+            f"目标路径命中符号链接环，拒绝操作：{raw_parent}",
+            reason="agent_symlink_rejected",
+            hint=_CONFLICT_HINTS["agent_symlink_rejected"],
+            path=str(raw_parent / SKILL_DIR_NAME),
+        ) from exc
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise AgentConflict(
+                f"目标路径命中符号链接环，拒绝操作：{raw_parent}",
+                reason="agent_symlink_rejected",
+                hint=_CONFLICT_HINTS["agent_symlink_rejected"],
+                path=str(raw_parent / SKILL_DIR_NAME),
+            ) from exc
+        raise NeedsHuman(
+            f"无法解析目标技能父目录：{raw_parent}（{type(exc).__name__}: {exc}）",
+            hint="检查目标目录及父目录权限后重试",
+        ) from exc
+
+
 def _resolve_location(
     *,
     target: str | None,
@@ -100,7 +124,7 @@ def _resolve_location(
                 "--dir 不能为空路径",
                 hint="传入有效的父目录路径（将写入 <PATH>/guiju-standards），或省略以使用默认路径",
             )
-        parent = Path(dir_path).expanduser().resolve()
+        parent = _resolve_parent_checked(Path(dir_path).expanduser())
         return "custom", "custom", parent / SKILL_DIR_NAME
 
     eff_target = "agents" if target is None else target
@@ -117,7 +141,7 @@ def _resolve_location(
         )
     base_root = Path(cwd if eff_scope == "project" else user_home).expanduser()
     vendor_dir = ".agents" if eff_target == "agents" else ".claude"
-    parent = (base_root / vendor_dir / "skills").resolve()
+    parent = _resolve_parent_checked(base_root / vendor_dir / "skills")
     return eff_target, eff_scope, parent / SKILL_DIR_NAME
 
 
@@ -142,8 +166,46 @@ def _read_regular_sha256(entry_path: str | Path, target_dir: Path) -> tuple[str 
         ) from exc
 
 
-def scan_skill_dir(target_dir: Path) -> DiskSnapshot:
+def _has_resolved_parent_symlink(parent: Path) -> bool:
+    try:
+        resolved_parent = parent.resolve()
+    except RuntimeError:
+        return True
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            return True
+        raise NeedsHuman(
+            f"无法解析目标技能父目录：{parent}（{type(exc).__name__}: {exc}）",
+            hint="检查目标目录及父目录权限后重试",
+        ) from exc
+    if resolved_parent != parent:
+        return True
+
+    cursor = parent
+    while cursor != cursor.parent:
+        try:
+            st = cursor.lstat()
+        except FileNotFoundError:
+            cursor = cursor.parent
+            continue
+        except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                return True
+            raise NeedsHuman(
+                f"无法检查目标技能父目录：{cursor}（{type(exc).__name__}: {exc}）",
+                hint="检查目标目录及父目录权限后重试",
+            ) from exc
+        if stat.S_ISLNK(st.st_mode):
+            return True
+        cursor = cursor.parent
+    return False
+
+
+def scan_skill_dir(target_dir: Path, *, expect_resolved_parent: bool = False) -> DiskSnapshot:
     """用 lstat + O_NOFOLLOW 采集目标技能目录快照；发现任何符号链接立即停止并标记。"""
+    if expect_resolved_parent and _has_resolved_parent_symlink(target_dir.parent):
+        return DiskSnapshot(exists=False, has_symlink=True, files={})
+
     try:
         root_st = target_dir.lstat()
     except FileNotFoundError:
@@ -432,7 +494,7 @@ def install_agent_skill(
         history_hashes=history_hashes,
     )
 
-    pre_disk = scan_skill_dir(target_dir)
+    pre_disk = scan_skill_dir(target_dir, expect_resolved_parent=True)
     if pre_disk.has_symlink:
         _raise_conflict("agent_symlink_rejected", target_dir=target_dir, receipt_path=receipt_store.path)
 
@@ -445,6 +507,8 @@ def install_agent_skill(
         current_hashes=current_hashes,
         history_hashes=eff_history,
         force=force,
+        current_target=eff_target,
+        current_scope=eff_scope,
     )
     if not pre_plan.ok:
         _raise_conflict(
@@ -472,7 +536,7 @@ def install_agent_skill(
         }
 
     with receipt_store.locked() as snap:
-        disk = scan_skill_dir(target_dir)
+        disk = scan_skill_dir(target_dir, expect_resolved_parent=True)
         plan = plan_install(
             disk,
             receipt=None if snap.corrupt else snap.installs.get(path_key),
@@ -481,6 +545,8 @@ def install_agent_skill(
             current_hashes=current_hashes,
             history_hashes=eff_history,
             force=force,
+            current_target=eff_target,
+            current_scope=eff_scope,
         )
         if not plan.ok:
             _raise_conflict(
@@ -489,6 +555,10 @@ def install_agent_skill(
                 receipt_path=receipt_store.path,
             )
 
+        backed_up_receipt: str | None = None
+        if plan.backup_corrupt_receipt:
+            backed_up_receipt = str(receipt_store.backup_corrupt())
+
         if plan.write_files:
             _remove_entries(target_dir, plan.files_to_remove)
             _prune_empty_dirs(target_dir, remove_root_if_empty=False)
@@ -496,10 +566,6 @@ def install_agent_skill(
                 atomic_write_managed_file(
                     target_dir / relpath, eff_contents[relpath].encode("utf-8")
                 )
-
-        backed_up_receipt: str | None = None
-        if plan.backup_corrupt_receipt:
-            backed_up_receipt = str(receipt_store.backup_corrupt())
 
         if plan.write_receipt:
             updated = {} if plan.backup_corrupt_receipt else dict(snap.installs)
@@ -565,7 +631,7 @@ def uninstall_agent_skill(
         history_hashes=history_hashes,
     )
 
-    pre_disk = scan_skill_dir(target_dir)
+    pre_disk = scan_skill_dir(target_dir, expect_resolved_parent=True)
     if pre_disk.has_symlink:
         _raise_conflict("agent_symlink_rejected", target_dir=target_dir, receipt_path=receipt_store.path)
 
@@ -601,7 +667,7 @@ def uninstall_agent_skill(
         }
 
     with receipt_store.locked() as snap:
-        disk = scan_skill_dir(target_dir)
+        disk = scan_skill_dir(target_dir, expect_resolved_parent=True)
         plan = plan_uninstall(
             disk,
             receipt=None if snap.corrupt else snap.installs.get(path_key),
@@ -646,7 +712,7 @@ def _status_entry(
     current_hashes: Mapping[str, str],
     history_hashes: Mapping[str, Mapping[str, str]],
 ) -> dict:
-    disk = scan_skill_dir(Path(path_key))
+    disk = scan_skill_dir(Path(path_key), expect_resolved_parent=True)
     st = inspect_target_status(
         disk,
         receipt=receipt,

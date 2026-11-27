@@ -210,16 +210,36 @@ class AgentReceiptStore:
                 installs=MappingProxyType({}),
             )
         except OSError as exc:
-            return self._corrupt(f"{type(exc).__name__}: {exc}")
+            raise NeedsHuman(
+                f"无法检查受管技能收据状态：{self.path}（{type(exc).__name__}: {exc}）",
+                hint="检查数据目录路径类型与读写权限后重试",
+            ) from exc
 
         if stat.S_ISLNK(st.st_mode):
-            return self._corrupt("收据文件不能是符号链接")
+            raise AgentConflict(
+                f"拒绝通过符号链接读取受管技能收据：{self.path}",
+                reason="agent_symlink_rejected",
+                hint="收据路径不能是符号链接；请人工核实并移除符号链接后重试",
+                receipt_path=str(self.path),
+            )
         if not stat.S_ISREG(st.st_mode):
             return self._corrupt("收据路径不是普通文件")
 
         try:
             fd = os.open(self.path, os.O_RDONLY | os.O_NOFOLLOW)
         except OSError as exc:
+            if exc.errno == errno.ELOOP:
+                raise AgentConflict(
+                    f"拒绝通过符号链接读取受管技能收据：{self.path}",
+                    reason="agent_symlink_rejected",
+                    hint="收据路径不能是符号链接；请人工核实并移除符号链接后重试",
+                    receipt_path=str(self.path),
+                ) from exc
+            if exc.errno in (errno.EACCES, errno.EPERM, errno.ENOTDIR):
+                raise NeedsHuman(
+                    f"无法打开受管技能收据：{self.path}（{type(exc).__name__}: {exc}）",
+                    hint="检查数据目录路径类型与读写权限后重试",
+                ) from exc
             return self._corrupt(f"{type(exc).__name__}: {exc}")
         try:
             with os.fdopen(fd, "rb") as stream:

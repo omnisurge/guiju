@@ -367,6 +367,7 @@ def check_wheel_contents(
     allowed_prefixes = ("guiju/", f"guiju-{version}.dist-info/")
     try:
         with zipfile.ZipFile(wheel) as archive:
+            all_entries = [info.filename for info in archive.infolist()]
             names = [info.filename for info in archive.infolist() if not info.is_dir()]
             required = (
                 "guiju/agent_assets/__init__.py",
@@ -380,18 +381,18 @@ def check_wheel_contents(
                 checker.check(req in name_set, f"wheel 缺少必需打包文件：{req}")
 
             disallowed_roots = sorted(
-                name
-                for name in names
-                if not name.startswith(allowed_prefixes)
-                or name.startswith(_FORBIDDEN_WHEEL_PREFIXES)
+                entry
+                for entry in all_entries
+                if not entry.startswith(allowed_prefixes)
+                or entry.startswith(_FORBIDDEN_WHEEL_PREFIXES)
                 or any(
-                    seg in name
+                    seg in entry
                     for seg in ("AGENTS.md", ".agents/", "/docs/", "/scripts/", "/tests/", "CONTRIBUTING.md")
                 )
             )
             checker.check(
                 not disallowed_roots,
-                f"wheel 包含越界/开发态文件：{disallowed_roots[:5]}",
+                f"wheel 包含越界/开发态文件或目录：{disallowed_roots[:5]}",
             )
 
             asset_entries = [
@@ -479,11 +480,15 @@ def check_history_hashes_against_git_tags(
             f"无法自 tag {tag} 读取 guiju/agent_assets 资产以核对历史哈希",
         )
         if contract_res.returncode == 0 and fm_res.returncode == 0 and ver in history_hashes:
-            expected = hash_managed_files(derive_managed_files(fm_res.stdout, contract_res.stdout))
-            checker.check(
-                history_hashes[ver] == expected,
-                f"history_hashes.json[{ver}] 与 tag {tag} 重新派生哈希不一致（历史条目禁止改写）",
-            )
+            try:
+                expected = hash_managed_files(derive_managed_files(fm_res.stdout, contract_res.stdout))
+            except ValueError as exc:
+                checker.check(False, f"tag {tag} 的 agent_assets 派生失败：{exc}")
+            else:
+                checker.check(
+                    history_hashes[ver] == expected,
+                    f"history_hashes.json[{ver}] 与 tag {tag} 重新派生哈希不一致（历史条目禁止改写）",
+                )
 
     if verify_all_historical_have_tags:
         for ver in sorted(history_hashes, key=_version_key):

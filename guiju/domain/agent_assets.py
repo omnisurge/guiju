@@ -251,6 +251,8 @@ def plan_install(
     current_hashes: Mapping[str, str],
     history_hashes: Mapping[str, Mapping[str, str]],
     force: bool = False,
+    current_target: str | None = None,
+    current_scope: str | None = None,
 ) -> InstallPlan:
     """根据磁盘快照、本机收据与官方当前/历史哈希，输出纯粹的安装决策计划。"""
     normalized_current = validate_file_hashes(current_hashes)
@@ -276,6 +278,8 @@ def plan_install(
             needs_receipt_refresh = (
                 effective_receipt.package_version != current_version
                 or dict(effective_receipt.files) != normalized_current
+                or (current_target is not None and effective_receipt.target != current_target)
+                or (current_scope is not None and effective_receipt.scope != current_scope)
             )
             return InstallPlan(
                 ok=True,

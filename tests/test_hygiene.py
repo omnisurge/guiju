@@ -445,6 +445,18 @@ class AgentAssetsHygieneTest(unittest.TestCase):
                 module.check_wheel_contents(c_bad, bad_whl, "1.5.0")
                 self.assertTrue(c_bad.failures, f"应当拦截越界打包路径：{bad_entry}")
 
+            dir_only_whl = tmp_dir / "bad_dir_only.whl"
+            _build_wheel(
+                dir_only_whl,
+                "1.5.0",
+                history_obj={"schema": 1, "versions": {"1.5.0": current_hashes}},
+            )
+            with zipfile.ZipFile(dir_only_whl, "a") as zf:
+                zf.writestr(zipfile.ZipInfo(".agents/"), b"")
+            c_dir = module.Checker("bad-dir-only")
+            module.check_wheel_contents(c_dir, dir_only_whl, "1.5.0")
+            self.assertTrue(c_dir.failures, "应当拦截 wheel 内的越界空目录条目 .agents/")
+
             # R2：1.5.0 缺失或哈希篡改必失败
             miss_whl = tmp_dir / "missing_ver.whl"
             _build_wheel(miss_whl, "1.5.0", history_obj={"schema": 1, "versions": {}})
@@ -489,6 +501,24 @@ class AgentAssetsHygieneTest(unittest.TestCase):
                     {"1.5.1": current_hashes},
                 )
                 self.assertTrue(c_tag_deleted.failures)
+
+            def broken_git(*args: str):
+                if args[:2] == ("tag", "-l"):
+                    return subprocess.CompletedProcess(["git", *args], 0, stdout="v1.5.0\n", stderr="")
+                if args == ("show", "v1.5.0:guiju/agent_assets/contract.md"):
+                    return subprocess.CompletedProcess(["git", *args], 0, stdout="# broken without markers\n", stderr="")
+                if args == ("show", "v1.5.0:guiju/agent_assets/skill_frontmatter.yaml"):
+                    return subprocess.CompletedProcess(["git", *args], 0, stdout=frontmatter, stderr="")
+                return subprocess.CompletedProcess(["git", *args], 1, stdout="", stderr="unexpected")
+
+            with mock.patch.object(module, "_git", side_effect=broken_git):
+                c_tag_broken = module.Checker("tag-broken")
+                module.check_history_hashes_against_git_tags(
+                    c_tag_broken,
+                    "1.5.1",
+                    {"1.5.0": old_hashes, "1.5.1": current_hashes},
+                )
+                self.assertTrue(c_tag_broken.failures)
 
 
 if __name__ == "__main__":

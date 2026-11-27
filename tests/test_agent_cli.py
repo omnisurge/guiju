@@ -764,6 +764,125 @@ class AgentCliLifecycleTest(unittest.TestCase):
         self.assertEqual(json.loads(res_uninst.stdout)["action"], "uninstalled")
         self.assertFalse((self.cwd / ".agents/skills/guiju-standards").exists())
 
+    def test_red_team_receipt_symlink_order_ancestor_swap_and_meta_refresh(self):
+        from guiju.errors import EXIT_NEEDS_HUMAN
+
+        # 1) Defect 1a：收据为 symlink 且目标含未受管 notes.md 时，install --force 必须在改动磁盘前以 11 拒绝
+        self.home.mkdir(parents=True)
+        outside = self.root / "outside-receipt.json"
+        outside.write_text("{}", encoding="utf-8")
+        receipt = self.home / "agent-receipts.json"
+        receipt.symlink_to(outside)
+
+        target_dir = self.cwd / ".agents/skills/guiju-standards"
+        target_dir.mkdir(parents=True)
+        (target_dir / "notes.md").write_text("must survive", encoding="utf-8")
+
+        rc_sym, out_sym, _ = _run_agent_cli(
+            ["agent", "install", "--force", "--json"],
+            home=self.home,
+            cwd=self.cwd,
+            user_home=self.user_home,
+        )
+        self.assertEqual(rc_sym, EXIT_CONFLICT)
+        self.assertEqual(json.loads(out_sym)["reason"], "agent_symlink_rejected")
+        self.assertEqual((target_dir / "notes.md").read_text(encoding="utf-8"), "must survive")
+        self.assertFalse((target_dir / "SKILL.md").exists())
+        receipt.unlink()
+
+        # 2) Defect 1b：GUIJU_HOME 本身被普通文件占用时走 exit 50 NeedsHuman，不误报坏收据 11
+        home_file = self.root / "home-is-file"
+        home_file.write_text("not a dir", encoding="utf-8")
+        rc_nh, out_nh, _ = _run_agent_cli(
+            ["agent", "status", "--json"],
+            home=home_file,
+            cwd=self.cwd,
+            user_home=self.user_home,
+        )
+        self.assertEqual(rc_nh, EXIT_NEEDS_HUMAN)
+        self.assertEqual(json.loads(out_nh)["reason"], "needs_human")
+
+        # 3) Defect 1c：同物理路径切换 --target agents -> --dir <same_parent> 时刷新收据 target/scope
+        (target_dir / "notes.md").unlink()
+        target_dir.rmdir()
+        rc_i1, out_i1, _ = _run_agent_cli(
+            ["agent", "install", "--json"],
+            home=self.home,
+            cwd=self.cwd,
+            user_home=self.user_home,
+        )
+        self.assertEqual(rc_i1, EXIT_OK)
+        self.assertEqual(json.loads(out_i1)["target"], "agents")
+
+        rc_i2, out_i2, _ = _run_agent_cli(
+            ["agent", "install", "--dir", str(self.cwd / ".agents/skills"), "--json"],
+            home=self.home,
+            cwd=self.cwd,
+            user_home=self.user_home,
+        )
+        self.assertEqual(rc_i2, EXIT_OK)
+        self.assertEqual(json.loads(out_i2)["action"], "unchanged")
+        rec_refreshed = AgentReceiptStore(receipt).load().installs[str(target_dir)]
+        self.assertEqual(rec_refreshed.target, "custom")
+        self.assertEqual(rec_refreshed.scope, "custom")
+
+        # 4) Defect 2：安装后父祖先目录 .agents/skills 被掉包为外部 symlink，status 全量巡检识别为 symlink 且拒绝卸载
+        outside_skills = self.root / "outside-skills"
+        (outside_skills / "guiju-standards").mkdir(parents=True)
+        (outside_skills / "guiju-standards/SKILL.md").write_text("hijacked", encoding="utf-8")
+
+        skills_parent = self.cwd / ".agents/skills"
+        (target_dir / "SKILL.md").unlink()
+        target_dir.rmdir()
+        skills_parent.rmdir()
+        skills_parent.symlink_to(outside_skills)
+
+        rc_st, out_st, _ = _run_agent_cli(
+            ["agent", "status", "--json"],
+            home=self.home,
+            cwd=self.cwd,
+            user_home=self.user_home,
+        )
+        self.assertEqual(rc_st, EXIT_OK)
+        self.assertEqual(json.loads(out_st)["entries"][0]["state"], "symlink")
+
+        from guiju.application.agent import scan_skill_dir
+
+        self.assertTrue(scan_skill_dir(target_dir, expect_resolved_parent=True).has_symlink)
+
+        rc_un, out_un, _ = _run_agent_cli(
+            ["agent", "uninstall", "--force", "--json"],
+            home=self.home,
+            cwd=self.cwd,
+            user_home=self.user_home,
+        )
+        self.assertEqual(rc_un, EXIT_CONFLICT)
+        self.assertIn(
+            json.loads(out_un)["reason"],
+            {"agent_not_managed", "agent_symlink_rejected"},
+        )
+        self.assertEqual(
+            (outside_skills / "guiju-standards/SKILL.md").read_text(encoding="utf-8"),
+            "hijacked",
+        )
+
+        # 5) 祖先路径变成互指 symlink 环（Python 3.10 resolve 抛 RuntimeError，3.13 resolve(strict=False) 原样返回）
+        skills_parent.unlink()
+        loop_a = self.cwd / ".agents/loop_a"
+        loop_b = self.cwd / ".agents/loop_b"
+        loop_a.symlink_to(loop_b)
+        loop_b.symlink_to(loop_a)
+        skills_parent.symlink_to(loop_a)
+        self.assertTrue(scan_skill_dir(target_dir, expect_resolved_parent=True).has_symlink)
+        rc_lp, out_lp, _ = _run_agent_cli(
+            ["agent", "install", "--force", "--json"],
+            home=self.home,
+            cwd=self.cwd,
+            user_home=self.user_home,
+        )
+        self.assertEqual(rc_lp, EXIT_CONFLICT)
+        self.assertEqual(json.loads(out_lp)["reason"], "agent_symlink_rejected")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -117,14 +117,22 @@ class AgentReceiptStoreTest(unittest.TestCase):
                         snap.require_valid()
                     self.assertEqual(ctx.exception.reason, "agent_receipt_corrupt")
 
-            # 非法 UTF-8 与符号链接（含悬空 symlink）同样拒绝为损坏
+            # 非法 UTF-8 拒绝为损坏，符号链接（含悬空 symlink）直接以 agent_symlink_rejected 拒绝
             bin_path = Path(tmp) / "binary.json"
             bin_path.write_bytes(b"\xff\xfe\xfd")
             self.assertTrue(AgentReceiptStore(bin_path).load().corrupt)
 
             dangling = Path(tmp) / "dangling-receipt.json"
             dangling.symlink_to(Path(tmp) / "missing-target.json")
-            self.assertTrue(AgentReceiptStore(dangling).load().corrupt)
+            with self.assertRaises(AgentConflict) as ctx_dangling:
+                AgentReceiptStore(dangling).load()
+            self.assertEqual(ctx_dangling.exception.reason, "agent_symlink_rejected")
+
+            # GUIJU_HOME 被普通文件占用导致 ENOTDIR 时走 NeedsHuman (50)，不得误报损坏
+            blocker = Path(tmp) / "home-as-file"
+            blocker.write_text("x", encoding="utf-8")
+            with self.assertRaises(NeedsHuman):
+                AgentReceiptStore(blocker / "agent-receipts.json").load()
 
     def test_backup_corrupt_renames_atomically_and_handles_collisions(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -149,6 +157,10 @@ class AgentReceiptStoreTest(unittest.TestCase):
             receipt.symlink_to(outside)
 
             store = AgentReceiptStore(receipt)
+            with self.assertRaises(AgentConflict) as ctx_load:
+                store.load()
+            self.assertEqual(ctx_load.exception.reason, "agent_symlink_rejected")
+
             with self.assertRaises(AgentConflict) as ctx:
                 store.save({"/tmp/p/guiju-standards": self._record()})
             self.assertEqual(ctx.exception.reason, "agent_symlink_rejected")
