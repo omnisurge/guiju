@@ -24,15 +24,15 @@
 
 | 项 | 状态 |
 |---|---|
-| 版本 | `1.3.0`（schema v2） |
-| 目录同步 | ✅ 实测全量 **3255 条 / 33 页**，本次 e2e 与上游对账一致 |
+| 版本 | `1.4.0`（schema v2） |
+| 目录同步 | ✅ 实测全量 **3257 条 / 33 页**，本次 e2e 与上游对账一致 |
 | 编号解析 | ✅ 实测覆盖 61%（其余公告正文确实无编号） |
 | 正文下载 | ✅ 单条与批量均实测可用（含 2000 年的早期公告） |
-| 编号定位 | ✅ 只认「发布该编号的公告」+ 正文编号核实；同名多公告交人决断 |
-| 单测 / 端到端 | 1224 项单测（离线、零依赖）/ 离线 e2e 4/4 · 完整联网 e2e 39/39（`scripts/e2e.py`） |
+| 编号定位 | ✅ 只认「发布该编号的公告」+ 正文编号核实；同名多公告交人决断；显式年份拒绝跨年替代 |
+| 单测 / 端到端 | 1279 项单测（离线、零依赖）/ 离线 e2e 4/4 · 完整联网 e2e 39/39（`scripts/e2e.py`） |
 | 目录保鲜 | 进程内自刷新：目录为空或 >7 天时，在该次命令里顺手增量同步（无 cron / 无常驻进程） |
-| 多源 | ✅ 住建部（国标/行标公告）+ 上海（地标，`--source shzjw`）；其余源未接 |
-| MCP | ✅ `guiju mcp`（stdio / HTTP；https://guiju.守夜人.中国/mcp，Bearer 认证；query/verify/batch（仅内联 codes[]）/announcement） |
+| 多源 | ✅ 住建部（国标/行标公告）+ 上海（地标，`--source shzjw`）+ 国标电子书库（`chinabuilding` 只读图集时效与目录，不下载图集正文） |
+| MCP | ✅ `guiju mcp`（stdio / HTTP；https://guiju.守夜人.中国/mcp，Bearer 认证；query/verify/batch（仅内联 codes[]）/announcement/atlas_search） |
 
 ---
 
@@ -50,7 +50,7 @@ guiju --version
 gj --version                     # 等价别名
 ```
 
-> v1.3.0 发布包：https://github.com/omnisurge/guiju/releases/tag/v1.3.0；完整自部署步骤：[INSTALL.md](INSTALL.md)
+> v1.4.0 发布包：https://github.com/omnisurge/guiju/releases/tag/v1.4.0；完整自部署步骤：[INSTALL.md](INSTALL.md)
 
 数据默认放 `~/.guiju/`（目录库 `catalog.db` + 下载目录 `library/`，只是文件缓存不是档案库）。用 `GUIJU_HOME` 或 `--db` 覆盖。
 
@@ -98,7 +98,8 @@ guiju status
 |---|---|---|
 | `guiju sync` | 增量同步公告目录（遇 0 新增即停）；`--if-stale 7` 给定时任务，新则 0 请求秒退 | 是 |
 | `guiju search <关键词…>` | 本地检索公告（子串 + 模糊三层召回） | 否 |
-| `guiju which <编号\|名称>` | 权威时效 + 本地公告 + 有无正文（**推荐入口**） | 是* |
+| `guiju which <编号\|名称>` | 权威时效 + 本地公告 + 有无正文（**推荐入口**；支持图集及 `replaced_by`） | 是* |
+| `guiju atlas {sync\|search\|list}` | 同步/检索国标电子书库只读图集目录（`atlas-catalog.json`，不下载图集 PDF） | 仅 `sync` |
 | `guiju show <ref>` | 名称/编号/角色/可得性/本地文件 | 否 |
 | `guiju pull <ref>` | 下载正文（流式落盘 + 断点续传），幂等，文件名带 sha256 指纹 | 是 |
 | `guiju pull --list f.txt` | 按清单批量下载，汇总成功/已存在/未达成 | 是 |
@@ -180,7 +181,7 @@ guiju status
 ## 明确不做
 
 1. 不做标准文件的公开分发/镜像/网盘
-2. 不抓团体标准（T/CECS）、不抓标准图集（G101）—— 无官方公开渠道
+2. 不抓团体标准（T/CECS）、不下载标准图集（G101）正文 PDF —— 图集仅提供官方元数据时效校验与只读目录索引（不触碰版权正文）
 3. 不绕过任何验证码、登录、付费墙
 4. 不解析条文内容、不做智能问答 —— 只生成引用串
 5. 不提供高频并发抓取；限速是产品的一部分，不是可调参数

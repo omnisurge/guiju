@@ -21,21 +21,26 @@
    · 书名号可带可不带（《防火》与 防火 等价）
    · 返回 mode=and/fuzzy/chars，total 是总数、count 是本次返回数
    · --limit 默认 20，要"全部"用 --all
-想知道某编号是什么/是否现行？ → guiju which <编号> --json   （不需要预先索引）
-   · 返回 currency[{code,status,name}] + announcement{id,...}
+想知道某编号是什么/是否现行？ → guiju which <编号> --json   （不需要预先索引；支持国标/行标/上海地标与标准图集）
+   · 返回 currency[{code,status,name,replaced_by?}] + announcement{id,...}（图集固定返回 announcement=null 与版权边界提示）
    · status: current/superseded/upcoming/withdrawn/unknown，unknown ≠ 现行
    · currency_from_cache=true 表示时效服务不可达、用的是本地缓存：结论可用但可能已过时
    · currency_endpoint 告诉你实际用的是哪个端点（native / 不可用原因）：配置没生效会在这里露出来
+要检索工程建设标准图集目录吗？ → guiju atlas {sync|search|list} --json
+   · `guiju atlas sync [--if-stale N] --json` 同步国标电子书库简明目录至 `atlas-catalog.json`（只读目录，不下载图集 PDF）
+   · `guiju atlas search <关键词> [--status current|withdrawn|all] [--all] --json` / `list [--prefix 粤] ...` 纯本地检索
 要正文文件吗？             → guiju pull <编号|规范名|公告ID|URL> --json
    · 按名称命中多条时：同名多版本会按时效自动定版（如《绿色建筑评价标准》4 条公告 → 取现行的最新那条），
      结果里 versions 列出全部版本与选中项；只有定不出唯一现行版才返回 32 让你叫人
+   · 显式带 4 位版年的编号（如 JGJ 147-2004）若未被收录，拒绝以同族新版顶替（诚实返回 exit 31）
+   · 标准图集属版权出版物，`pull` / `cite` / MCP `announcement` 显式拒绝且零下载（请改用 `which` 或 `guiju atlas`）
    · 断点续传：中断后重跑同一条命令会从 .partial 续下（Range 206），不必从头再来
    · 幂等按文件名 sha256 指纹判定（不再落库注册表）；exit 10 即文件已在，path 直接用
 要一整批吗？               → guiju pull --list <文件|-> --json
    · 清单每行一个 ref，# 注释与行尾注释都支持
    · 汇总里 counts 按退出码统计，ok=false 表示有 1/20/40/50 这类严重失败
 要启动/调用 MCP 服务吗？     → guiju mcp [--http --host HOST --port PORT]
-   · 工具：query / verify / batch（仅内联 codes[]）/ announcement；默认 stdio，--http 提供 POST /mcp 与 GET /health
+   · 工具：query / verify / batch（仅内联 codes[]）/ announcement / atlas_search（只读检索本地图集目录）；默认 stdio，--http 提供 POST /mcp 与 GET /health
 要上海地标（DG/TJ、DB31/T）吗？ → guiju pull --source shzjw <编号|名称> --json
    · 该源没有公告页，直接按 API 检索 + 下载；编号按站点原样（含年版，如 DG/TJ08-2007-2026）
    · 命中多条 → 32；没有 → 31；已有文件 → 10

@@ -1,16 +1,21 @@
 # 变更记录
 
-## Unreleased
+## 1.4.0 — 2026-11-27（1.4.0 正式发布）
 
-> 目标版本：1.4.0（开发进行中，详见 `docs/spec-1.4.0.md` 与 ADR 0007）。
-
-- S0：立 ADR 0007 与 `docs/spec-1.4.0.md` 规划标准图集有效期校验/完整索引与 MCP `atlas_search`；`pyproject.toml` 升级 PEP 639 元数据（消除 `SetuptoolsDeprecationWarning`）；归档国标电子书库离线黄金 HTML 夹具。
-- S1：新增纯领域模块 `guiju/domain/atlas.py`（国标/中南标/省标图集号识别、严格防串号/防与上海地标及国行标混淆匹配，以及 `search`/`detail`/`conciseCatalogueList` 纯 HTML 解析器）及全套离线黄金夹具单测 `tests/test_atlas_domain.py`。
-- S2：新增 `guiju/currency/chinabuilding.py` 国标电子书库图集时效适配器（方案 A：列表检索 + 精确废止追查 `detail/show` 获取 `代替标准号`）并接入 `default_registry`；为 `MetadataPolicy`/`MetadataClient` 增加按端点字节上限（8 MB 仅限 `/zbooklib/conciseCatalogueList`，防止重定向放宽）；`Record` 增 `replaced_by` 且 `DiskCurrencyCache` 向下兼容存量 `v1.3.0` 缓存；收紧无年份专业前缀白名单并通过全套内存 HTTPS 与缓存契约测试。
-- S3：新增独立快照存储 `guiju/store/atlas.py`（`GUIJU_HOME/atlas-catalog.json`，不触碰 `catalog.db` schema v2）、应用层 `guiju/application/atlas.py` 与 CLI 命令 `guiju atlas {sync|search|list}`；更新 `resolve.ref_is_code` 识别汉字省前缀图集号（如 `粤25G/T116`），使 `guiju which` 对图集跳过住建部公告定位并展示 `replaced_by`、`guiju pull` 直接诚实退出 `30`（零下载）；在 `guiju/mcp.py` 新增只读 `atlas_search` 工具并完善 MCP 工具说明与替代关系透传。
-- S3-fix（发版前红队审查修复）：扩充 `atlas.is_atlas_code` 对国标电子书库全量 4,252 条真实图集号的编码模式覆盖（四位年份省标、`YYYY沪...`、`L/J/M/SDCT/XB/SX` 省标、单数字合订本、修订年/附册、`、` 联合图集及 `DBJT` 图集），并严格保留 `沪J111`/`LJ907` 区域同族隔离；封堵 `resolve._by_code` 与 MCP `announcement` 对图集编号误配住建部同名标准的路径；修正 `guiju which` 在 `GUIJU_CURRENCY=off` 或不完整检索空结果时误报“国标电子书库未收录”；修正 `search_atlas` 与 CLI `atlas` 在 `--limit 0` 下命中总数与空提示矛盾；修复 `AtlasCatalogSnapshot.age_days` 未来时间戳校验与 `AtlasCatalogStore._clock` 注入一致性。
-- 规范开发约束拆分与红队技能沉淀：将原 `AGENTS.md` 中的 CLI/MCP 工具使用契约迁至 `docs/AGENT-USAGE.md`，`AGENTS.md` 收口为本仓开发与发版约束入口，并新增可复用红队代码审查技能 `.agents/skills/red-team-review/SKILL.md`。
-- 修复显式带年份编号跨版本替代：`resolve._pick_record` / `_by_code` 对显式指定 4 位版年的编号（如 `JGJ 147-2004`）仅在同族同年份记录中定位（保留上海顺序号与括号年版装饰兼容），不再回退为同族现行新版（如 `JGJ147-2016`），使 `pull` / `cite --strict` / MCP `announcement` 诚实返回 `31`（`not_indexed`）。
+- **标准图集有效期与替代关系校验（ADR 0007 / S1–S2）**：
+  - 新增纯领域模块 `guiju/domain/atlas.py` 与原生时效适配器 `guiju/currency/chinabuilding.py`，接入官方国标电子书库（`ebook.chinabuilding.com.cn`）只读图集时效检索与方案 A 废止替代链追查（废止条目追加 1 次 `detail/show` 提取 `replaced_by`）；
+  - 覆盖国标图集、中南标图集、28 个汉字省前缀地方图集（如 `粤25G/T116`、`YYYY沪...`、`L/J/M/SDCT/XB/SX`）、合订本及 `DBJ/T02-...-12D1` 等全库 4,252 条编码模式，严格隔离 `B` 双语版、`英文版`、同族兄弟号与上海地标命名空间；
+  - `MetadataPolicy` / `MetadataClient` 支持按端点字节上限（8 MB 仅限 `/zbooklib/conciseCatalogueList`），`Record` 增 `replaced_by` 且 `DiskCurrencyCache` 向下兼容 `v1.3.0` 存量 `native-v1-*.json` 缓存。
+- **完整图集目录索引与 CLI/MCP 边界扩展（S3）**：
+  - 新增独立快照存储 `guiju/store/atlas.py`（`GUIJU_HOME/atlas-catalog.json`，不触碰 `catalog.db` `SCHEMA_VERSION = 2`）、应用层 `guiju/application/atlas.py` 与 CLI 命令 `guiju atlas {sync|search|list}`；
+  - `resolve.ref_is_code` 识别汉字省前缀图集号；`guiju which` 展示 `replaced_by` 并跳过住建部公告检索，`guiju pull` / `cite` / MCP `announcement` 对图集显式拒绝下载（`copyright_atlas`，零下载请求）；
+  - `guiju/mcp.py` 新增只读工具 `atlas_search` 并优化 `TOOLS` 描述与替代关系透传。
+- **显式年份护栏与红队审查修复（S3-fix + 248281c）**：
+  - 修正 `guiju which` 在 `GUIJU_CURRENCY=off`/不完整空结果下的误报、`search_atlas`/`atlas` 在 `--limit 0` 下总数与空提示矛盾，以及 `AtlasCatalogSnapshot.age_days` 未来时间戳与 `_clock` 注入一致性；
+  - 修复 `resolve._pick_record` / `_by_code` 对显式携带 4 位版年的编号（如 `JGJ 147-2004`）误回退为同族现行新版（如 `JGJ147-2016`）的问题（兼容上海顺序号与括号年版装饰），使 `pull` / `cite --strict` / MCP `announcement` 诚实返回 `31`（`not_indexed`）。
+- **打包元数据与文档契约治理（S0）**：
+  - `pyproject.toml` 升级至 PEP 639（`setuptools>=77`、`license = "MIT"`、`license-files = ["LICENSE"]`），消除 `SetuptoolsDeprecationWarning`；
+  - 将原 `AGENTS.md` 中的 CLI/MCP 工具使用契约迁至 `docs/AGENT-USAGE.md`，`AGENTS.md` 收口为本仓开发与审查约束，并沉淀可复用红队代码审查技能 `.agents/skills/red-team-review/SKILL.md`。
 
 ## 1.3.0 — 2026-11-26（1.3.0 正式发布）
 
