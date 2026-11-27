@@ -349,5 +349,147 @@ class NoBatchFixTestFilesTest(unittest.TestCase):
         self.assertEqual(offenders, [], f"禁止新增批次/修复命名测试文件：{offenders}")
 
 
+class AgentAssetsHygieneTest(unittest.TestCase):
+    """ADR 0008 单一真源、指针页、零安装期写盘 hook 与 wheel/history_hashes 门禁自测。"""
+
+    def test_agent_assets_layout_and_pointer_only_docs(self):
+        assets_dir = ROOT / "guiju/agent_assets"
+        actual_files = sorted(
+            path.name for path in assets_dir.iterdir() if path.name != "__pycache__"
+        )
+        self.assertEqual(
+            actual_files,
+            ["__init__.py", "contract.md", "history_hashes.json", "skill_frontmatter.yaml"],
+        )
+        pointer = _read("docs/AGENT-USAGE.md")
+        self.assertIn("../guiju/agent_assets/contract.md", pointer)
+        self.assertNotRegex(pointer, r"(?m)^\|\s*\d+\s*\|")
+
+    def test_exit_table_parity_with_readme_and_contract(self):
+        from guiju.errors import EXIT_INTERNAL, EXIT_TABLE
+
+        def _extract_codes(md: str, heading: str) -> set[int]:
+            m = re.search(rf"^##\s+{re.escape(heading)}\s*$", md, flags=re.MULTILINE)
+            self.assertIsNotNone(m, f"缺少章节：{heading}")
+            tail = md[m.end() :]
+            end = re.search(r"^(?:##|---)\s+", tail, flags=re.MULTILINE)
+            sec = tail[: end.start()] if end else tail
+            return {int(row.group(1)) for row in re.finditer(r"^\|\s*(\d+)\s*\|", sec, flags=re.MULTILINE)}
+
+        expected = set(EXIT_TABLE.keys()) | {EXIT_INTERNAL}
+        self.assertEqual(expected, _extract_codes(_read("README.md"), "退出码（稳定契约）"))
+        self.assertEqual(
+            expected,
+            _extract_codes(_read("guiju/agent_assets/contract.md"), "三、退出码 → 你的动作"),
+        )
+
+    def test_no_install_time_hooks_or_runtime_dependencies(self):
+        self.assertFalse((ROOT / "setup.py").exists())
+        pyproject = _read("pyproject.toml")
+        m = re.search(r"^dependencies\s*=\s*\[(.*?)\]", pyproject, flags=re.MULTILINE | re.DOTALL)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.group(1).strip(), "")
+        self.assertNotIn("cmdclass", pyproject)
+
+    def test_check_release_wheel_contents_and_history_tag_guards(self):
+        import importlib.util
+        import json
+        import subprocess
+        import tempfile
+        import zipfile
+        from unittest import mock
+
+        from guiju.agent_assets import load_current_hashes, read_contract_markdown, read_skill_frontmatter
+        from guiju.domain.agent_assets import derive_managed_files, hash_managed_files
+
+        script = ROOT / "scripts/check-release.py"
+        spec = importlib.util.spec_from_file_location("check_release_wheel", script)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+
+        contract = read_contract_markdown()
+        frontmatter = read_skill_frontmatter()
+        current_hashes = load_current_hashes()
+
+        def _build_wheel(path: Path, version: str, *, history_obj: dict, extra_files: dict[str, bytes] | None = None):
+            with zipfile.ZipFile(path, "w") as zf:
+                zf.writestr("guiju/__init__.py", "")
+                zf.writestr("guiju/store/schema.sql", "-- schema")
+                zf.writestr("guiju/agent_assets/__init__.py", "")
+                zf.writestr("guiju/agent_assets/contract.md", contract)
+                zf.writestr("guiju/agent_assets/skill_frontmatter.yaml", frontmatter)
+                zf.writestr("guiju/agent_assets/history_hashes.json", json.dumps(history_obj))
+                zf.writestr(f"guiju-{version}.dist-info/METADATA", "Name: guiju\n")
+                for k, v in (extra_files or {}).items():
+                    zf.writestr(k, v)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            good_whl = tmp_dir / "good.whl"
+            _build_wheel(good_whl, "1.5.0", history_obj={"schema": 1, "versions": {"1.5.0": current_hashes}})
+            c_ok = module.Checker("good-wheel")
+            parsed_hist = module.check_wheel_contents(c_ok, good_whl, "1.5.0")
+            self.assertEqual(c_ok.failures, [], c_ok.failures)
+            self.assertEqual(parsed_hist, {"1.5.0": current_hashes})
+
+            for bad_entry in ("AGENTS.md", ".agents/skills/red-team-review/SKILL.md", "docs/ARCHITECTURE.md", "guiju/agent_assets/SKILL.md"):
+                bad_whl = tmp_dir / f"bad_{bad_entry.replace('/', '_')}.whl"
+                _build_wheel(
+                    bad_whl,
+                    "1.5.0",
+                    history_obj={"schema": 1, "versions": {"1.5.0": current_hashes}},
+                    extra_files={bad_entry: b"leak"},
+                )
+                c_bad = module.Checker("bad-wheel")
+                module.check_wheel_contents(c_bad, bad_whl, "1.5.0")
+                self.assertTrue(c_bad.failures, f"应当拦截越界打包路径：{bad_entry}")
+
+            # R2：1.5.0 缺失或哈希篡改必失败
+            miss_whl = tmp_dir / "missing_ver.whl"
+            _build_wheel(miss_whl, "1.5.0", history_obj={"schema": 1, "versions": {}})
+            c_miss = module.Checker("missing-ver")
+            module.check_wheel_contents(c_miss, miss_whl, "1.5.0")
+            self.assertTrue(c_miss.failures)
+
+            # R2 历史 tag（1.5.0 -> 1.5.1）：校验只增不改
+            old_contract = "# guiju old 1.5.0\n<!-- guiju:mcp-summary:begin -->\nok\n<!-- guiju:mcp-summary:end -->\n"
+            old_hashes = hash_managed_files(derive_managed_files(frontmatter, old_contract))
+
+            def fake_git(*args: str):
+                if args[:2] == ("tag", "-l"):
+                    return subprocess.CompletedProcess(["git", *args], 0, stdout="v1.4.0\nv1.5.0\n", stderr="")
+                if args == ("show", "v1.5.0:guiju/agent_assets/contract.md"):
+                    return subprocess.CompletedProcess(["git", *args], 0, stdout=old_contract, stderr="")
+                if args == ("show", "v1.5.0:guiju/agent_assets/skill_frontmatter.yaml"):
+                    return subprocess.CompletedProcess(["git", *args], 0, stdout=frontmatter, stderr="")
+                return subprocess.CompletedProcess(["git", *args], 1, stdout="", stderr="unexpected")
+
+            with mock.patch.object(module, "_git", side_effect=fake_git):
+                c_tag_ok = module.Checker("tag-ok")
+                module.check_history_hashes_against_git_tags(
+                    c_tag_ok,
+                    "1.5.1",
+                    {"1.5.0": old_hashes, "1.5.1": current_hashes},
+                )
+                self.assertEqual(c_tag_ok.failures, [], c_tag_ok.failures)
+
+                c_tag_tampered = module.Checker("tag-tampered")
+                module.check_history_hashes_against_git_tags(
+                    c_tag_tampered,
+                    "1.5.1",
+                    {"1.5.0": {"SKILL.md": "0" * 64}, "1.5.1": current_hashes},
+                )
+                self.assertTrue(c_tag_tampered.failures)
+
+                c_tag_deleted = module.Checker("tag-deleted")
+                module.check_history_hashes_against_git_tags(
+                    c_tag_deleted,
+                    "1.5.1",
+                    {"1.5.1": current_hashes},
+                )
+                self.assertTrue(c_tag_deleted.failures)
+
+
 if __name__ == "__main__":
     unittest.main()

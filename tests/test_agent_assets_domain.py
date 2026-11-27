@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
+import ast
+import contextlib
+import io
 import re
 import unittest
 from pathlib import Path
 
+from guiju import errors as errors_mod
+from guiju import mcp as mcp_mod
 from guiju.agent_assets import (
     load_current_hashes,
     load_history_hashes,
@@ -15,6 +21,9 @@ from guiju.agent_assets import (
     read_history_hashes_json,
     read_skill_frontmatter,
 )
+from guiju.application import agent as agent_app
+from guiju.cli import build_parser
+from guiju.domain import availability as avail_domain
 from guiju.domain.agent_assets import (
     DiskSnapshot,
     ReceiptRecord,
@@ -37,6 +46,7 @@ from guiju.errors import (
     EXIT_NO_CURRENCY_RECORD,
     EXIT_TABLE,
     AgentConflict,
+    GuijuError,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -46,23 +56,67 @@ FORBIDDEN_CONSUMER_TOKENS = (
     "./docs/",
     "AGENTS.md",
     "README.md",
-    "docs/",
-    "scripts/",
-    "tests/",
-    "test_",
+    "CONTRIBUTING.md",
+    "HANDOFF.md",
+    "INSTALL.md",
     "pyproject.toml",
-    "guiju/net",
-    "guiju/sources",
-    "mohurd.py",
-    "shzjw.py",
     "BodyPolicy",
     "MetadataPolicy",
     "RedirectGuard",
     "Throttle",
+    "_SOURCE_HOSTS",
     "red-team-review",
     "git push",
     "ci.sh",
 )
+
+FORBIDDEN_CONSUMER_REGEXES = (
+    re.compile(r"(?<![A-Za-z0-9_.-])(?:docs|scripts|tests)/"),
+    re.compile(r"(?<!\.)\bguiju/(?:net|sources|domain|store|application|currency|cli|ports|adapters|agent_assets)\b"),
+    re.compile(r"\b[A-Za-z0-9_]+\.py\b"),
+)
+
+
+def _dump_help_surfaces(parser: argparse.ArgumentParser, prefix: str = "guiju") -> dict[str, str]:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        parser.print_help()
+    surfaces = {f"help:{prefix}": buf.getvalue()}
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for name, sub in sorted(action.choices.items()):
+                surfaces.update(_dump_help_surfaces(sub, f"{prefix} {name}"))
+    return surfaces
+
+
+def _extract_hint_strings_from_ast() -> dict[str, str]:
+    collected: dict[str, list[str]] = {}
+    for py_path in sorted((ROOT / "guiju").rglob("*.py")):
+        if "__pycache__" in py_path.parts:
+            continue
+        tree = ast.parse(py_path.read_text(encoding="utf-8"))
+        rel = str(py_path.relative_to(ROOT))
+        for node in ast.walk(tree):
+            expr: ast.AST | None = None
+            lineno = 0
+            if isinstance(node, ast.keyword) and node.arg == "hint":
+                expr = node.value
+                lineno = node.value.lineno
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id in ("hint", "_HINT", "atlas_hint"):
+                        expr = node.value
+                        lineno = node.lineno
+                        break
+            if expr is None:
+                continue
+            pieces: list[str] = []
+            for sub in ast.walk(expr):
+                if isinstance(sub, ast.Constant) and isinstance(sub.value, str) and sub.value:
+                    pieces.append(sub.value)
+            if pieces:
+                collected.setdefault(f"ast_hint:{rel}:{lineno}", []).append("".join(pieces))
+    return {k: "\n".join(v) for k, v in collected.items()}
 
 
 def _table_exit_codes(markdown: str, heading: str) -> set[int]:
@@ -101,18 +155,58 @@ class PackageAssetsAndSSOTTest(unittest.TestCase):
         self.assertNotIn("mcp-summary", instructions)
 
     def test_consumer_surfaces_clean_of_dev_leaks_and_dead_links(self):
-        surfaces = {
-            "contract.md": read_contract_markdown(),
-            "skill_frontmatter.yaml": read_skill_frontmatter(),
-            "SKILL.md": load_skill_markdown(),
-            "mcp_instructions": load_mcp_instructions(),
-            "AgentConflict.hint": AgentConflict("conflict").hint,
-            "EXIT_TABLE[11]": " ".join(EXIT_TABLE[EXIT_CONFLICT]),
+        class _DummyBackend:
+            def query(self, _code: str):
+                raise RuntimeError("unused")
+
+        init_result = mcp_mod.McpServer(_DummyBackend()).handle(
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05"}}
+        )["result"]
+
+        tool_texts: dict[str, str] = {}
+        for tool in mcp_mod.TOOLS:
+            name = tool["name"]
+            tool_texts[f"mcp_tool:{name}"] = tool["description"]
+            for prop_name, prop_spec in (tool.get("inputSchema", {}).get("properties") or {}).items():
+                desc = prop_spec.get("description")
+                if desc:
+                    tool_texts[f"mcp_tool:{name}.{prop_name}"] = desc
+
+        error_class_hints: dict[str, str] = {}
+        for obj in vars(errors_mod).values():
+            if isinstance(obj, type) and issubclass(obj, GuijuError) and obj.hint:
+                error_class_hints[f"error_class:{obj.__name__}.hint"] = obj.hint
+
+        surfaces: dict[str, str] = {
+            "asset:contract.md": read_contract_markdown(),
+            "asset:skill_frontmatter.yaml": read_skill_frontmatter(),
+            "asset:history_hashes.json": read_history_hashes_json(),
+            "asset:SKILL.md": load_skill_markdown(),
+            "mcp:initialize.instructions": init_result["instructions"],
+            "cli:EXIT_TABLE": "\n".join(
+                f"{code} {meaning} {action}" for code, (meaning, action) in sorted(EXIT_TABLE.items())
+            ),
         }
+        surfaces.update(tool_texts)
+        surfaces.update(_dump_help_surfaces(build_parser()))
+        surfaces.update(error_class_hints)
+        surfaces.update(_extract_hint_strings_from_ast())
+        for reason, hint_text in agent_app._CONFLICT_HINTS.items():
+            surfaces[f"agent_conflict_hint:{reason}"] = hint_text
+        for win in (
+            avail_domain.Window.PRE_WINDOW,
+            avail_domain.Window.IN_WINDOW,
+            avail_domain.Window.UNKNOWN,
+        ):
+            surfaces[f"availability_note:{win.value}"] = avail_domain.note(win, "2020-01-01")
+
         for name, text in surfaces.items():
             for token in FORBIDDEN_CONSUMER_TOKENS:
                 with self.subTest(surface=name, token=token):
                     self.assertNotIn(token, text)
+            for pattern in FORBIDDEN_CONSUMER_REGEXES:
+                with self.subTest(surface=name, pattern=pattern.pattern):
+                    self.assertNotRegex(text, pattern)
 
     def test_docs_agent_usage_is_minimal_pointer_page(self):
         pointer = (ROOT / "docs/AGENT-USAGE.md").read_text(encoding="utf-8")

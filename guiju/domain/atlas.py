@@ -171,7 +171,7 @@ class AtlasCatalogEntry:
 def _error(detail: str) -> NeedsHuman:
     return NeedsHuman(
         f"国标电子书库图集页面结构异常：{detail}",
-        hint="请检查 ebook.chinabuilding.com.cn 页面结构或更新 guiju/domain/atlas.py 解析器",
+        hint="国标电子书库页面结构可能已改版，请携带本次错误输出上报维护者",
     )
 
 

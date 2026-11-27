@@ -143,9 +143,15 @@ class McpProtocolTest(unittest.TestCase):
         return self.server.handle(payload)
 
     def test_initialize_and_tools_list(self):
+        from guiju.agent_assets import load_mcp_instructions, read_contract_markdown
+
         init = self.call("initialize", {"protocolVersion": "2024-11-05"})
         self.assertEqual(init["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual(init["result"]["serverInfo"]["name"], "guiju")
+        instructions = init["result"]["instructions"]
+        self.assertTrue(instructions)
+        self.assertEqual(instructions, load_mcp_instructions())
+        self.assertIn(instructions, read_contract_markdown())
         tools = self.call("tools/list")["result"]["tools"]
         self.assertEqual(
             [tool["name"] for tool in tools],

@@ -21,9 +21,20 @@ import hashlib
 import re
 import subprocess
 import sys
+import zipfile
+from collections.abc import Mapping
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from guiju.agent_assets import load_current_hashes  # noqa: E402
+from guiju.domain.agent_assets import (  # noqa: E402
+    derive_managed_files,
+    hash_managed_files,
+    parse_history_hashes,
+)
 
 # docs/audit 下的发版记录固定为 release-<pep440>-<yyyymmdd>.md；
 # 这里只认与当前版本同前缀的唯一记录。
@@ -307,8 +318,180 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+_PRE_ORDER = {"a": 0, "b": 1, "rc": 2}
+_TAG_PRE_MAP = {"alpha": "a", "beta": "b", "rc": "rc"}
+_ALLOWED_AGENT_ASSET_FILES = frozenset(
+    {"__init__.py", "contract.md", "skill_frontmatter.yaml", "history_hashes.json"}
+)
+_FORBIDDEN_WHEEL_PREFIXES = (
+    "AGENTS.md",
+    ".agents/",
+    "CONTRIBUTING.md",
+    "docs/",
+    "scripts/",
+    "tests/",
+)
+
+
+def _version_key(version: str) -> tuple[int, int, int, int, int]:
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?", version)
+    if not match:
+        raise ValueError(f"无法解析版本号：{version!r}")
+    major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3))
+    pre, num = match.group(4), match.group(5)
+    if not pre:
+        return (major, minor, patch, 3, 0)
+    return (major, minor, patch, _PRE_ORDER[pre], int(num))
+
+
+def _tag_to_version(tag: str) -> str | None:
+    match = re.fullmatch(r"v(\d+\.\d+\.\d+)(?:-(alpha|beta|rc)\.(\d+))?", tag.strip())
+    if not match:
+        return None
+    base, pre, num = match.groups()
+    if not pre:
+        return base
+    return f"{base}{_TAG_PRE_MAP[pre]}{num}"
+
+
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=ROOT, text=True, capture_output=True)
+
+
+def check_wheel_contents(
+    checker: Checker,
+    wheel: Path,
+    version: str,
+) -> dict[str, dict[str, str]] | None:
+    """校验 wheel 路径白/黑名单与包内 agent_assets 衍生哈希一致性（ADR 0008 D1/D2/R2）。"""
+    allowed_prefixes = ("guiju/", f"guiju-{version}.dist-info/")
+    try:
+        with zipfile.ZipFile(wheel) as archive:
+            names = [info.filename for info in archive.infolist() if not info.is_dir()]
+            required = (
+                "guiju/agent_assets/__init__.py",
+                "guiju/agent_assets/contract.md",
+                "guiju/agent_assets/skill_frontmatter.yaml",
+                "guiju/agent_assets/history_hashes.json",
+                "guiju/store/schema.sql",
+            )
+            name_set = set(names)
+            for req in required:
+                checker.check(req in name_set, f"wheel 缺少必需打包文件：{req}")
+
+            disallowed_roots = sorted(
+                name
+                for name in names
+                if not name.startswith(allowed_prefixes)
+                or name.startswith(_FORBIDDEN_WHEEL_PREFIXES)
+                or any(
+                    seg in name
+                    for seg in ("AGENTS.md", ".agents/", "/docs/", "/scripts/", "/tests/", "CONTRIBUTING.md")
+                )
+            )
+            checker.check(
+                not disallowed_roots,
+                f"wheel 包含越界/开发态文件：{disallowed_roots[:5]}",
+            )
+
+            asset_entries = [
+                name
+                for name in names
+                if name.startswith("guiju/agent_assets/") and "/__pycache__/" not in name
+            ]
+            unexpected_assets = sorted(
+                name
+                for name in asset_entries
+                if name.removeprefix("guiju/agent_assets/") not in _ALLOWED_AGENT_ASSET_FILES
+            )
+            checker.check(
+                not unexpected_assets,
+                f"wheel 的 guiju/agent_assets/ 出现非单一真源额外文件：{unexpected_assets}",
+            )
+
+            contract_text = archive.read("guiju/agent_assets/contract.md").decode("utf-8")
+            frontmatter_text = archive.read("guiju/agent_assets/skill_frontmatter.yaml").decode("utf-8")
+            history_raw = archive.read("guiju/agent_assets/history_hashes.json").decode("utf-8")
+    except (zipfile.BadZipFile, KeyError, UnicodeDecodeError, OSError, ValueError) as exc:
+        checker.check(False, f"读取/校验 wheel 内容失败（{type(exc).__name__}: {exc}）")
+        return None
+
+    try:
+        wheel_hashes = hash_managed_files(derive_managed_files(frontmatter_text, contract_text))
+        history_hashes = parse_history_hashes(history_raw)
+    except ValueError as exc:
+        checker.check(False, f"wheel 内 agent_assets 资产解析失败：{exc}")
+        return None
+
+    checker.check(
+        wheel_hashes == load_current_hashes(),
+        "wheel 内 agent_assets 派生哈希与当前工作区源码不一致",
+    )
+    if _version_key(version) >= (1, 5, 0, 0, 0):
+        checker.check(
+            version in history_hashes,
+            f"history_hashes.json 缺少当前版本 {version} 条目",
+        )
+        if version in history_hashes:
+            checker.check(
+                history_hashes[version] == wheel_hashes,
+                f"history_hashes.json[{version}] 与运行时派生资产哈希不一致",
+            )
+    return history_hashes
+
+
+def check_history_hashes_against_git_tags(
+    checker: Checker,
+    current_version: str,
+    history_hashes: Mapping[str, Mapping[str, str]] | None,
+    *,
+    verify_all_historical_have_tags: bool = True,
+) -> None:
+    """自已发布 tag（>= v1.5.0）重新派生历史哈希，核对 history_hashes.json 只增不改。"""
+    if history_hashes is None:
+        return
+    tags_res = _git("tag", "-l", "v*")
+    checker.check(tags_res.returncode == 0, "无法列举 git tag 以校对 history_hashes.json")
+    if tags_res.returncode != 0:
+        return
+
+    current_key = _version_key(current_version)
+    tagged_versions: dict[str, str] = {}
+    for raw_tag in tags_res.stdout.splitlines():
+        tag = raw_tag.strip()
+        if not tag:
+            continue
+        ver = _tag_to_version(tag)
+        if ver is None:
+            continue
+        if (1, 5, 0, 0, 0) <= _version_key(ver) < current_key:
+            tagged_versions[ver] = tag
+
+    for ver, tag in sorted(tagged_versions.items(), key=lambda item: _version_key(item[0])):
+        checker.check(
+            ver in history_hashes,
+            f"history_hashes.json 缺少已发布历史版本 {ver}（tag {tag}），违背只增不改约束",
+        )
+        contract_res = _git("show", f"{tag}:guiju/agent_assets/contract.md")
+        fm_res = _git("show", f"{tag}:guiju/agent_assets/skill_frontmatter.yaml")
+        checker.check(
+            contract_res.returncode == 0 and fm_res.returncode == 0,
+            f"无法自 tag {tag} 读取 guiju/agent_assets 资产以核对历史哈希",
+        )
+        if contract_res.returncode == 0 and fm_res.returncode == 0 and ver in history_hashes:
+            expected = hash_managed_files(derive_managed_files(fm_res.stdout, contract_res.stdout))
+            checker.check(
+                history_hashes[ver] == expected,
+                f"history_hashes.json[{ver}] 与 tag {tag} 重新派生哈希不一致（历史条目禁止改写）",
+            )
+
+    if verify_all_historical_have_tags:
+        for ver in sorted(history_hashes, key=_version_key):
+            if _version_key(ver) < current_key:
+                checker.check(
+                    ver in tagged_versions,
+                    f"history_hashes.json 包含未对应已发布 tag 的历史版本：{ver}",
+                )
 
 
 def _recorded_hash(text: str, filename: str) -> str | None:
@@ -329,6 +512,15 @@ def check_artifacts(checker: Checker, version: str, pretty: str, dist_dir: Path,
     checker.check(sdist.is_file(), f"缺少 sdist：{sdist}")
     sums = dist_dir / "SHA256SUMS"
     checker.check(sums.is_file(), f"缺少 {sums}")
+
+    if wheel.is_file():
+        wheel_history = check_wheel_contents(checker, wheel, version)
+        check_history_hashes_against_git_tags(
+            checker,
+            version,
+            wheel_history,
+            verify_all_historical_have_tags=not skip_tag,
+        )
 
     if sums.is_file():
         lines = [line.strip() for line in sums.read_text(encoding="utf-8").splitlines() if line.strip()]

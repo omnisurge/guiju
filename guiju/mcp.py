@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ._version import __version__
+from .agent_assets import load_mcp_instructions
 from .domain.currency import Record
 from .errors import ComplianceDenied, GuijuError, NeedsHuman, NoAttachment
 from .ports.currency import McpCurrencyPort
@@ -516,8 +517,7 @@ class McpServer:
                 # 也不能静默拿 mohurd 去解析一个根本不是它的页面结构。
                 raise NeedsHuman(
                     f"公告页归属站点无法识别（source_id={source_id}，url={ann['url']}）",
-                    hint="若站点改了域名请在 guiju/application/resolve.py 的 _SOURCE_HOSTS 补映射，"
-                         "或为新站点补适配器",
+                    hint="目标公告域名尚未纳入已知官方源映射，请携带该公告链接与错误输出上报维护者",
                 )
             names = announcement.names_of(ann["title"], ann["doc_name"])
             picked_name = ann["doc_name"] or ""
@@ -649,6 +649,7 @@ class McpServer:
                     "protocolVersion": requested if requested in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[-1],
                     "capabilities": {"tools": {}},
                     "serverInfo": {"name": "guiju", "version": __version__},
+                    "instructions": load_mcp_instructions(),
                 },
             }
         if method in ("notifications/initialized", "notifications/cancelled"):

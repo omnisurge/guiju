@@ -375,6 +375,22 @@ class NetBoundaryTest(unittest.TestCase):
         self.assertEqual(props, {"codes"})
         self.assertEqual(batch_tool["inputSchema"]["required"], ["codes"])
 
+        self.assertEqual(
+            [t["name"] for t in mcp_mod.TOOLS],
+            ["query", "verify", "batch", "announcement", "atlas_search"],
+        )
+        forbidden_mcp_imports = {"AgentConflict", "EXIT_CONFLICT", "agent_receipts"}
+        bad_mcp_imports = []
+        for node in ast.walk(tree):
+            for mod_name in _module_name(node):
+                if mod_name.endswith(".agent") or "application.agent" in mod_name or "agent_receipts" in mod_name:
+                    bad_mcp_imports.append(f"{node.lineno}:{mod_name}")
+            if isinstance(node, ast.ImportFrom):
+                imported = {alias.name for alias in node.names}
+                if imported & forbidden_mcp_imports:
+                    bad_mcp_imports.append(f"{node.lineno}:{sorted(imported & forbidden_mcp_imports)}")
+        self.assertEqual(bad_mcp_imports, [])
+
     def test_atlas_search_mcp_and_store_boundaries(self):
         from guiju import mcp as mcp_mod
 

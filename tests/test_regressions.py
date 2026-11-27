@@ -102,8 +102,11 @@ class PersistCodesTest(unittest.TestCase):
 class NeedsHumanHintTest(unittest.TestCase):
     def test_needs_human_hint_not_mohurd_only(self) -> None:
         err = NeedsHuman("boom")
-        self.assertTrue("mohurd.py" not in err.hint or "shzjw.py" in err.hint)
-        self.assertIn("sources/", err.hint)
+        self.assertTrue(err.hint)
+        self.assertIn("上报维护者", err.hint)
+        self.assertNotIn("mohurd.py", err.hint)
+        self.assertNotIn("shzjw.py", err.hint)
+        self.assertNotIn("sources/", err.hint)
 
 
 class MohurdDeduplicateTest(unittest.TestCase):
