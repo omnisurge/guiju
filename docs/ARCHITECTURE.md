@@ -183,23 +183,27 @@ stderr : 全部日志、进度、警告
 
 **v1.4.0 收口（ADR 0007）**：保持 `SCHEMA_VERSION = 2`、零第三方运行时依赖与 `BodyPolicy`（仅 `*.gov.cn`）不动，新增 `domain/atlas.py` 与 `currency/chinabuilding.py` 只读图集时效/替代链、独立快照 `store/atlas.py`（`atlas-catalog.json`）、CLI `guiju atlas` 与 MCP 只读 `atlas_search`，修复显式带 4 位版年编号跨年替代问题，并将 `pyproject.toml` 升级至 PEP 639。
 
-### 目录结构（v1.4.0 现状对齐）
+**v1.5.0 收口（ADR 0008）**：将开发态约束与产品使用态契约/技能解耦——新增包内单一正文真源 `guiju/agent_assets/`（`contract.md` / `skill_frontmatter.yaml` / `history_hashes.json`），纯领域状态机 `domain/agent_assets.py`（零 I/O）、带外收据存储 `store/agent_receipts.py`（`GUIJU_HOME/agent-receipts.json`，`fcntl.flock`）、应用编排与 CLI `guiju agent {show|install|uninstall|status}`（完全绕开 `catalog.db`）、`EXIT_CONFLICT = 11`、MCP `initialize.instructions` 同源直读及 5 处可见输出净化守卫与 wheel/tag 门禁。
+
+### 目录结构（v1.5.0 现状对齐）
 
 ```
 guiju/
 ├── __init__.py            # 只导出 __version__
 ├── __main__.py
-├── _version.py            # 版本单一来源（1.4.0）
+├── _version.py            # 版本单一来源（1.5.0）
+├── agent_assets/          # 使用态单一真源（contract.md / skill_frontmatter.yaml / history_hashes.json）
 ├── report.py              # JSON 与人读两种投影（stdout/stderr）
-├── mcp.py                 # MCP stdio/HTTP 服务面（只读白名单 Store + 内联 batch + atlas_search）
+├── mcp.py                 # MCP stdio/HTTP 服务面（只读白名单 Store + 内联 batch + atlas_search + initialize.instructions）
 ├── cli/
-│   ├── __init__.py        # build_parser / main（统一装配 AppContext）
-│   └── commands/          # 每命令一文件：sync.py pull.py cite.py sources.py atlas.py ...
+│   ├── __init__.py        # build_parser / main（统一装配 AppContext；agent 子命令绕开 DB/autosync）
+│   └── commands/          # 每命令一文件：sync.py pull.py cite.py sources.py atlas.py agent.py ...
 ├── application/
-│   ├── context.py  sync.py  pull.py  cite.py  resolve.py  status.py  sources.py  atlas.py
+│   ├── context.py  sync.py  pull.py  cite.py  resolve.py  status.py  sources.py  atlas.py  agent.py
 ├── domain/
 │   ├── codes.py           # 归一化 / 角色判定 / 新旧关系
 │   ├── atlas.py           # 图集编号规范化 / 严格匹配 / HTML 解析器
+│   ├── agent_assets.py    # 技能拼接 / 标记截取 / 状态机与哈希校验纯逻辑（零 I/O）
 │   ├── cite.py            # 引用串（最需测试）
 │   ├── naming.py          # 文件名策略
 │   └── availability.py    # 可得性判定与评分
@@ -210,7 +214,8 @@ guiju/
 ├── store/
 │   ├── sqlite.py          # SQLite schema v2（目录与版本关系）
 │   ├── currency.py        # DiskCurrencyCache（native-v1-*.json，兼容缺 replaced_by）
-│   └── atlas.py           # 独立图集目录快照 GUIJU_HOME/atlas-catalog.json
+│   ├── atlas.py           # 独立图集目录快照 GUIJU_HOME/atlas-catalog.json
+│   └── agent_receipts.py  # 独立受管技能收据 GUIJU_HOME/agent-receipts.json（flock + 原子替换）
 ├── sources/               # 站点适配器（mohurd / shzjw，直连 guiju/net）
 ├── currency/              # 时效适配器（native 默认含 csres/ccsn/stdsamr/jtst/dbba/shzjw/chinabuilding）
 └── net/
@@ -220,7 +225,7 @@ migrations/0001_init.sql
 tests/
   fixtures/catalog-page-1.html      # 列表页解析的离线夹具
   fixtures/atlas/                   # 国标电子书库离线黄金夹具
-  test_cite.py  test_codes.py  test_net_boundaries.py  test_mcp.py ...  # 65 个领域套件（无 test_fix_*）
+  test_cite.py  test_codes.py  test_agent_*.py  test_net_boundaries.py  test_mcp.py ...  # 领域测试套件（无 test_fix_*）
 ```
 
 > 拆分不是为了好看：`cite` 与 `codes` 是唯一值得写单测的纯逻辑，混在 536 行的 cli 里就永远测不了。

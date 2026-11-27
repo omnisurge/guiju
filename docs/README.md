@@ -2,7 +2,7 @@
 
 > 更新时间：2026-11-27
 >
-> 当前发布：**1.4.0（2026-11-27）**；发版事实见 [docs/audit/release-1.4.0-20261127.md](audit/release-1.4.0-20261127.md)。1.3.0 / 1.2.0 / 1.2.0a4 记录保留作历史。
+> 当前发布：**1.5.0（2026-11-27）**；发版事实见 [docs/audit/release-1.5.0-20261127.md](audit/release-1.5.0-20261127.md)。1.4.0 / 1.3.0 / 1.2.0 / 1.2.0a4 记录保留作历史。
 
 目的：把“当前文档”和“历史证据”分开，避免历史迁移记录被误当成当前运行说明。历史文档不重写事实，也不删除；ADR 接受后只增状态索引，不改写决策原文。
 
@@ -16,10 +16,11 @@
 | [INSTALL.md](../INSTALL.md) | 当前 | 安装、自部署、回退 |
 | [HANDOFF.md](../HANDOFF.md) | 当前 | 交接状态、已验证事实、踩坑记录 |
 | [deploy/README.md](../deploy/README.md) | 当前 | hk 生产服务部署与验证 |
-| [docs/ARCHITECTURE.md](ARCHITECTURE.md) | 当前（v1.4.0 已对齐） | 产品架构；第四节按实际结构描述 |
+| [docs/ARCHITECTURE.md](ARCHITECTURE.md) | 当前（v1.5.0 已对齐） | 产品架构；第四节按实际结构描述 |
 | [docs/sources.md](sources.md) | 当前基线（2026-10-31 实测） | 数据源现状；当前目录 3257 条与图集只读目录见 README/HANDOFF |
 | [docs/ACCEPTANCE.md](ACCEPTANCE.md) | 当前发布记录 + 历史验收 | 验收记录；顶部为最新发布，以下按版本保留 |
-| [docs/audit/release-1.4.0-20261127.md](audit/release-1.4.0-20261127.md) | 当前发版记录 | 1.4.0（v1.4.0）发版事实与产物 |
+| [docs/audit/release-1.5.0-20261127.md](audit/release-1.5.0-20261127.md) | 当前发版记录 | 1.5.0（v1.5.0）发版事实与产物 |
+| [docs/audit/release-1.4.0-20261127.md](audit/release-1.4.0-20261127.md) | 历史发版记录 | 1.4.0（v1.4.0）发版事实与产物 |
 | [docs/audit/release-1.3.0-20261126.md](audit/release-1.3.0-20261126.md) | 历史发版记录 | 1.3.0（v1.3.0）发版事实与产物 |
 | [docs/audit/release-1.2.0-20261124.md](audit/release-1.2.0-20261124.md) | 历史发版记录 | 1.2.0（v1.2.0）发版事实与产物 |
 | [docs/audit/release-1.2.0a4-20261122.md](audit/release-1.2.0a4-20261122.md) | 历史发版记录 | 1.2.0a4（v1.2.0-alpha.4）发版事实与产物 |
@@ -27,7 +28,7 @@
 | [docs/remediation-2026-11-18.md](remediation-2026-11-18.md) | 历史计划（B2-B5 已完成；1.2.0 发版） | 1.2.0 契约整改的过程记录 |
 | [docs/spec-1.3.0.md](spec-1.3.0.md) | 已完成（v1.3.0 已发布，S0–S6 全部闭环） | v1.3.0 迭代 Spec（M4 观测、去冗余、兼容门面退场、MCP 纯净化、测试收敛） |
 | [docs/spec-1.4.0.md](spec-1.4.0.md) | 已完成（v1.4.0 已发布，S0–S4 全部闭环） | v1.4.0 迭代 Spec（标准图集时效/替代链、`guiju atlas`、MCP `atlas_search`、PEP 639） |
-| [docs/spec-1.5.0.md](spec-1.5.0.md) | S3 已完成（含红队审查通过），准备进入 S4 发版冻结（2026-11-27） | v1.5.0 迭代 Spec（开发/使用约束与技能解耦、`guiju/agent_assets/`、`guiju agent`） |
+| [docs/spec-1.5.0.md](spec-1.5.0.md) | 已完成（v1.5.0 本地 S0–S4 闭环，待授权推送与 `hk` 升级） | v1.5.0 迭代 Spec（开发/使用约束与技能解耦、`guiju/agent_assets/`、`guiju agent`） |
 | [docs/adr/README.md](adr/README.md) | 当前索引 | 本项目 ADR 0001–0008 的唯一状态入口 |
 | [CHANGELOG.md](../CHANGELOG.md) | 当前 | 版本变更 |
 
@@ -60,3 +61,4 @@ kb-system/ADR0048 是 kb-system 的知识库 v2 决策，不是 guiju 的 ADR，
 - [1.2.0 发版记录](audit/release-1.2.0-20261124.md)
 - [1.3.0 发版记录](audit/release-1.3.0-20261126.md)
 - [1.4.0 发版记录](audit/release-1.4.0-20261127.md)
+- [1.5.0 发版记录](audit/release-1.5.0-20261127.md)

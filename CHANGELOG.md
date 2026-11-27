@@ -1,13 +1,12 @@
 # 变更记录
 
-## Unreleased
+## 1.5.0 — 2026-11-27（1.5.0 正式发布）
 
-> 目标版本：1.5.0（开发准备中，详见 `docs/spec-1.5.0.md` 与 ADR 0008）。
-
-- S0：切出 `feat/v1.5.0`（基线 `main` @ `dc13268`），立项并修订 [ADR 0008](docs/adr/0008-agent-skills-and-usage-decoupling.md) 与 [docs/spec-1.5.0.md](docs/spec-1.5.0.md)，完成「开发态 vs 使用态」解耦定稿（5 处内容级净化守卫、`guiju/agent_assets/contract.md` 真正唯一正文真源、严格分层 `domain` 纯判定/`store/agent_receipts.py` `fcntl.flock` 带外持久化、跨机认领与平滑升级、`EXIT_CONFLICT = 11`、symlink/`--force`/坏收据完整边界）。
-- S1：新增包内使用态单一真源 `guiju/agent_assets/`（`contract.md` / `skill_frontmatter.yaml` / `history_hashes.json`）并在 `pyproject.toml` 声明 package-data，将 `docs/AGENT-USAGE.md` 改为极简指针页；在 `guiju/errors.py` 新增 `EXIT_CONFLICT = 11`（`AgentConflict`）并在 `README.md` 补齐 `34` 与 `11`；新增纯领域状态机 `guiju/domain/agent_assets.py` 与带外收据存储 `guiju/store/agent_receipts.py`（POSIX `fcntl.flock` + `.corrupt-<ts>` + 原子替换）及对应 AST 边界与单测。
-- S2：新增应用层 `guiju/application/agent.py` 与 CLI 子命令 `guiju agent {show|install|uninstall|status}`（完全绕开 `catalog.db` 与 `autosync`），实现路径解析、`--dir` 与 `--target`/`--scope` 互斥 `exit 2`、`lstat`/`O_NOFOLLOW` 递归防 symlink 与端到端单测覆盖（R1 团队同步/切分支、B3 跨机认领、R4 缺失目录清收据与悬空 symlink 拒绝、`--force` 与同级目录隔离）。
-- S3：接入 `McpServer.initialize` 运行时同源截取 `instructions`（源自 `guiju/agent_assets/contract.md` 标记区间）并强化 MCP 永不触及 `agent`/`11` 的边界；净化 `NeedsHuman`/`atlas`/MCP 域名提示中的源码路径泄露；补齐 5 处消费方可见输出的内容级净化守卫、`test_hygiene.py` 与 `scripts/check-release.py --artifacts`（wheel 内容白/黑名单与 `history_hashes.json` 当前/历史 tag 只增不改校验），并完成 S0–S3 红队代码审查。
+- **开发态与使用态 Agent 约束/技能解耦（ADR 0008 / S0–S4）**：
+  - **包内使用态单一真源（`guiju/agent_assets/`）与净化内容**：新增 `guiju/agent_assets/`（`contract.md` 唯一正文真源、`skill_frontmatter.yaml` 纯头信息、`history_hashes.json` 跨版本哈希索引），运行时确定性拼装完整 `SKILL.md` 并由 `McpServer.initialize` 按标记区间实时提取 `instructions`；`docs/AGENT-USAGE.md` 收敛为极简指针页，`pyproject.toml` `[tool.setuptools.package-data]` 显式打包资产文件，绝不将仓内 `AGENTS.md`/`.agents/`/`docs/` 打入 wheel。
+  - **跨 Harness 显式 CLI 分发器与严格分层状态机（`guiju agent`）**：新增 `guiju agent {show|install|uninstall|status}`（完全绕开 `catalog.db` 与 `autosync`），严格保持 `domain/agent_assets.py` 纯判定、`store/agent_receipts.py` 带外收据持久化（`GUIJU_HOME/agent-receipts.json`，`schema: 1` + POSIX `fcntl.flock` + `.corrupt-<ts>` 原子备份）与 `application/agent.py` 路径解析/并发编排；完整支持团队 `git pull` / `git checkout` 同步、跨机历史哈希认领（`adopted`/`adopted_and_upgraded`）、缺失目录陈旧收据清理、`--force`、及全链路 `lstat`/`O_NOFOLLOW`/父祖先符号链接校验（含 Python 3.10/3.13 符号链接环拦截），拒绝触碰同级其他工具技能。
+  - **退出码契约与双层内容/打包守卫**：在 `guiju/errors.py` `1x` 本地文件系统段新增 `EXIT_CONFLICT = 11`（`AgentConflict`，MCP 服务面永不返回 `11`）并保持既有业务退出码（`1`/`2`/`10`/`20`/`30–34`/`40`/`50`）与 `catalog.db` `SCHEMA_VERSION = 2` 不变；`README.md` 退出码表补齐 `34` 与 `11` 并由单测锁死三方集合一致；净化 `NeedsHuman`/`atlas`/MCP 域名提示并上线 5 处消费方可见输出词法/死链守卫，扩展 `scripts/check-release.py --artifacts` 校验真实 wheel 内容黑白名单及相对已发布 tag 的 `history_hashes.json` 只增不改，并通过全量红队代码审查（Commit `451f1d9` 关闭全部 3 项可复现缺陷并经 Mode 2 轻量复查「通过」）。
+- **验证与分发**：POSIX-only（Linux / macOS），运行时零第三方依赖；Python 3.10.21 / 3.13.5 全量 **1318 项单测**（`-W error::ResourceWarning`）、`ruff check .`、本地 CI 与完整联网 `scripts/e2e.py --require-currency` **39/39** 通过；ADR 0008 与 `docs/spec-1.5.0.md` 均已闭环收口。
 
 ## 1.4.0 — 2026-11-27（1.4.0 正式发布）
 

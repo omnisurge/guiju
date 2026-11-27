@@ -1,6 +1,6 @@
 # guiju v1.5.0 迭代规格（Spec）
 
-- 状态：**S3 已完成（含红队审查通过），准备进入 S4 发版冻结（2026-11-27）**
+- 状态：**已完成（S0–S4 本地冻结、构建、回退演练与发版门禁通过；2026-11-27，待所有者授权推送打 tag 与升级 `hk`）**
 - 分支：`feat/v1.5.0`
 - 基线：`main` @ `dc13268`（`v1.4.0` 正式版）
 - 目标版本：`1.5.0`
@@ -64,5 +64,5 @@
 - [x] **S0**：`feat/v1.5.0` 基线、ADR 0008（按 B1–B4 与 R1–R4 定稿并已接受）、`spec-1.5.0.md`、`CHANGELOG.md` `Unreleased` 与索引登记
 - [x] **S1**：`guiju/agent_assets/` 唯一真源、指针页、`EXIT_CONFLICT = 11`（+`README.md` 补 `34`/`11`）、`domain/agent_assets.py` 纯状态机与 `store/agent_receipts.py` 持久化/锁
 - [x] **S2**：`guiju/application/agent.py`、CLI `guiju agent` 与全场景单测
-- [x] **S3**：MCP `initialize.instructions` 运行时直读、5 处内容级净化/SSOT 守卫、`test_hygiene.py`/`check-release.py` 扩展与红队审查
-- [ ] **S4**：`v1.5.0` 冻结、真链验收、产物构建、回退演练及发布
+- [x] **S3**：MCP `initialize.instructions` 运行时直读、5 处内容级净化/SSOT 守卫、`test_hygiene.py`/`check-release.py` 扩展与红队审查（Commit `451f1d9` 关闭全部 3 项可复现缺陷，Mode 2 复查「通过」）
+- [x] **S4**：`v1.5.0` 本地冻结、联网 `e2e.py 39/39`、wheel/sdist 产物构建与 `--artifacts --skip-tag` 对账、本地 `1.5.0 ↔ 1.4.0` 回退演练闭环（远端打 tag 推送与 `hk` 部署待所有者按 `AGENTS.md §4` 另行授权）

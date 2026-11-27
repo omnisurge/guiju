@@ -1,13 +1,26 @@
 # 验收记录
 
-> 最新发布验收：**v1.4.0（2026-11-27）** —— **1279 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；tag 与发布产物见下。
-> 上一发布：**v1.3.0（2026-11-26）**；更早 v1.2.0 / v1.2.0-alpha.* / v1.1.0 / v1.0.0 的验收记录保留作历史对照。
+> 最新发布验收：**v1.5.0（2026-11-27）** —— **1318 项单测**、完整联网 e2e **39/39**、本地 CI 全绿；发布产物见下（本地冻结收口，待授权打 tag 推送与升级 hk）。
+> 上一发布：**v1.4.0（2026-11-27）**；更早 v1.3.0 / v1.2.0 / v1.2.0-alpha.* / v1.1.0 / v1.0.0 的验收记录保留作历史对照。
 > 默认时效为 **native**；hk 服务与消费者切换沿用 v1.0.0 验证，NAS spec-currency 已停用（文件保留可回退）。后续各版本记录保留作历史对照。
 >
 > **阅读说明（2026-11-22）**：本文件按版本保留验收记录；v1.2.0-alpha.4 之前的 NAS/cmd/mcp 描述是历史事实，不代表当前架构。当前运行形态见 [docs/README.md](README.md) 与 [deploy/README.md](../deploy/README.md)。
 >
 > **按语（2026-11-09）**：本地归档注册表已撤销（artifact 表、`verify`/`provenance` 命令删除），
 > 正文归档归 kb-system，幂等靠文件名 sha256 指纹。下文中 verify/provenance 相关行属历史验收记录，不再适用。
+
+## v1.5.0（2026-11-27）
+
+| 项 | 值 |
+|---|---|
+| 代码基线 | `feat/v1.5.0`（S0–S4 收口 + 红队审查修复 `451f1d9`，待授权合入 `main` 并打 tag `v1.5.0`） |
+| 版本 | `1.5.0`（目标 tag `v1.5.0`） |
+| 单测 | Python 3.10.21 / 3.13.5 **各 1318/1318 通过**（`-W error::ResourceWarning`）；`scripts/ci.sh` exit 0（含 ruff、docs-only、离线 e2e 4/4） |
+| 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39** 通过，exit 0（2026-11-27 实测，同步 `db=3257 上游=3257`，二次幂等 `new=0`；日志 `/tmp/guiju-e2e-20261127-v150.log`，2,781 B，SHA-256 `f7fc898a2e06fa6ba53bfb212b127fb5847fc7c4262fa4fba9394aaaeb3f2756`） |
+| 发布产物 | wheel `guiju-1.5.0-py3-none-any.whl` SHA-256 `8da078b33b0be1e80436d98d7fc97311b5fc609bac7a3599ed2b30dcb45ae54d`（254,417 bytes，108 个文件，PEP 639 零弃用警告，含 `guiju/agent_assets/*`、零开发态路径泄露）；sdist `guiju-1.5.0.tar.gz` SHA-256 `bd95649973cc593861cb06ebb3f6dd5d1431d95555acb9db687569ec09dfb485`（426,047 bytes，199 个条目，不含 `docs/`） |
+| 本地回退演练 | `/tmp/guiju-rollback-drill-1.5.0-20261127` 实测 `1.5.0 → 1.4.0 → 1.5.0` wheel 切换、`SCHEMA_VERSION=2` `catalog.db` 直读与标记保留（`before-rollback-1.5.0`）、独立 `atlas-catalog.json` 与 `agent-receipts.json`/`.agents/skills/guiju-standards/SKILL.md` 共存（再升回 `1.5.0` 后 `agent status` `clean` / `agent install` `unchanged`）及离仓 `guiju agent show`/`McpServer.initialize.instructions` 均完整通过；本机 editable `guiju --version` 实测 `guiju 1.5.0` |
+| hk 生产部署 | 本地冻结收口，按 `AGENTS.md §4` 权限闸门待所有者明确授权后再执行 tag 推送、GitHub Release 及 `hk` `guiju-mcp` 升级（当前 `hk` 运行 `1.4.0`，不涉及 DB schema 或 unit 变更，未访问 NAS） |
+| 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.5.0 |
 
 ## v1.4.0（2026-11-27）
 

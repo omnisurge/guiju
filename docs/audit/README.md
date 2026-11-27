@@ -19,3 +19,4 @@
 | [release-1.2.0-20261124.md](release-1.2.0-20261124.md) | 2026-11-24 | 1.2.0 正式发版记录（产物、验证、hk 部署） |
 | [release-1.3.0-20261126.md](release-1.3.0-20261126.md) | 2026-11-26 | 1.3.0 正式发版记录（M4 观测、去冗余/退场、MCP 纯净化、测试收敛、产物与验证） |
 | [release-1.4.0-20261127.md](release-1.4.0-20261127.md) | 2026-11-27 | 1.4.0 正式发版记录（标准图集只读时效与完整目录索引、`guiju atlas`、MCP `atlas_search`、PEP 639 与显式年份护栏） |
+| [release-1.5.0-20261127.md](release-1.5.0-20261127.md) | 2026-11-27 | 1.5.0 正式发版记录（开发/使用态 Agent 约束与技能解耦、`guiju/agent_assets/` 单一真源、`guiju agent`、MCP `initialize.instructions` 与双层净化守卫） |
