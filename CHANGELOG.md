@@ -4,7 +4,7 @@
 
 > 目标版本：1.5.0（开发准备中，详见 `docs/spec-1.5.0.md` 与 ADR 0008）。
 
-- S0：切出 `feat/v1.5.0`（基线 `main` @ `dc13268`），新增并修订 [ADR 0008](docs/adr/0008-agent-skills-and-usage-decoupling.md) 与 [docs/spec-1.5.0.md](docs/spec-1.5.0.md)，规划「开发态约束/技能 vs 产品使用态契约/通用 Agent Skills」双层净化解耦（路径级+内容级守卫、`guiju/agent_assets/` 真正单一真源、`GUIJU_HOME/agent-receipts.json` 带外收据与平滑升级、`EXIT_CONFLICT = 11`、显式 `guiju agent` 分发及 MCP `instructions` 同源直读）。
+- S0：切出 `feat/v1.5.0`（基线 `main` @ `dc13268`），立项并修订 [ADR 0008](docs/adr/0008-agent-skills-and-usage-decoupling.md) 与 [docs/spec-1.5.0.md](docs/spec-1.5.0.md)，完成「开发态 vs 使用态」解耦定稿（5 处内容级净化守卫、`guiju/agent_assets/contract.md` 真正唯一正文真源、严格分层 `domain` 纯判定/`store/agent_receipts.py` `fcntl.flock` 带外持久化、跨机认领与平滑升级、`EXIT_CONFLICT = 11`、symlink/`--force`/坏收据完整边界）。
 
 ## 1.4.0 — 2026-11-27（1.4.0 正式发布）
 

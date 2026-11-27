@@ -1,24 +1,23 @@
 # ADR 0008 · 开发态与使用态 Agent 约束/技能解耦及跨 Harness 分发
 
-- 状态：**提议中（待所有者审阅确认后启动 S1）**（2026-11-27 修订）
+- 状态：**提议中（待所有者审阅复查通过后启动 S1）**（2026-11-27 修订）
 - 决策人：所有者
 - 触发：`v1.4.0` 收口时已将仓库根 `AGENTS.md`（开发者/发版约束）与 [AGENT-USAGE.md](../AGENT-USAGE.md)（消费方使用契约）拆分，并在本仓 `.agents/skills/red-team-review/SKILL.md` 沉淀了开发审查技能；但下游消费者安装 `guiju` 后，仍缺少随产品包分发、通用于任意 AI agent / harness 且内容彻底净化的产品态使用契约与可移植 Agent Skills。
-- 影响：`pyproject.toml`、`guiju/errors.py`、`guiju/mcp.py`、`guiju/cli/__init__.py`、新增 `guiju/agent_assets/`、新增 `guiju/domain/agent_assets.py`、新增 `guiju/application/agent.py`、新增 `guiju/cli/commands/agent.py`、[AGENT-USAGE.md](../AGENT-USAGE.md)、`tests/`
-- 关系：延续 [ADR 0004](0004-contract-first-hardening.md)（契约优先）、[ADR 0006](0006-v1-3-0-architecture-and-mcp-purification.md)（架构分层与 MCP 纯净化）及 [ADR 0007](0007-atlas-currency-and-catalog.md)（PEP 639 打包治理）；具体迭代排期与发版门禁见对应版本 Spec（首期为 [spec-1.5.0.md](../spec-1.5.0.md)）。
+- 影响：`pyproject.toml`、`guiju/errors.py`、`guiju/mcp.py`、`guiju/cli/__init__.py`、新增 `guiju/agent_assets/`（含 `__init__.py`）、新增 `guiju/domain/agent_assets.py`（纯逻辑）、新增 `guiju/store/agent_receipts.py`（持久化与文件锁）、新增 `guiju/application/agent.py`（路径解析与编排）、新增 `guiju/cli/commands/agent.py`、`scripts/check-release.py`、`README.md`、[AGENT-USAGE.md](../AGENT-USAGE.md)、`tests/`
+- 关系：延续 [ADR 0004](0004-contract-first-hardening.md)（契约优先）、[ADR 0006](0006-v1-3-0-architecture-and-mcp-purification.md)（架构分层与 MCP 纯净化）及 [ADR 0007](0007-atlas-currency-and-catalog.md)（PEP 639 打包治理）；遵守 [ARCHITECTURE.md](../ARCHITECTURE.md) 依赖方向铁律；具体迭代排期与发版门禁见对应版本 Spec（首期为 [spec-1.5.0.md](../spec-1.5.0.md)）。
 
 ---
 
-## 一、背景与已核实的六类问题
+## 一、背景与已核实的架构前提
 
-1. **职责混杂与内容级泄露**：开发约束关心源码分层、`guiju/net/` AST 边界、`scripts/ci.sh` 与发版审查；消费方 agent 关心 `--json` 协议、退出码动作决策、`which/pull/cite/atlas` 选用与 MCP 工具边界。仅做“文件路径排除”不够——现行 [AGENT-USAGE.md](../AGENT-USAGE.md) 正文中已存在三处开发态/仓内泄露，若直接打包或输出给离仓消费者会构成死链或越层泄露：
+1. **职责混杂与内容级泄露**：开发约束关心源码分层、`guiju/net/` AST 边界、`scripts/ci.sh` 与发版审查；消费方 agent 关心 `--json` 协议、退出码动作决策、`which/pull/cite/atlas` 选用与 MCP 工具边界。仅靠构建时“文件路径排除”不够——现行 [AGENT-USAGE.md](../AGENT-USAGE.md) 正文中已核实存在三处仓内/开发态泄露，直接打包或打印给离仓消费者会构成死链或越层泄露：
    - 顶部保留仓内相对链接 `../README.md` 与 `../AGENTS.md`（`docs/AGENT-USAGE.md:4`）；
    - 退出码 `50` 描述直接点名修改源码文件 `guiju/sources/mohurd.py`（`docs/AGENT-USAGE.md:73`）；
-   - “不要做的事”列出源码内部模块与类 `guiju/net/（BodyPolicy / MetadataPolicy / RedirectGuard / Throttle）`（`docs/AGENT-USAGE.md:158`），消费方只调 CLI/MCP 根本无法也不需要理解源码内部类名。
-2. **多头副本破坏单一真源**：若同时在 `docs/AGENT-USAGE.md`、`guiju/agent_assets/` 与 `guiju/mcp.py` 维护三份使用契约再靠测试做关键词对账，必然演化为双写/三写漂移。
-3. **退出码语义错乱风险**：既有 `EXIT_TABLE` 中，`1` 专指未捕获程序缺陷并附 stderr traceback，`10` 专指正文/文件已存在（幂等成功），`30–50` 属规范检索与采集业务域。强行复用业务退出码去表达“目标目录冲突 / 用户手工修改 / 非受管卸载拒绝”，会让消费方 agent 无法区分业务态与本地资产状态。
-4. **消费方两种接入形态未切清**：支持开放 Agent Skills 的 harness 需要标准 skill 目录（`.agents/skills/` 等），而只认工作区指令文件的消费方工程（如具体监理项目工作区）需要一份自包含的使用契约片段嵌入自身的 `AGENTS.md` / `CLAUDE.md` / system prompt，同时 `guiju` 不得越界接管宿主项目整份 `AGENTS.md`。
-5. **受管状态存放、平滑升级与同级空间边界**：在目标 skill 目录内塞入 `.manifest.json` 等私有文件可能被部分 harness 当作异常或脏文件；若不定义平滑升级，产品升级时即使目标未改也会逼用户盲目使用 `--force`，架空篡改保护；此外同级 `.agents/skills/` 下可能共存其他工具管理的技能或状态，必须严守自身命名空间。
-6. **ADR 与单次发版绑定过紧**：ADR 应锁定长期架构边界与可证伪守卫，具体版本号、测试计数、联网 `e2e.py` 与 `hk` 演练属于各版本 Spec / 发版验收文档，不应写进 ADR 关闭条件。
+   - “不要做的事”列出源码内部模块与类 `guiju/net/（BodyPolicy / MetadataPolicy / RedirectGuard / Throttle）`（`docs/AGENT-USAGE.md:158`）。
+2. **多头副本破坏单一真源**：不仅跨目录不能双写，包内 `guiju/agent_assets/` 内部同样不能并行维护 `contract.md`、`SKILL.md` 与手工提炼的 `mcp-instructions.txt` 三份正文副本。
+3. **分层边界约束（B1）**：按 [ARCHITECTURE.md](../ARCHITECTURE.md#L168-L182)，`domain/` 必须保持纯逻辑（不碰磁盘、网络与 DB，也不解析 `Path.home()`/`cwd`），持久化与原子 JSON 写入归 `store/`（对标 `guiju/store/atlas.py`），路径解析与编排归 `application/`。
+4. **退出码独立语义**：既有 `EXIT_TABLE` 中，`1` 专指未捕获程序缺陷并附 stderr traceback，`10` 专指规范正文/本地同名文件已存在（幂等成功），`30–50` 属规范检索与采集业务域。资产安装冲突、用户手工修改、非受管卸载拒绝与符号链接拦截需要明确独立的退出码。
+5. **跨机与跨工具现实边界（B3/B4）**：`--scope project` 生成的 skill 文件可能随项目仓库提交而跨机分发到缺少本机 `GUIJU_HOME` 收据的新环境（或沙箱临时切换 `GUIJU_HOME`），需要干净资产的**认领（adopt）与平滑升级**能力；同时必须补齐 `--force`、卸载、收据损坏与符号链接防逃逸的完整语义，并将单次发版门禁从本 ADR 解耦出去。
 
 ---
 
@@ -26,81 +25,136 @@
 
 ### D1 双层净化隔离（路径级 + 内容级）
 
-- **路径级隔离（包产物边界）**：仓库根 `AGENTS.md`、`.agents/skills/red-team-review/SKILL.md`、`CONTRIBUTING.md`、`docs/`、`scripts/`、`tests/` 属开发与治理资产，**严禁打入 wheel**。
-- **内容级词法与链接纯净守卫**：所有包内消费方资产（`guiju/agent_assets/`）及运行时通过 CLI / MCP 输出的使用说明文本，必须通过静态内容级扫描，**严禁包含**：
-  - 仓内相对路径或相对 Markdown 链接（如 `../`、`./docs/`）；
-  - 源码内部模块路径、内部类名、测试或脚本名（如 `guiju/net/`、`guiju/sources/`、`BodyPolicy`、`MetadataPolicy`、`RedirectGuard`、`Throttle`、`scripts/`、`test_*.py`、`pyproject.toml` 等）；
-  - 开发态约束与开发技能标识（如 `red-team-review`、本仓开发 `AGENTS.md`、发版检查、`git push` 等）。
-  - 对应消费方语义须改写为纯外接口表述（如退出码 `50` 指导“带错误输出上报维护者”，合规红线指导“工具仅采自官方站点并强制限速，不提供绕过参数”）。
+- **路径级隔离与验证分工**：
+  - 仓库根 `AGENTS.md`、`.agents/`、`CONTRIBUTING.md`、`docs/`、`scripts/`、`tests/` 属源码与治理资产，**严禁打入 wheel**；
+  - 离线单测负责静态校验 `pyproject.toml`（`guiju/agent_assets/__init__.py` 与 `[tool.setuptools.package-data]`）；**真实构建产物 wheel 的路径黑/白名单检验纳入 `scripts/check-release.py --artifacts`**，避免离线单测在缺 `setuptools` 或严格断网环境下触发构建隔离失败。
+- **内容级词法与链接纯净守卫（扫描范围写死）**：
+  - 自动化测试必须全量扫描以下 **5 处消费方可见面**：
+    1. `guiju/agent_assets/*` 原始资产及运行时拼装生成的 `SKILL.md`；
+    2. `McpServer.initialize` 返回的 `instructions`；
+    3. `MCP TOOLS[*]["description"]`；
+    4. `guiju --help` 尾注及 `EXIT_TABLE` 渲染文案；
+    5. 消费方命令路径可触达的错误 `hint`（其中 `NeedsHuman`（`50`）仅作“站点可能改版，带错误输出上报维护者”，不得泄露源码路径、测试文件或内部策略类名；历史错误常量注释随版本整改同步净化）。
+  - 以上消费方文本**严禁出现**：仓内相对路径与相对 Markdown 链接（如 `../`、`./docs/`）、源码内部路径与类名（`guiju/net/`、`guiju/sources/`、`BodyPolicy`、`MetadataPolicy`、`RedirectGuard`、`Throttle`、`scripts/`、`test_*.py`、`pyproject.toml`）、以及开发态规范与技能名称（`red-team-review`、本仓开发 `AGENTS.md`、`git push`、`scripts/ci.sh` 等）。
 
-### D2 通用跨 Agent 两种交付形态与边界（方法 2）
+### D2 真正单一真源（SSOT）与通用跨 Agent 两种交付形态
 
-- 采用开放通用的纯文本 Markdown 与开放 Agent Skills（`SKILL.md` + YAML frontmatter）结构，**零第三方依赖**，不绑定任何单一 IDE 私有扩展格式或插件市场。
-- 包内提供两种标准交付形态：
-  1. **完整可移植 Skill 目录**：`guiju-standards`（`SKILL.md`），覆盖 `which → pull → cite → atlas` 标准闭环、`--json`、退出码动作表、`warnings`/strict 与图集版权边界；供任意支持 Agent Skills 约定的 harness 通过 `guiju agent install` 落地；
-  2. **消费方工作区指令片段**：独立自包含文本 `contract.md`，供消费方项目（如具体工程/监理工作区）按需通过 `guiju agent show --kind contract` 复制或拼接到自身的 `AGENTS.md`、`CLAUDE.md` 或自定义 system prompt 中。
-- **宿主工作区边界**：`guiju` 作为无状态规范取源工具，**不接管也不整份生成或修改消费方宿主项目的 `AGENTS.md`**；宿主项目的语言风格、工程资料纪律与业务审批流程归消费方工程自身。
+- **包内唯一真源结构（消除三份正文副本，B2）**：
+  - `guiju/agent_assets/` 为含 `__init__.py` 的标准 Python 子包（确保 `setuptools.packages.find` 纳入，避免带连字符的目录名 `guiju-standards` 误充当包名），目录内仅放三个资产文件并通过 `pyproject.toml` `[tool.setuptools.package-data]` 以路径 glob 显式打包（含 `*.md`、`*.yaml`、`*.json`）：
+    1. `contract.md`：**唯一消费方正文真源**。正文内使用成对 HTML 注释标记 `<!-- guiju:mcp-summary:begin -->` … `<!-- guiju:mcp-summary:end -->` 标定供 MCP 引导截取的核心片段；
+    2. `skill_frontmatter.yaml`：仅含开放 Agent Skills 标准 YAML frontmatter（`name: guiju-standards`、`description: ...`），**零规则正文**；
+    3. `history_hashes.json`：记录当前版本及后续历史已发布版本（自 `1.5.0` 起逐版累积，并供单测注入模拟历史版本）的受管相对文件路径 → SHA-256 映射表，用于跨机认领判定。
+- **确定性运行时派生（零手工抄写）**：
+  - 完整 `SKILL.md` 由纯函数在运行时将 `skill_frontmatter.yaml` + `contract.md` 原文确定性拼接生成；单测断言剥除 frontmatter 后与 `contract.md` **逐字节一致**；
+  - `McpServer.initialize` 的 `instructions` 在运行时按标记直接从 `contract.md` 确定性截取并格式化（不另存 `mcp-instructions.txt` 副本）；单测断言其逐字源于 `contract.md` 对应标记区间；
+  - `docs/AGENT-USAGE.md` 改写为**极简指针页**，仅指向 `guiju/agent_assets/contract.md` 与 `guiju agent show --kind contract`，彻底消除第二份规则正文。
+- **两种交付形态与宿主边界**：
+  1. **标准 Skill 目录（`guiju-standards/SKILL.md`）**：面向支持开放 Agent Skills 的任意 harness，通过 `guiju agent install` 落地；
+  2. **工作区指令片段（`guiju agent show --kind contract`）**：面向只读项目指令文件（如工程项目根目录下的 `AGENTS.md`、`CLAUDE.md` 或自定义 system prompt）的消费者，提供自包含使用片段；
+  - **绝不越界接管宿主工作区**：`guiju` 仅作为无状态规范取源工具，不整份生成、不接管、不覆写任何消费方项目的 `AGENTS.md`。
 
-### D3 显式 CLI 分发、带外收据与四态平滑升级状态机
+### D3 严格分层、带外收据、认领平滑升级与完整写删语义
 
-- **零安装期副作用**：严禁在 `pip install` / `uv tool install` 期间用 hook 静默写入 `~/.agents/`、`~/.claude/` 或工作目录；所有磁盘写入仅由用户显式执行 `guiju agent install` / `uninstall` 触发（`show` 与 `status` 严格只读、不建目录）。
-- **多目标与任意目录支持**：
-  - `guiju agent show --kind contract|skill [--json]` 直接打印消费方契约片段或 `SKILL.md` 原文，供任何自研 harness、项目工作区或人工检视使用；
-  - `guiju agent install` 支持 `--target agents`（`.agents/skills/`）、`--target claude`（`.claude/skills/`）、`--dir <PATH>` 任意自定义目标根目录、以及 `--scope project|user`、`--force`、`--json`。
-- **带外受管收据（保持目标目录 100% 干净）**：
-  - **禁止在目标 skill 目录内写入 `.manifest.json` 等任何私有元数据文件**；
-  - 受管收据统一带外存放于 `GUIJU_HOME/agent-receipts.json`（与 `atlas-catalog.json` 同原则独立于 `catalog.db`，保持 `SCHEMA_VERSION = 2` 不变，采用临时文件 + `fsync` + 原子替换写入），以规范化绝对路径（`realpath`）为键记录 `package_version`、`managed_files` 相对路径及各自 SHA-256。
-- **四态状态机（含无感知平滑升级）**：
-  - **首次安装**：目标不存在 → 写入受管文件并记入收据 → `exit 0`（`action="installed"`）；
-  - **无变更**：目标受管，磁盘文件清单与各自 SHA-256 既匹配收据又匹配当前安装包资产 → 零写盘 → `exit 0`（`action="unchanged"`）；
-  - **平滑升级**：目标受管，且磁盘当前文件清单与各自 SHA-256 **完全匹配旧版收据记录**（用户未手工编辑，且目标目录无收据之外的多余脏文件），而当前安装包资产已更新 → 直接原子更新并刷新收据 → `exit 0`（`action="upgraded"`，**不需要 `--force`**）；
-  - **冲突与篡改拒绝**：以下情形默认拒绝覆盖并保留现场不变，返回 `EXIT_CONFLICT = 11`（仅显式传 `--force` 才接管/覆盖）：
-    - 目标已存在但无对应受管收据 → `exit 11`（`reason="agent_unmanaged_conflict"`）；
-    - 目标已受管但存在内容被手工修改或收据之外多余文件 → `exit 11`（`reason="agent_user_modified"`）；
-    - 收据文件损坏无法校验完整状态 → `exit 11`（`reason="agent_receipt_corrupt"`）。
-- **安全卸载与跨工具命名空间隔离**：
-  - `guiju agent uninstall` 仅在目标受管且未修改（或显式 `--force`）时删除收据登记的受管文件与随之变空的 `guiju-standards` 目录并清理该条收据；未受管目标拒绝删除（`exit 11`, `reason="agent_not_managed"`），手工修改未带 `--force` 同样拒绝（`exit 11`, `reason="agent_user_modified"`）；
-  - `guiju agent` 严格限定仅读写自身技能子目录 `guiju-standards/` 与自有 `agent-receipts.json`，**绝不扫描、修改或清理同级目录下其他工具的技能或第三方状态文件**。
+- **分层落地（B1，对齐 `ARCHITECTURE.md:168/182`）**：
+  1. **纯领域层 `guiju/domain/agent_assets.py`**：仅承载纯函数（`SKILL.md` 与 MCP `instructions` 确定性派生、规范化受管相对路径表、历史版本哈希匹配、输入「收据条目 + 磁盘快照/symlink 标志 + 当前/历史哈希」输出确定性动作计划），**零磁盘/环境变量读取、零 `Path.home()`/`cwd`、零网络**；
+  2. **存储层 `guiju/store/agent_receipts.py`**：对标 `guiju/store/atlas.py`，承接 `GUIJU_HOME/agent-receipts.json` 的读取、严格 schema 校验、损坏检测与 `.corrupt-<YYYYMMDD-HHMMSS>` 备份、以及 `temp + fsync + os.replace` 原子写入；读-改-写全程持有基于 POSIX `fcntl.flock(..., fcntl.LOCK_EX)` 的同目录文件锁（如 `agent-receipts.lock`），防止并发 `install`/`uninstall` 更新丢失；**不触碰 `catalog.db`**（保持 `SCHEMA_VERSION = 2`）；
+  3. **应用层 `guiju/application/agent.py`**：承接参数校验、目录解析（项目根默认为当前工作目录 `cwd`，用户目录为 `Path.home()`）、`lstat` 符号链接递归探测、磁盘快照采集与持锁执行写删/刷新收据。
+- **带外收据与纯净目标目录**：
+  - **严禁**向目标 skill 目录 `guiju-standards/` 写入 `.manifest.json` 等任何私有元数据文件；目标目录内除开放标准要求的文件（当前仅 `SKILL.md`）外零私有文件；
+  - 收据统一带外落盘于 `GUIJU_HOME/agent-receipts.json`。
+- **完整状态机（含跨机认领 B3）**：
+  - **首次安装**（目标路径不存在）→ 写盘 + 记收据 → `exit 0`, `action="installed"`；
+  - **无变更**（目标受管且磁盘完整集合/SHA-256 匹配收据与当前包）→ 零写盘 → `exit 0`, `action="unchanged"`；
+  - **平滑升级**（目标受管且磁盘完整集合/SHA-256 严格匹配旧版收据、无多余脏文件，当前包资产已更新）→ 直接原子更新 + 刷新收据 → `exit 0`, `action="upgraded"`（**不需要 `--force`**）；
+  - **跨机认领（B3）**：目标已存在、无符号链接、本机收据无该路径登记，且磁盘完整文件集合与 SHA-256（无多余脏文件）**精确匹配当前版本或 `history_hashes.json` 中任一历史版本** →
+    - 匹配当前版本：零改目标文件，仅补写本机收据 → `exit 0`, `action="adopted"`；
+    - 匹配历史版本：平滑更新目标文件至当前版本并补写本机收据 → `exit 0`, `action="adopted_and_upgraded"`（**不需要 `--force`**）；
+  - **非强行冲突拒绝**：磁盘存在未受管文件且不匹配任何官方版本哈希 → `exit 11`（`agent_unmanaged_conflict`）；已受管但存在用户篡改或多余文件 → `exit 11`（`agent_user_modified`）。
+- **四项硬边界语义（B4）**：
+  1. **`install --force` 清理命名空间脏文件**：在确认目标路径及其内部无符号链接的前提下，`install --force` 先删除 `guiju-standards/` 内全部不属于当前受管清单的额外文件（及随之变空的子目录），再写入纯净受管文件并刷新收据（JSON 附 `removed_extra_files`）。保证任何场景执行 `install --force` 后立即重跑 `install` 必得到 `exit 0` (`action="unchanged"`)；
+  2. **`uninstall` 边界（未受管绝不强删）**：
+     - 未受管目标（不在收据中，且不匹配官方当前或历史完整版本哈希）：**即使传 `--force` 也绝不删除**，固定拒绝返回 `exit 11`（`agent_not_managed`）；
+     - 干净官方未登记目录（如成员 B 直接卸载团队提交的官方 `guiju-standards/`）：精确匹配当前/历史官方完整哈希（无多余文件）时安全删除受管文件与空目录 → `exit 0`（`action="uninstalled"`）；
+     - 已受管但被修改或含额外文件的目标：不带 `--force` 返回 `exit 11`（`agent_user_modified`）；传 `--force` 时**仅删除收据登记的受管文件**，**保留所有非受管额外文件与非空目录**（仅空目录删除），清理该条收据并在 JSON 返回 `preserved_files`；
+  3. **收据损坏处理矩阵**：
+     - `status`：严格只读不写盘、不备份，直接报错 `exit 11`（`agent_receipt_corrupt`）并指出收据路径；
+     - `install`（含向全新未安装目录安装）：不带 `--force` 一律拒绝返回 `exit 11`（`agent_receipt_corrupt`），绝不静默丢弃其他已有目标的登记；带 `--force` 时先将坏收据原子备份为 `agent-receipts.json.corrupt-<YYYYMMDD-HHMMSS>`，再基于全新干净收据完成安装并在 JSON 返回 `backed_up_receipt`；
+     - `uninstall`：存在未损收据时按第 2 条执行；若收据损坏，则一律拒绝直接删改收据（`exit 11`, `agent_receipt_corrupt`）；
+  4. **符号链接全面拒绝（含 `--force`）**：写入、读取校验或删除前对 `guiju-standards` 目标目录自身（如指向外部目录的 symlink）及目录内全部文件/子目录执行 `lstat` 检测；**只要出现任何符号链接，即便带 `--force` 也一律拒绝并返回 `exit 11`（`reason="agent_symlink_rejected"`）**，绝不顺着符号链接越界写入或删除命名空间外文件。
+- **跨工具命名空间隔离**：`guiju agent` 仅读写自身子目录 `guiju-standards/` 与自有 `GUIJU_HOME/agent-receipts.json`，**绝不扫描、校验或删除同级目录（如 `.agents/skills/`）下的任何其他工具技能或第三方状态文件**。
 
-### D4 真正单一真源（SSOT，消灭双写与多写）
+### D4 CLI 参数契约、JSON 输出形状与 `agent-receipts.json` Schema
 
-- **`guiju/agent_assets/` 为消费方资产唯一真源**：
-  - 目录存放规范化单一真源（`contract.md`、`skills/guiju-standards/SKILL.md` 及基于同源消费方契约提炼的 `mcp-instructions.txt`），通过 `pyproject.toml` `[tool.setuptools.package-data]` 随包分发，运行时由 `importlib.resources` 读取（兼容 editable 与 wheel 安装）；
-  - 禁止在测试、CLI、MCP 代码内手工复制第二份长文案再靠关键字匹配对账。
-- **MCP 运行时直读真源**：`guiju/mcp.py` 在 `initialize` 响应中直接读取包内 `agent_assets` 提供的 `instructions` 文本，不手写冗余副本。
-- **`docs/AGENT-USAGE.md` 改为指针入口页**：仓储文档 `docs/AGENT-USAGE.md` 不再复制大段规则正文，只作为极简索引指针，明确指出真源位于 `guiju/agent_assets/contract.md` 及离仓消费者可通过 `guiju agent show --kind contract` 获取最新自包含使用契约。
+> 遵循 `AGENTS.md §1`：涉及 CLI 与 JSON 形状契约先于实现在本 ADR 中定稿。
 
-### D5 明确独立退出码与机器可读 `reason` 契约
+1. **CLI 子命令与参数规则**：
+   - `guiju agent show [--kind {contract,skill}] [--json]`：默认 `--kind contract`；纯 text 输出原文到 `stdout`；`--json` 输出 JSON；只读不建目录不触盘。
+   - `guiju agent install [--target {agents,claude} | --dir PATH] [--scope {project,user}] [--force] [--json]`：
+     - 默认 `--target agents`（解析至 `<root>/.agents/skills/guiju-standards`）、`--scope project`（`<root>` 固定取当前工作目录 `cwd`；`--scope user` 时 `<root>` 取 `Path.home()`）；`--target claude` 解析至 `<root>/.claude/skills/guiju-standards`；
+     - `--dir <PATH>` 指定 skill 父根目录（写入 `<PATH>/guiju-standards`）；**`--dir` 与 `--target` / `--scope` 严格互斥**（命令行显式同传任意组合即返回 `exit 2` `bad_usage`；`--dir` 为空串或仅空白时返回 `exit 2` `bad_usage`）。
+   - `guiju agent uninstall [--target {agents,claude} | --dir PATH] [--scope {project,user}] [--force] [--json]`：路径解析与互斥规则同 `install`。
+   - `guiju agent status [--target {agents,claude} | --dir PATH] [--scope {project,user}] [--json]`：
+     - **不传路径选项**（未传 `--target` / `--scope` / `--dir`）时：读取 `GUIJU_HOME/agent-receipts.json` 列出本机全部受管目标并逐条实时核对磁盘态（`clean` / `upgradable` / `modified` / `missing` / `symlink`）；收据缺失时返回空列表与 `receipt_exists=false`；收据损坏时返回 `exit 11`（`agent_receipt_corrupt`）；
+     - **显式传 `--target` / `--scope` 或 `--dir`**（同传 `--dir` 与 `--target`/`--scope` 仍报 `exit 2`）时：仅检查并报告该指定目标路径的状态（包括 `not_installed` / `adoptable_current` / `adoptable_upgrade` / `clean` / `upgradable` / `modified` / `unmanaged_conflict` / `symlink`）；
+     - 全部 `status` 分支**只读不写盘、不建任何目录**。
 
-- 既不复用 `1`（在 `guiju` 中保留给未捕获程序缺陷 + traceback），也不复用 `10`（规范正文幂等跳过“文件已存在可直接用”，语义完全相反），更不将规范采集域 `30–50` 错配给包内资产安装冲突。
-- 在 `guiju/errors.py` 的 `1x` 本地文件系统域新增 **`EXIT_CONFLICT = 11`（`AgentConflict`）**，同步列入 `EXIT_TABLE` 与统一 JSON 失败体（`{"ok": false, "exit": 11, "reason": ..., "error": ..., "hint": ...}`）：
+2. **成功载荷（`--json`，统一携带 `"ok": true`）**：
+   - `show`：`{"ok": true, "kind": "contract" | "skill", "package_version": "...", "sha256": "...", "content": "..."}`
+   - `install`：`{"ok": true, "action": "installed" | "unchanged" | "upgraded" | "adopted" | "adopted_and_upgraded", "target": "...", "scope": "project" | "user" | "custom", "path": "<realpath>/guiju-standards", "receipt_path": ".../agent-receipts.json", "package_version": "...", "files": [{"relpath": "SKILL.md", "sha256": "..."}], "removed_extra_files": [...], "backed_up_receipt": null | "..."}`
+   - `uninstall`：`{"ok": true, "action": "uninstalled", "path": "<realpath>/guiju-standards", "receipt_path": ".../agent-receipts.json", "removed_files": [...], "preserved_files": [...]}`
+   - `status`（汇总或单目标）：`{"ok": true, "mode": "all" | "single", "receipt_path": ".../agent-receipts.json", "receipt_exists": true | false, "package_version": "...", "entries": [{"path": "...", "target": "...", "scope": "...", "receipt_version": "...", "state": "...", "files": [...], "extra_files": [...]}]}`
+
+3. **`GUIJU_HOME/agent-receipts.json` 结构（`schema: 1`）**：
+   ```json
+   {
+     "schema": 1,
+     "installs": {
+       "/abs/realpath/to/.agents/skills/guiju-standards": {
+         "skill": "guiju-standards",
+         "target": "agents",
+         "scope": "project",
+         "package_version": "1.5.0",
+         "installed_at": "2026-11-27 14:00:00",
+         "files": {
+           "SKILL.md": "<64-hex-sha256>"
+         }
+       }
+     }
+   }
+   ```
+
+### D5 退出码与一致性守卫
+
+- 在 `guiju/errors.py` 的 `1x` 本地文件系统段正式新增 **`EXIT_CONFLICT = 11`（`AgentConflict`）**，纳入 `EXIT_TABLE`，保持既有规范采集业务退出码（`10/20/30–34/40/50`）与 `1` / `2` 语义零变更：
 
 | 退出码 | 错误类 / `reason` | 适用场景 | 既有规范采集退出码影响 |
 |---|---|---|---|
-| `0` | — | `show` / `status` / 首次安装 / 无变更 / 平滑升级 / 合法卸载成功 | 无 |
-| `2` | `BadUsage`（`bad_usage`） | 子命令/target/scope 参数非法或互冲突 | 复用既有 `2` |
-| `11` | `AgentConflict`（`agent_unmanaged_conflict` / `agent_user_modified` / `agent_not_managed` / `agent_receipt_corrupt`） | 目标非受管、用户手工改动或含脏文件、非受管卸载、收据损坏拒绝写删 | 新增 `11`，既有 `10/20/30–34/40/50` 语义零变更 |
+| `0` | — | `show` / `status` / `installed` / `unchanged` / `upgraded` / `adopted` / `adopted_and_upgraded` / `uninstalled` | 无 |
+| `2` | `BadUsage`（`bad_usage`） | 非法 `--kind`/`--target`/`--scope`、空白 `--dir`、`--dir` 与 `--target`/`--scope` 互斥冲突 | 复用既有 `2` |
+| `11` | `AgentConflict`（`agent_unmanaged_conflict` / `agent_user_modified` / `agent_not_managed` / `agent_receipt_corrupt` / `agent_symlink_rejected`） | 目标非受管冲突、用户修改/脏文件、非受管卸载拒绝、收据损坏拒绝、符号链接拒绝 | 新增 `11`（`1x` 本地域）；既有 `10`、`20`、`30–50` 零变动 |
 | `1` | `GuijuError`（`internal`） | 仅保留给未预期程序缺陷（带 stderr traceback） | 复用既有 `1` |
 
-- 继续严守运行时零第三方依赖、Python 3.10+ POSIX-only、`catalog.db` `SCHEMA_VERSION = 2` 不变、`guiju/net/` 一字不动、不触碰 NAS（ADR0048）。
+- **MCP 边界声明**：MCP 服务面仅暴露只读规范与图集检索工具（`query` / `verify` / `batch` / `announcement` / `atlas_search`），不提供 `agent` 安装/写盘工具，**MCP 服务面永远不会返回退出码 `11`**。
+- **退出码表单一来源一致性**：单测断言 `guiju/agent_assets/contract.md`、`README.md` 与 `guiju/errors.py` `EXIT_TABLE` 呈现的退出码集合完全一致（同步更新 `guiju/errors.py:27` 注释指向及 `README.md` 退出码表补入 `11`）。
 
 ### D6 明确不做
 
-- 不做 `pip` / `uv` 安装期静默写盘 hook 或后台常驻写入服务；
+- 不做 `pip` / `uv` 安装期静默写盘 hook 或后台写入进程；
 - 不绑定单一厂商私有插件格式或发布单平台专有资产；
-- 不把本仓 `AGENTS.md` 开发红线、`red-team-review` 技能或源码内部细节打入消费方安装包；
-- 不接管、不整份生成或覆写宿主工作区根 `AGENTS.md`；
+- 不把本仓开发态 `AGENTS.md`、`.agents/skills/red-team-review/`、源码内部路径/类名放入消费方资产或消费方可见提示；
+- 不在 `guiju/domain/` 内直接读写文件或解析 `Path.home()`/`cwd`；
+- 不接管、不整份生成或覆写宿主项目根目录 `AGENTS.md`；
 - 不向目标 skill 目录写入 `.manifest.json` 等任何私有元数据文件；
-- 不触碰或扫描同级 `.agents/skills/` 下任何其他工具的技能或状态文件。
+- 不触碰同级目录下其他工具的技能或状态文件，不修改 `guiju/net/`，不触碰 NAS（外部边界见 `kb-system/ADR0048`）。
 
 ---
 
 ## 三、架构不变量与可证伪守卫
 
-本 ADR 仅锁定长期有效的架构不变量与自动化测试守卫（具体批次里程碑、双 Python 矩阵、联网 `e2e.py 39/39` 与 `hk` 部署演练见各版本独立 Spec，首期为 [spec-1.5.0.md](../spec-1.5.0.md)）：
+本 ADR 仅锁定长期有效的架构不变量与可证伪守卫（具体迭代里程碑、双 Python 矩阵、联网 `e2e.py 39/39` 与 `hk` 部署演练见各版本独立 Spec，首期为 [spec-1.5.0.md](../spec-1.5.0.md)）：
 
-1. **双层净化守卫**：构建物与 AST/内容测试必须持续证明——wheel 包内 **含 `guiju/agent_assets/`**、**不含根 `AGENTS.md` 与 `.agents/`**；且包内全部消费方资产文本及 MCP 导出引导文本 **零仓内相对死链（`../`）、零源码内部路径/类名、零开发态技能名称**。
-2. **单一真源守卫**：仓库内不得存在 `docs/AGENT-USAGE.md`、`mcp.py` 与 `guiju/agent_assets/` 的多份并行正文副本；`McpServer.initialize` `instructions` 须由包内同一资源路径加载。
-3. **目标目录纯净与带外收据不变量**：`guiju agent install` 写入后，目标 skill 目录内除标准资产文件外**零私有元数据文件**；收据仅存于 `GUIJU_HOME/agent-receipts.json`，且 `catalog.db` `SCHEMA_VERSION = 2` 保持不升版本。
-4. **四态状态机与退出码 `11` 不变量**：单测须持续覆盖首次安装（`0`）、无变更（`0`）、旧版受管匹配平滑升级（`0`，无需 `--force`）、非受管冲突/用户修改/收据损坏（`11`）、带 `--force` 接管与安全卸载（`0` / 非受管 `11`），且同级第三方 skill 目录零触碰、`show`/`status` 只读零建目录。
-5. **零安装期副作用**：`pyproject.toml` 与包加载路径不得包含任何安装期写宿主/项目目录逻辑，既有业务命令 `10/20/30–34/40/50` 契约零破坏。
+1. **双层净化守卫**：`tests/` 静态检验包数据配置与 `importlib.resources` 可加载性，`scripts/check-release.py --artifacts` 检验真实 wheel 构建物（含 `guiju/agent_assets/`、不含根 `AGENTS.md`/`.agents/`/`docs/`）；单测持续扫描 5 处消费方可见输出，确保零仓内相对死链、零源码内部类名/路径泄露、零开发技能名称泄露。
+2. **真正单一真源守卫**：仓库内仅 `guiju/agent_assets/contract.md` 承载消费方正文规则；运行时派生出的 `SKILL.md`（剥除 frontmatter）与 `contract.md` 逐字节一致；`McpServer.initialize` `instructions` 运行时由 `contract.md` 标记区间截取；`docs/AGENT-USAGE.md` 不重复正文；`EXIT_TABLE`、`contract.md` 与 `README.md` 退出码集合一致。
+3. **严格分层与纯净带外收据不变量**：AST/模块测试证明 `guiju/domain/agent_assets.py` 不触文件系统/环境路径；收据持久化与 `fcntl.flock` 全在 `guiju/store/agent_receipts.py`；`GUIJU_HOME/agent-receipts.json` 为唯一收据落点且 `catalog.db` 保持 `SCHEMA_VERSION = 2`；安装后目标 skill 目录内零私有元数据文件。
+4. **完整状态机与符号链接安全不变量**：单测持续覆盖首次安装（`0`）、无变更（`0`）、旧版受管平滑升级（`0`）、跨机当前/历史哈希认领（`adopted`/`adopted_and_upgraded`，`0`）、未受管冲突/用户修改/收据损坏（`11`）、`--force` 清理多余文件再安装幂等（`0`）、`uninstall` 对未受管目标即使用 `--force` 仍拒绝（`11`）、`uninstall --force` 只删受管文件保留额外文件（`0`）、坏收据仅 `--force` 时 `.corrupt-<ts>` 备份重开（`0`）及任意 symlink 拒绝（含 `--force`，`11`）。
+5. **零安装期副作用与业务红线守卫**：`pyproject.toml` 与包加载路径零写盘 hook；同级第三方 skill 目录零触碰；MCP 服务面永不返回 `11`；既有业务退出码（`10`/`20`/`30–34`/`40`/`50`）与 `guiju/net/` 出站红线零变更。
