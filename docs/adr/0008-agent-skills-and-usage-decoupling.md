@@ -17,7 +17,7 @@
 2. **多头副本破坏单一真源**：不仅跨目录不能双写，包内 `guiju/agent_assets/` 内部同样不能并行维护 `contract.md`、`SKILL.md` 与手工提炼的 `mcp-instructions.txt` 三份正文副本。
 3. **分层边界约束（B1）**：按 [ARCHITECTURE.md](../ARCHITECTURE.md#L168-L182)，`domain/` 必须保持纯逻辑（不碰磁盘、网络与 DB，也不解析 `Path.home()`/`cwd`），持久化与原子 JSON 写入归 `store/`（对标 `guiju/store/atlas.py`），路径解析与编排归 `application/`。
 4. **退出码独立语义**：既有 `EXIT_TABLE` 中，`1` 专指未捕获程序缺陷并附 stderr traceback，`10` 专指规范正文/本地同名文件已存在（幂等成功），`30–50` 属规范检索与采集业务域。资产安装冲突、用户手工修改、非受管卸载拒绝与符号链接拦截需要明确独立的退出码。
-5. **跨机与跨工具现实边界（B3/B4）**：`--scope project` 生成的 skill 文件可能随项目仓库提交而跨机分发到缺少本机 `GUIJU_HOME` 收据的新环境（或沙箱临时切换 `GUIJU_HOME`），需要干净资产的**认领（adopt）与平滑升级**能力；同时必须补齐 `--force`、卸载、收据损坏与符号链接防逃逸的完整语义，并将单次发版门禁从本 ADR 解耦出去。
+5. **跨机与跨工具现实边界（B3/B4）**：`--scope project` 生成的 skill 文件可能随项目仓库提交而跨机分发到缺少本机 `GUIJU_HOME` 收据的新环境（或沙箱临时切换 `GUIJU_HOME`），或在团队成员升级后通过 `git pull` / `git checkout` 更新已登记工作区的磁盘内容，因此无论是否已有本机收据都需要干净官方资产的**认领（adopt）与平滑升级/同步**能力；同时必须补齐 `--force`、卸载（含目录已手工删除）、收据损坏与符号链接防逃逸的完整语义，并将单次发版门禁从本 ADR 解耦出去。
 
 ---
 
@@ -43,7 +43,7 @@
   - `guiju/agent_assets/` 为含 `__init__.py` 的标准 Python 子包（确保 `setuptools.packages.find` 纳入，避免带连字符的目录名 `guiju-standards` 误充当包名），目录内仅放三个资产文件并通过 `pyproject.toml` `[tool.setuptools.package-data]` 以路径 glob 显式打包（含 `*.md`、`*.yaml`、`*.json`）：
     1. `contract.md`：**唯一消费方正文真源**。正文内使用成对 HTML 注释标记 `<!-- guiju:mcp-summary:begin -->` … `<!-- guiju:mcp-summary:end -->` 标定供 MCP 引导截取的核心片段；
     2. `skill_frontmatter.yaml`：仅含开放 Agent Skills 标准 YAML frontmatter（`name: guiju-standards`、`description: ...`），**零规则正文**；
-    3. `history_hashes.json`：记录当前版本及后续历史已发布版本（自 `1.5.0` 起逐版累积，并供单测注入模拟历史版本）的受管相对文件路径 → SHA-256 映射表，用于跨机认领判定。
+    3. `history_hashes.json`：记录当前版本及后续历史已发布版本（自 `1.5.0` 起逐版累积，并供单测注入模拟历史版本）的受管相对文件路径 → SHA-256 映射表，用于已登记及未登记目标的官方版本干净态判定与跨机认领；`scripts/check-release.py --artifacts` 强制校验表中必须存在当前 `guiju._version.__version__` 条目且其文件哈希映射与当前包内资产运行时派生结果逐字节一致，离线单测强制校验已发布历史版本（`< __version__`）条目仅追加、不可删改。
 - **确定性运行时派生（零手工抄写）**：
   - 完整 `SKILL.md` 由纯函数在运行时将 `skill_frontmatter.yaml` + `contract.md` 原文确定性拼接生成；单测断言剥除 frontmatter 后与 `contract.md` **逐字节一致**；
   - `McpServer.initialize` 的 `instructions` 在运行时按标记直接从 `contract.md` 确定性截取并格式化（不另存 `mcp-instructions.txt` 副本）；单测断言其逐字源于 `contract.md` 对应标记区间；
@@ -62,25 +62,27 @@
 - **带外收据与纯净目标目录**：
   - **严禁**向目标 skill 目录 `guiju-standards/` 写入 `.manifest.json` 等任何私有元数据文件；目标目录内除开放标准要求的文件（当前仅 `SKILL.md`）外零私有文件；
   - 收据统一带外落盘于 `GUIJU_HOME/agent-receipts.json`。
-- **完整状态机（含跨机认领 B3）**：
-  - **首次安装**（目标路径不存在）→ 写盘 + 记收据 → `exit 0`, `action="installed"`；
-  - **无变更**（目标受管且磁盘完整集合/SHA-256 匹配收据与当前包）→ 零写盘 → `exit 0`, `action="unchanged"`；
-  - **平滑升级**（目标受管且磁盘完整集合/SHA-256 严格匹配旧版收据、无多余脏文件，当前包资产已更新）→ 直接原子更新 + 刷新收据 → `exit 0`, `action="upgraded"`（**不需要 `--force`**）；
-  - **跨机认领（B3）**：目标已存在、无符号链接、本机收据无该路径登记，且磁盘完整文件集合与 SHA-256（无多余脏文件）**精确匹配当前版本或 `history_hashes.json` 中任一历史版本** →
+- **完整状态机（含跨机认领 B3 与团队同步/切分支 R1）**：
+  - **首次安装**（目标路径不存在，且先经 `lstat` 排除悬空符号链接）→ 写盘 + 记收据 → `exit 0`, `action="installed"`；
+  - **已登记目标干净态判定（先查当前包版本，再查 `{本机收据记录, history_hashes.json 任一历史官方版本}`）**：目标在收据中已登记，且无符号链接、无多余脏文件时，只要磁盘完整文件集合与 SHA-256 精确匹配 `{本机收据记录, 当前安装包版本, history_hashes.json 任一历史官方版本}` 中任意一个即视为干净受管（非用户篡改）：
+    - **无变更（匹配当前安装包版本）**：若本机收据已匹配当前版本，零写盘 → `exit 0`, `action="unchanged"`；若本机收据仍记录旧版（如团队成员升级提交后经 `git pull` 同步到本机工作区），则零改目标文件、仅将本机收据刷新为当前版本 → `exit 0`, `action="unchanged"`；
+    - **平滑升级（不匹配当前安装包版本，但精确匹配本机收据或 `history_hashes.json` 任一历史官方版本）**：覆盖常规本机升级与 `git checkout` 切回旧版官方分支场景 → 直接原子更新目标文件至当前版本并刷新收据 → `exit 0`, `action="upgraded"`（**不需要 `--force`**）；
+  - **跨机认领（B3）**：目标已存在、无符号链接、本机收据无该路径登记，且磁盘完整文件集合与 SHA-256（无多余脏文件）**精确匹配当前版本或 `history_hashes.json` 中任一历史版本**（同样优先匹配当前版本）→
     - 匹配当前版本：零改目标文件，仅补写本机收据 → `exit 0`, `action="adopted"`；
     - 匹配历史版本：平滑更新目标文件至当前版本并补写本机收据 → `exit 0`, `action="adopted_and_upgraded"`（**不需要 `--force`**）；
-  - **非强行冲突拒绝**：磁盘存在未受管文件且不匹配任何官方版本哈希 → `exit 11`（`agent_unmanaged_conflict`）；已受管但存在用户篡改或多余文件 → `exit 11`（`agent_user_modified`）。
-- **四项硬边界语义（B4）**：
+  - **非强行冲突拒绝**：本机收据无登记且存在未受管文件又不匹配任何官方版本哈希 → `exit 11`（`agent_unmanaged_conflict`）；本机收据已登记，但磁盘不匹配 `{本机收据记录, 当前安装包版本, history_hashes.json 任一历史官方版本}` 中的任何一个或存在多余脏文件（例如用户手工改动，或本机 `guiju` 仍停留在旧版而仓库拉取了本机未知的新版内容）→ `exit 11`（`agent_user_modified`）。
+- **四项硬边界语义（B4 + R1 + R4）**：
   1. **`install --force` 清理命名空间脏文件**：在确认目标路径及其内部无符号链接的前提下，`install --force` 先删除 `guiju-standards/` 内全部不属于当前受管清单的额外文件（及随之变空的子目录），再写入纯净受管文件并刷新收据（JSON 附 `removed_extra_files`）。保证任何场景执行 `install --force` 后立即重跑 `install` 必得到 `exit 0` (`action="unchanged"`)；
-  2. **`uninstall` 边界（未受管绝不强删）**：
-     - 未受管目标（不在收据中，且不匹配官方当前或历史完整版本哈希）：**即使传 `--force` 也绝不删除**，固定拒绝返回 `exit 11`（`agent_not_managed`）；
-     - 干净官方未登记目录（如成员 B 直接卸载团队提交的官方 `guiju-standards/`）：精确匹配当前/历史官方完整哈希（无多余文件）时安全删除受管文件与空目录 → `exit 0`（`action="uninstalled"`）；
-     - 已受管但被修改或含额外文件的目标：不带 `--force` 返回 `exit 11`（`agent_user_modified`）；传 `--force` 时**仅删除收据登记的受管文件**，**保留所有非受管额外文件与非空目录**（仅空目录删除），清理该条收据并在 JSON 返回 `preserved_files`；
+  2. **`uninstall` 边界（未受管绝不强删，含已删目录清理与团队同步）**：
+     - 未受管目标（不在收据中，且不匹配官方当前或历史完整版本哈希，含目标不存在且无收据）：**即使传 `--force` 也绝不删除**，固定拒绝返回 `exit 11`（`agent_not_managed`）；
+     - 收据已登记但目标目录已被手工删除：先经 `lstat` 确认目标路径既不存在也不是悬空符号链接（例如用户已先执行 `rm -rf .agents/skills/guiju-standards`）后，直接清理该条陈旧收据并返回 `exit 0`（`action="uninstalled"`，`removed_files=[]`，`preserved_files=[]`）；
+     - 干净官方目标（无多余文件，且无收据时磁盘精确匹配当前/历史官方完整哈希，或有收据时磁盘精确匹配 `{本机收据记录, 当前安装包版本, history_hashes.json 任一历史官方版本}` 任一者）：安全删除受管文件与空目录并移除收据（若已登记） → `exit 0`（`action="uninstalled"`）；
+     - 已受管但磁盘不匹配 `{本机收据记录, 当前安装包版本, history_hashes.json 任一历史官方版本}` 任一者或含额外文件的目标：不带 `--force` 返回 `exit 11`（`agent_user_modified`）；传 `--force` 时**仅删除收据登记的受管文件**，**保留所有非受管额外文件与非空目录**（仅空目录删除），清理该条收据并在 JSON 返回 `preserved_files`；
   3. **收据损坏处理矩阵**：
      - `status`：严格只读不写盘、不备份，直接报错 `exit 11`（`agent_receipt_corrupt`）并指出收据路径；
      - `install`（含向全新未安装目录安装）：不带 `--force` 一律拒绝返回 `exit 11`（`agent_receipt_corrupt`），绝不静默丢弃其他已有目标的登记；带 `--force` 时先将坏收据原子备份为 `agent-receipts.json.corrupt-<YYYYMMDD-HHMMSS>`，再基于全新干净收据完成安装并在 JSON 返回 `backed_up_receipt`；
      - `uninstall`：存在未损收据时按第 2 条执行；若收据损坏，则一律拒绝直接删改收据（`exit 11`, `agent_receipt_corrupt`）；
-  4. **符号链接全面拒绝（含 `--force`）**：写入、读取校验或删除前对 `guiju-standards` 目标目录自身（如指向外部目录的 symlink）及目录内全部文件/子目录执行 `lstat` 检测；**只要出现任何符号链接，即便带 `--force` 也一律拒绝并返回 `exit 11`（`reason="agent_symlink_rejected"`）**，绝不顺着符号链接越界写入或删除命名空间外文件。
+  4. **符号链接全面拒绝（含 `--force`）**：写入、读取校验或删除前（且早于路径存在性判定）对 `guiju-standards` 目标目录自身（如指向外部目录的 symlink 或悬空 symlink）及目录内全部文件/子目录执行 `lstat` 检测；**只要出现任何符号链接，即便带 `--force` 也一律拒绝并返回 `exit 11`（`reason="agent_symlink_rejected"`）**，绝不顺着符号链接越界写入或删除命名空间外文件。
 - **跨工具命名空间隔离**：`guiju agent` 仅读写自身子目录 `guiju-standards/` 与自有 `GUIJU_HOME/agent-receipts.json`，**绝不扫描、校验或删除同级目录（如 `.agents/skills/`）下的任何其他工具技能或第三方状态文件**。
 
 ### D4 CLI 参数契约、JSON 输出形状与 `agent-receipts.json` Schema
@@ -94,8 +96,8 @@
      - `--dir <PATH>` 指定 skill 父根目录（写入 `<PATH>/guiju-standards`）；**`--dir` 与 `--target` / `--scope` 严格互斥**（命令行显式同传任意组合即返回 `exit 2` `bad_usage`；`--dir` 为空串或仅空白时返回 `exit 2` `bad_usage`）。
    - `guiju agent uninstall [--target {agents,claude} | --dir PATH] [--scope {project,user}] [--force] [--json]`：路径解析与互斥规则同 `install`。
    - `guiju agent status [--target {agents,claude} | --dir PATH] [--scope {project,user}] [--json]`：
-     - **不传路径选项**（未传 `--target` / `--scope` / `--dir`）时：读取 `GUIJU_HOME/agent-receipts.json` 列出本机全部受管目标并逐条实时核对磁盘态（`clean` / `upgradable` / `modified` / `missing` / `symlink`）；收据缺失时返回空列表与 `receipt_exists=false`；收据损坏时返回 `exit 11`（`agent_receipt_corrupt`）；
-     - **显式传 `--target` / `--scope` 或 `--dir`**（同传 `--dir` 与 `--target`/`--scope` 仍报 `exit 2`）时：仅检查并报告该指定目标路径的状态（包括 `not_installed` / `adoptable_current` / `adoptable_upgrade` / `clean` / `upgradable` / `modified` / `unmanaged_conflict` / `symlink`）；
+     - **不传路径选项**（未传 `--target` / `--scope` / `--dir`）时：读取 `GUIJU_HOME/agent-receipts.json` 列出本机全部受管目标并逐条实时核对磁盘态（无符号链接且无额外文件时：匹配当前安装包版本为 `clean`，匹配本机收据或 `history_hashes.json` 任一历史版本且非当前版为 `upgradable`，均不匹配或含额外文件为 `modified`；目录缺失且非悬空 symlink 为 `missing`；命中 symlink 为 `symlink`）；收据缺失时返回空列表与 `receipt_exists=false`；收据损坏时返回 `exit 11`（`agent_receipt_corrupt`）；
+     - **显式传 `--target` / `--scope` 或 `--dir`**（同传 `--dir` 与 `--target`/`--scope` 仍报 `exit 2`）时：仅检查并报告该指定目标路径的状态（包括 `not_installed` / `adoptable_current` / `adoptable_upgrade` / `clean` / `upgradable` / `modified` / `missing` / `unmanaged_conflict` / `symlink`）；
      - 全部 `status` 分支**只读不写盘、不建任何目录**。
 
 2. **成功载荷（`--json`，统一携带 `"ok": true`）**：
@@ -135,7 +137,7 @@
 | `1` | `GuijuError`（`internal`） | 仅保留给未预期程序缺陷（带 stderr traceback） | 复用既有 `1` |
 
 - **MCP 边界声明**：MCP 服务面仅暴露只读规范与图集检索工具（`query` / `verify` / `batch` / `announcement` / `atlas_search`），不提供 `agent` 安装/写盘工具，**MCP 服务面永远不会返回退出码 `11`**。
-- **退出码表单一来源一致性**：单测断言 `guiju/agent_assets/contract.md`、`README.md` 与 `guiju/errors.py` `EXIT_TABLE` 呈现的退出码集合完全一致（同步更新 `guiju/errors.py:27` 注释指向及 `README.md` 退出码表补入 `11`）。
+- **退出码表单一来源一致性**：鉴于 `guiju/errors.py` 将 `EXIT_INTERNAL = 1` 置于 `EXIT_TABLE` 之外、且现行 `README.md` 退出码表漏列了已有的 `34`（`no_currency_record`），单测断言精确集合恒等式 **`set(EXIT_TABLE.keys()) | {EXIT_INTERNAL} == codes_in(README.md) == codes_in(contract.md)`**（S1 同步修正 `guiju/errors.py:27` 注释指向，并在 `README.md` 退出码表一并补齐已有遗漏的 `34` 与新增的 `11`）。
 
 ### D6 明确不做
 
@@ -154,7 +156,7 @@
 本 ADR 仅锁定长期有效的架构不变量与可证伪守卫（具体迭代里程碑、双 Python 矩阵、联网 `e2e.py 39/39` 与 `hk` 部署演练见各版本独立 Spec，首期为 [spec-1.5.0.md](../spec-1.5.0.md)）：
 
 1. **双层净化守卫**：`tests/` 静态检验包数据配置与 `importlib.resources` 可加载性，`scripts/check-release.py --artifacts` 检验真实 wheel 构建物（含 `guiju/agent_assets/`、不含根 `AGENTS.md`/`.agents/`/`docs/`）；单测持续扫描 5 处消费方可见输出，确保零仓内相对死链、零源码内部类名/路径泄露、零开发技能名称泄露。
-2. **真正单一真源守卫**：仓库内仅 `guiju/agent_assets/contract.md` 承载消费方正文规则；运行时派生出的 `SKILL.md`（剥除 frontmatter）与 `contract.md` 逐字节一致；`McpServer.initialize` `instructions` 运行时由 `contract.md` 标记区间截取；`docs/AGENT-USAGE.md` 不重复正文；`EXIT_TABLE`、`contract.md` 与 `README.md` 退出码集合一致。
+2. **真正单一真源与版本索引守卫**：仓库内仅 `guiju/agent_assets/contract.md` 承载消费方正文规则；运行时派生出的 `SKILL.md`（剥除 frontmatter）与 `contract.md` 逐字节一致；`McpServer.initialize` `instructions` 运行时由 `contract.md` 标记区间截取；`docs/AGENT-USAGE.md` 不重复正文；`set(EXIT_TABLE.keys()) | {EXIT_INTERNAL} == codes_in(README.md) == codes_in(contract.md)`；`scripts/check-release.py --artifacts` 校验 `history_hashes.json` 包含当前 `__version__` 且哈希等于运行时派生值，单测校验已发布历史条目只增不改。
 3. **严格分层与纯净带外收据不变量**：AST/模块测试证明 `guiju/domain/agent_assets.py` 不触文件系统/环境路径；收据持久化与 `fcntl.flock` 全在 `guiju/store/agent_receipts.py`；`GUIJU_HOME/agent-receipts.json` 为唯一收据落点且 `catalog.db` 保持 `SCHEMA_VERSION = 2`；安装后目标 skill 目录内零私有元数据文件。
-4. **完整状态机与符号链接安全不变量**：单测持续覆盖首次安装（`0`）、无变更（`0`）、旧版受管平滑升级（`0`）、跨机当前/历史哈希认领（`adopted`/`adopted_and_upgraded`，`0`）、未受管冲突/用户修改/收据损坏（`11`）、`--force` 清理多余文件再安装幂等（`0`）、`uninstall` 对未受管目标即使用 `--force` 仍拒绝（`11`）、`uninstall --force` 只删受管文件保留额外文件（`0`）、坏收据仅 `--force` 时 `.corrupt-<ts>` 备份重开（`0`）及任意 symlink 拒绝（含 `--force`，`11`）。
+4. **完整状态机与符号链接安全不变量**：单测持续覆盖首次安装（`0`）、无变更（`0`）、旧版受管平滑升级（`0`）、已登记目标团队 `git pull` 同步当前版免写刷新收据（`unchanged`，`0`）与 `git checkout` 切回旧版平滑恢复（`upgraded`，`0`）、跨机当前/历史哈希认领（`adopted`/`adopted_and_upgraded`，`0`）、未受管冲突/用户修改/收据损坏（`11`）、`--force` 清理多余文件再安装幂等（`0`）、`uninstall` 对未受管目标即使用 `--force` 仍拒绝（`11`）、`uninstall` 对已登记但目录已删目标清理陈旧收据（`0`，`removed_files=[]`）而悬空 symlink 仍拒绝（`11`）、`uninstall --force` 只删受管文件保留额外文件（`0`）、坏收据仅 `--force` 时 `.corrupt-<ts>` 备份重开（`0`）及任意 symlink 拒绝（含 `--force`，`11`）。
 5. **零安装期副作用与业务红线守卫**：`pyproject.toml` 与包加载路径零写盘 hook；同级第三方 skill 目录零触碰；MCP 服务面永不返回 `11`；既有业务退出码（`10`/`20`/`30–34`/`40`/`50`）与 `guiju/net/` 出站红线零变更。
