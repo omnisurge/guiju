@@ -48,6 +48,7 @@ include = ["guiju*"]
 
 [tool.setuptools.package-data]
 "guiju.store" = ["schema.sql"]
+"guiju.agent_assets" = ["*.md", "*.yaml", "*.json"]
 
 [tool.ruff]
 target-version = "py310"

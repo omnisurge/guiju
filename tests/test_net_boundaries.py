@@ -25,7 +25,12 @@ def _module_name(node):
 
 class NetBoundaryTest(unittest.TestCase):
     def test_only_body_and_cache_use_os_replace(self):
-        allowed = {"guiju/net/body.py", "guiju/store/currency.py", "guiju/store/atlas.py"}
+        allowed = {
+            "guiju/net/body.py",
+            "guiju/store/currency.py",
+            "guiju/store/atlas.py",
+            "guiju/store/agent_receipts.py",
+        }
         hits = set()
         for path in (ROOT / "guiju").rglob("*.py"):
             if "os.replace" in path.read_text("utf-8"):
@@ -400,6 +405,51 @@ class NetBoundaryTest(unittest.TestCase):
                 if name in BANNED or "sqlite" in name:
                     bad_imports.append(f"{node.lineno}:{name}")
         self.assertEqual(bad_imports, [])
+
+    def test_agent_assets_domain_and_receipt_store_boundaries(self):
+        domain_path = ROOT / "guiju/domain/agent_assets.py"
+        domain_tree = ast.parse(domain_path.read_text("utf-8"))
+        forbidden_domain_imports = BANNED | {
+            "os",
+            "pathlib",
+            "tempfile",
+            "shutil",
+            "fcntl",
+            "importlib",
+            "sqlite3",
+            "subprocess",
+        }
+        bad_domain_imports = []
+        bad_domain_calls = []
+        for node in ast.walk(domain_tree):
+            for name in _module_name(node):
+                top = name.split(".", 1)[0]
+                if (
+                    name in forbidden_domain_imports
+                    or top in forbidden_domain_imports
+                    or name.startswith(("guiju.store", "guiju.net", "guiju.application", "guiju.cli"))
+                    or (
+                        isinstance(node, ast.ImportFrom)
+                        and node.level >= 2
+                        and any(part in name for part in ("store", "net", "application", "cli"))
+                    )
+                ):
+                    bad_domain_imports.append(f"{node.lineno}:{name}")
+            if isinstance(node, ast.Call):
+                func = node.func
+                cname = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                if cname in {"open", "Path", "home", "cwd"}:
+                    bad_domain_calls.append(f"{node.lineno}:{cname}")
+        self.assertEqual(bad_domain_imports, [])
+        self.assertEqual(bad_domain_calls, [])
+
+        store_tree = ast.parse((ROOT / "guiju/store/agent_receipts.py").read_text("utf-8"))
+        bad_store_imports = []
+        for node in ast.walk(store_tree):
+            for name in _module_name(node):
+                if name in BANNED or "sqlite" in name:
+                    bad_store_imports.append(f"{node.lineno}:{name}")
+        self.assertEqual(bad_store_imports, [])
 
 
 if __name__ == "__main__":

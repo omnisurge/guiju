@@ -1,6 +1,6 @@
 # guiju v1.5.0 迭代规格（Spec）
 
-- 状态：**S1 施工中（2026-11-27，ADR 0008 已接受）**
+- 状态：**S1 已完成，准备进入 S2（2026-11-27）**
 - 分支：`feat/v1.5.0`
 - 基线：`main` @ `dc13268`（`v1.4.0` 正式版）
 - 目标版本：`1.5.0`
@@ -62,7 +62,7 @@
 ## 三、进度跟踪清单
 
 - [x] **S0**：`feat/v1.5.0` 基线、ADR 0008（按 B1–B4 与 R1–R4 定稿并已接受）、`spec-1.5.0.md`、`CHANGELOG.md` `Unreleased` 与索引登记
-- [ ] **S1**：`guiju/agent_assets/` 唯一真源、指针页、`EXIT_CONFLICT = 11`（+`README.md` 补 `34`/`11`）、`domain/agent_assets.py` 纯状态机与 `store/agent_receipts.py` 持久化/锁
+- [x] **S1**：`guiju/agent_assets/` 唯一真源、指针页、`EXIT_CONFLICT = 11`（+`README.md` 补 `34`/`11`）、`domain/agent_assets.py` 纯状态机与 `store/agent_receipts.py` 持久化/锁
 - [ ] **S2**：`guiju/application/agent.py`、CLI `guiju agent` 与全场景单测
 - [ ] **S3**：MCP `initialize.instructions` 运行时直读、5 处内容级净化/SSOT 守卫、`test_hygiene.py`/`check-release.py` 扩展与红队审查
 - [ ] **S4**：`v1.5.0` 冻结、真链验收、产物构建、回退演练及发布

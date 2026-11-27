@@ -1,0 +1,5 @@
+name: guiju-standards
+description: >-
+  Query, verify, pull public official PDFs, search standard atlas catalogs, and
+  generate normative clause citations for Chinese engineering construction
+  standards via the guiju CLI or MCP tools.

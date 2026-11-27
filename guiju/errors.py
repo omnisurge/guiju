@@ -10,6 +10,7 @@ EXIT_OK = 0
 EXIT_INTERNAL = 1
 EXIT_USAGE = 2
 EXIT_EXISTS = 10
+EXIT_CONFLICT = 11
 EXIT_UNREACHABLE = 20
 EXIT_NO_ATTACHMENT = 30
 EXIT_NOT_INDEXED = 31
@@ -24,11 +25,12 @@ FAILURE_RESERVED_FIELDS = frozenset({"ok", "exit", "reason", "error", "hint"})
 #: 成功结果专属的顶层字段；失败体（ok=false）绝不携带（P3-7）
 SUCCESS_ONLY_FIELDS = frozenset({"cite"})
 
-#: 给 agent 的决策表，同时被 README / docs/AGENT-USAGE.md / --help 引用，保持单一来源
+#: 给 agent 的决策表，同时被 README.md / guiju/agent_assets/contract.md / --help 引用，保持单一来源
 EXIT_TABLE = {
     EXIT_OK: ("成功", "继续"),
     EXIT_USAGE: ("输入无法解析（参数/条款号）", "按 hint 修正输入，不要重试同样的输入"),
     EXIT_EXISTS: ("本地已有同名文件", "跳过，别重复下载"),
+    EXIT_CONFLICT: ("技能目录冲突、本地已修改、收据损坏或命中符号链接", "交由人工确认目标路径；确需覆盖或清理时显式传 --force"),
     EXIT_UNREACHABLE: ("源不可达（网络/5xx/超时）", "稍后重试"),
     EXIT_NO_ATTACHMENT: ("公告页没有正文附件", "换备源或按提示判定为「历史上无正文」，不是故障"),
     EXIT_NOT_INDEXED: ("编号无法定位到公告", "先 guiju sync 补齐目录；仍无则说明没有公开正文公告"),
@@ -38,6 +40,14 @@ EXIT_TABLE = {
     EXIT_COMPLIANCE: ("命中合规护栏", "停止，不要重试、不要换路径绕过"),
     EXIT_NEEDS_HUMAN: ("站点结构变更或需人工介入", "上报维护者修适配器"),
 }
+
+AGENT_CONFLICT_REASONS = frozenset({
+    "agent_unmanaged_conflict",
+    "agent_user_modified",
+    "agent_not_managed",
+    "agent_receipt_corrupt",
+    "agent_symlink_rejected",
+})
 
 
 class GuijuError(Exception):
@@ -70,6 +80,25 @@ class BadUsage(GuijuError):
     exit = EXIT_USAGE
     reason = "bad_usage"
     hint = "检查参数形态；条款号接受 5.2.1 / 第5.2.1条"
+
+
+class AgentConflict(GuijuError):
+    exit = EXIT_CONFLICT
+    reason = "agent_unmanaged_conflict"
+    hint = "确认目标目录归属与本地修改情况；仅在人工确认可覆盖或清理时显式加 --force（符号链接与非受管卸载始终拒绝）"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str = "agent_unmanaged_conflict",
+        hint: str = "",
+        **extra: object,
+    ) -> None:
+        if not isinstance(reason, str) or reason not in AGENT_CONFLICT_REASONS:
+            raise ValueError(f"非法的 AgentConflict reason：{reason!r}")
+        self.reason = reason
+        super().__init__(message, hint=hint, **extra)
 
 
 class SourceUnreachable(GuijuError):

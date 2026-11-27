@@ -12,7 +12,7 @@
 |---|---|---|
 | [README.md](../README.md) | 当前 | 用户手册：安装、命令、退出码、合规边界 |
 | [AGENTS.md](../AGENTS.md) | 当前 | 本仓开发与审查约束：架构红线、门禁命令、红队审查 |
-| [docs/AGENT-USAGE.md](AGENT-USAGE.md) | 当前 | agent 操作契约：命令选择、退出码动作、必知事实 |
+| [docs/AGENT-USAGE.md](AGENT-USAGE.md) | 指针页（唯一正文在 `guiju/agent_assets/contract.md`） | agent 使用契约入口与离仓 `guiju agent show` 分流 |
 | [INSTALL.md](../INSTALL.md) | 当前 | 安装、自部署、回退 |
 | [HANDOFF.md](../HANDOFF.md) | 当前 | 交接状态、已验证事实、踩坑记录 |
 | [deploy/README.md](../deploy/README.md) | 当前 | hk 生产服务部署与验证 |
@@ -27,7 +27,7 @@
 | [docs/remediation-2026-11-18.md](remediation-2026-11-18.md) | 历史计划（B2-B5 已完成；1.2.0 发版） | 1.2.0 契约整改的过程记录 |
 | [docs/spec-1.3.0.md](spec-1.3.0.md) | 已完成（v1.3.0 已发布，S0–S6 全部闭环） | v1.3.0 迭代 Spec（M4 观测、去冗余、兼容门面退场、MCP 纯净化、测试收敛） |
 | [docs/spec-1.4.0.md](spec-1.4.0.md) | 已完成（v1.4.0 已发布，S0–S4 全部闭环） | v1.4.0 迭代 Spec（标准图集时效/替代链、`guiju atlas`、MCP `atlas_search`、PEP 639） |
-| [docs/spec-1.5.0.md](spec-1.5.0.md) | 准备就绪（S0 完成，待确认 ADR 0008） | v1.5.0 迭代 Spec（开发/使用约束与技能解耦、`guiju/agent_assets/`、`guiju agent`） |
+| [docs/spec-1.5.0.md](spec-1.5.0.md) | S1 已完成，准备进入 S2（2026-11-27） | v1.5.0 迭代 Spec（开发/使用约束与技能解耦、`guiju/agent_assets/`、`guiju agent`） |
 | [docs/adr/README.md](adr/README.md) | 当前索引 | 本项目 ADR 0001–0008 的唯一状态入口 |
 | [CHANGELOG.md](../CHANGELOG.md) | 当前 | 版本变更 |
 
