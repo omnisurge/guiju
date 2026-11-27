@@ -37,6 +37,7 @@ from ..ports.store import StorePort
 
 _CJK = re.compile(r"[\u4e00-\u9fff]")
 _CODEISH = re.compile(r"^[A-Za-z]")
+_EXPLICIT_YEAR_RE = re.compile(r"-((?:19|20)\d{2})$")
 _DECISIVE_ROLES = ("primary", "target_of_revision")
 
 #: 候选里要写清"这条来自哪个源"：同名标准跨源存在（实测上海与国标有 19–20 条同名），
@@ -429,6 +430,17 @@ def _by_code(
                 currency_complete=False,
                 currency_incomplete_reason=incomplete_reason or None,
             )
+        if best_record is None and records and _explicit_year(key):
+            siblings = "、".join(r.code for r in records if r.code) or "无编号"
+            example = next((r.code for r in records if r.code), ref)
+            raise NotIndexed(
+                f"编号 {ref} 未被时效服务收录（仅返回同族其他版本：{siblings}，拒绝跨年份替代）",
+                hint=(
+                    f"请确认年份是否正确，或改用实际版本（如 {example}）重查；"
+                    f"也可用 guiju which {ref} 查看现行替代关系"
+                ),
+                currency=[r.as_payload() for r in records],
+            )
         raise NotIndexed(
             f"编号 {ref} 既不在本地索引中，时效服务也未返回可识别的名称",
             hint="确认编号是否完整（含年份）；或 guiju sync 后再试；仍无则本地目录里没有这本规范",
@@ -611,7 +623,58 @@ def _verify_by_primary_code(
     return matched
 
 
+def _strip_code_decorations(code_key: str) -> str:
+    """剥去编号末尾括号装饰（如 GB50016-2014（2018年版））。"""
+    s = code_key.strip()
+    end = len(s)
+    while end > 0 and s[end - 1] in (")", "）"):
+        idx = max(s.rfind("(", 0, end), s.rfind("（", 0, end))
+        if idx < 0:
+            break
+        if s.find(")", idx + 1, end - 1) >= 0 or s.find("）", idx + 1, end - 1) >= 0:
+            break
+        end = idx
+        while end > 0 and s[end - 1].isspace():
+            end -= 1
+    return s[:end].rstrip()
+
+
+def _explicit_year(code_key: str) -> str:
+    """若规范化编号末尾显式带 4 位版年，返回该年份；否则返回空串。"""
+    from ..currency.shzjw import explicit_version, is_shanghai_code
+
+    cleaned = _strip_code_decorations(code_key)
+    if not cleaned:
+        return ""
+    if is_shanghai_code(cleaned) and not explicit_version(cleaned):
+        return ""
+    m = _EXPLICIT_YEAR_RE.search(cleaned)
+    return m.group(1) if m else ""
+
+
+def _same_explicit_edition(record, key: str, want_year: str) -> bool:
+    """判断时效记录是否与显式带版年的查询 key 属于同一编号族且同年份。"""
+    from ..domain.codes import _code_subject, normalize_key
+
+    if _is_english(record) or not record.code:
+        return False
+    rec_key = _strip_code_decorations(normalize_key(record.code))
+    if not rec_key or _explicit_year(rec_key) != want_year:
+        return False
+    return _code_subject(rec_key) == _code_subject(_strip_code_decorations(key))
+
+
 def _pick_record(records: list, key: str):
+    from ..domain.codes import normalize_key
+
+    norm_key = normalize_key(key)
+    want_year = _explicit_year(norm_key)
+    if want_year:
+        candidates = [r for r in records if _same_explicit_edition(r, norm_key, want_year)]
+        if not candidates:
+            return None
+        exact, current = match_currency(candidates, norm_key)
+        return exact or current or candidates[0]
     # 英文版（编号以 E 结尾 / 名称含"英文版"）不是官方中文正文，不参与定位
     chinese = [r for r in records if not _is_english(r)]
     pool = chinese or list(records)

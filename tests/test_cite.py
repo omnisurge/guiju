@@ -563,5 +563,63 @@ class CiteDbFallbackConfidenceTest(unittest.TestCase):
         self.assertEqual(emitted["warnings"], [])
 
 
+class _SiblingCurrentCurrency(_FakeCurrency):
+    """只返回同族新版（如 JGJ147-2016），漏掉用户显式询问的 2004 版。"""
+
+    complete = True
+
+    def lookup(self, code):
+        return [
+            Record(
+                code="JGJ147-2016",
+                status="current",
+                name="建筑工程检测试验技术标准",
+                source="ccsn",
+            )
+        ]
+
+
+class CiteExplicitYearGuardTest(unittest.TestCase):
+    """实测回归：cite "JGJ 147-2004" 1.0.1 --strict 不得因同族 JGJ147-2016 退出 0。"""
+
+    def test_cli_cite_strict_refuses_cross_edition_substitution(self):
+        self.addCleanup(render.configure, as_json=False, quiet=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "c.db"
+            store = Store(db_path)
+            try:
+                store.upsert_announcement(
+                    "https://www.mohurd.gov.cn/jgj147.html",
+                    "2016-07-09",
+                    "关于发布行业标准《建筑工程检测试验技术标准》的公告",
+                    "建筑工程检测试验技术标准",
+                    "national",
+                )
+                store.upsert_edition("JGJ/T147-2016", "JGJ/T 147-2016", None, "parsed")
+                store.add_mention(1, "JGJ/T147-2016", "primary", "JGJ/T 147-2016")
+                store.commit()
+            finally:
+                store.close()
+
+            buf = io.StringIO()
+            with (
+                mock.patch.dict("os.environ", {"GUIJU_NO_AUTO_SYNC": "1"}),
+                mock.patch.object(currency_mod, "CachedCurrency", _SiblingCurrentCurrency),
+                redirect_stdout(buf),
+            ):
+                code = main([
+                    "cite", "JGJ 147-2004", "1.0.1", "--strict", "--json",
+                    "--db", str(db_path),
+                ])
+            payload = json.loads(buf.getvalue())
+
+        self.assertEqual(code, 31)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["exit"], 31)
+        self.assertEqual(payload["reason"], "not_indexed")
+        self.assertNotIn("cite", payload)
+        self.assertIn("JGJ147-2016", payload["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -337,5 +337,111 @@ class ByCodeDecisiveConfidenceTest(unittest.TestCase):
         self.assertEqual(result["code_key"], "GB50016-2014")
 
 
+class ExplicitEditionGuardTest(unittest.TestCase):
+    """显式带年份编号禁止在 _pick_record / _by_code 中被同族其他年份现行版替代。"""
+
+    def test_pick_record_explicit_year_matrix(self):
+        # 1. 显式年份未被收录，仅返回同族新版 -> 拒绝跨年替代（返回 None）
+        self.assertIsNone(
+            lookup_mod._pick_record(
+                [Record(code="JGJ147-2016", status="current", name="建筑工程检测试验技术标准", source="ccsn")],
+                "JGJ 147-2004",
+            )
+        )
+        # 2. 同时存在目标旧版与同族现行新版 -> 命中旧版（不升级为新版）
+        picked_old = lookup_mod._pick_record(
+            [
+                Record(code="JGJ 147-2004", status="superseded", name="旧版", source="csres"),
+                Record(code="JGJ147-2016", status="current", name="新版", source="csres"),
+            ],
+            "JGJ147-2004",
+        )
+        self.assertIsNotNone(picked_old)
+        self.assertEqual(picked_old.code, "JGJ 147-2004")
+
+        # 3. 同一版年带装饰后缀（（2018年版））-> 仍认定为 2014 同版
+        picked_decorated = lookup_mod._pick_record(
+            [
+                Record(code="GB 50016-2014（2018年版）", status="current", name="建筑设计防火规范", source="csres"),
+                Record(code="GB 55037-2022", status="current", name="建筑防火通用规范", source="csres"),
+            ],
+            "GB50016-2014",
+        )
+        self.assertIsNotNone(picked_decorated)
+        self.assertEqual(picked_decorated.code, "GB 50016-2014（2018年版）")
+
+        # 4. 同编号同版年强改推（JGJ 147-2004 vs JGJ/T 147-2004）-> 放行
+        picked_t = lookup_mod._pick_record(
+            [Record(code="JGJ/T 147-2004", status="current", name="同版推荐性", source="csres")],
+            "JGJ147-2004",
+        )
+        self.assertIsNotNone(picked_t)
+        self.assertEqual(picked_t.code, "JGJ/T 147-2004")
+
+        # 5. 仅返回英文版时，显式年份同样拒绝选中
+        self.assertIsNone(
+            lookup_mod._pick_record(
+                [Record(code="GB 50016-2014E", status="current", name="Fire code", source="csres")],
+                "GB50016-2014",
+            )
+        )
+
+        # 6. 不带年份查询允许挑现行新版
+        picked_unversioned = lookup_mod._pick_record(
+            [
+                Record(code="JGJ 147-2004", status="superseded", name="旧版", source="csres"),
+                Record(code="JGJ147-2016", status="current", name="新版", source="csres"),
+            ],
+            "JGJ147",
+        )
+        self.assertIsNotNone(picked_unversioned)
+        self.assertEqual(picked_unversioned.code, "JGJ147-2016")
+
+        # 7. 上海裸号（DG/TJ08-2007 中的 2007 是顺序号非版年）仍允许匹配现行版；
+        #    若显式写出 2016 版年则拒绝跨年替代为 2026 版或裸号。
+        picked_sh_base = lookup_mod._pick_record(
+            [Record(code="DG/TJ08-2007-2026", status="current", name="沪标新版", source="shzjw")],
+            "DG/TJ08-2007",
+        )
+        self.assertIsNotNone(picked_sh_base)
+        self.assertEqual(picked_sh_base.code, "DG/TJ08-2007-2026")
+        self.assertIsNone(
+            lookup_mod._pick_record(
+                [
+                    Record(code="DG/TJ08-2007", status="superseded", name="沪标裸号", source="shzjw"),
+                    Record(code="DG/TJ08-2007-2026", status="current", name="沪标新版", source="shzjw"),
+                ],
+                "DG/TJ08-2007-2016",
+            )
+        )
+
+    def test_resolve_explicit_year_refuses_cross_edition_substitution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "c.db")
+            try:
+                store.upsert_announcement(
+                    "https://www.mohurd.gov.cn/jgj147.html",
+                    "2016-07-09",
+                    "关于发布行业标准《建筑工程检测试验技术标准》的公告",
+                    "建筑工程检测试验技术标准",
+                    "national",
+                )
+                store.upsert_edition("JGJ/T147-2016", "JGJ/T 147-2016", None, "parsed")
+                store.add_mention(1, "JGJ/T147-2016", "primary", "JGJ/T 147-2016")
+                store.commit()
+                cur = FakeCurrency(
+                    [Record(code="JGJ147-2016", status="current", name="建筑工程检测试验技术标准", source="ccsn")],
+                    complete=True,
+                )
+                with self.assertRaises(NotIndexed) as ctx:
+                    resolve(store, "JGJ 147-2004", cur, allow_network=False)
+                self.assertEqual(ctx.exception.exit, 31)
+                self.assertEqual(ctx.exception.reason, "not_indexed")
+                self.assertIn("JGJ147-2016", ctx.exception.message)
+                self.assertEqual(ctx.exception.extra["currency"][0]["code"], "JGJ147-2016")
+            finally:
+                store.close()
+
+
 if __name__ == "__main__":
     unittest.main()

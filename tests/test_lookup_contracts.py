@@ -167,11 +167,18 @@ class ByCodeCompletenessTest(unittest.TestCase):
         self.assertEqual(ctx.exception.extra["currency_incomplete_reason"], "翻页截断")
 
     def test_incomplete_nonempty_without_target_is_needs_human_50(self):
-        records = [Record(code="GB 50011-2010", status="current", name="抗震规范")]
+        records = [Record(code="GB 9999-2020", status="current", name="抗震规范")]
         with self.assertRaises(NeedsHuman) as ctx:
             self._run(_ContractCurrency(records, complete=False, reason="无总页数"))
         self.assertEqual(ctx.exception.exit, 50)
         self.assertEqual(ctx.exception.extra["resolved_name"], "抗震规范")
+
+    def test_incomplete_mismatched_edition_is_needs_human_50_without_wrong_name(self):
+        records = [Record(code="GB 9999-2010", status="current", name="旧版抗震规范")]
+        with self.assertRaises(NeedsHuman) as ctx:
+            self._run(_ContractCurrency(records, complete=False, reason="无总页数"))
+        self.assertEqual(ctx.exception.exit, 50)
+        self.assertNotIn("resolved_name", ctx.exception.extra)
 
     def test_complete_empty_remains_not_indexed_31(self):
         with self.assertRaises(NotIndexed) as ctx:
