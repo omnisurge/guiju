@@ -136,6 +136,12 @@ def run(store: Store, args: argparse.Namespace) -> int:
                 raise
             error = exc
 
+    # W3/P1-4：complete=False 表示这次答案没取全（空结果可能是漏记录，不是"没有"）。
+    # W3-2：empty_authoritative=True 时例外 —— 源明确回答"没有这条编号"，
+    # 只是明文回退导致 complete=False，不能再说"可能漏判"。
+    currency_complete, incomplete_reason = completeness_of(cur)
+    currency_empty_authoritative = empty_authoritative_of(cur)
+
     atlas_hint = ""
     if is_atlas:
         if records:
@@ -147,6 +153,17 @@ def run(store: Store, args: argparse.Namespace) -> int:
             atlas_hint = (
                 "离线模式未访问国标电子书库；去掉 --offline 查图集实时有效期，"
                 "或用 guiju atlas search 查本地图集目录"
+            )
+        elif source_name == "none" or endpoint == "disabled":
+            atlas_hint = (
+                "时效服务已禁用（GUIJU_CURRENCY=off），未访问国标电子书库；"
+                "请恢复默认 native 或用 guiju atlas search 查本地图集目录"
+            )
+        elif currency_complete is False and not currency_empty_authoritative:
+            reason_suffix = f"（{incomplete_reason}）" if incomplete_reason else ""
+            atlas_hint = (
+                f"国标电子书库检索结果未取全{reason_suffix}，无法确认该图集编号是否收录；"
+                "请补充完整年份/前缀重试，或用 guiju atlas search 查本地图集目录"
             )
         else:
             atlas_hint = "国标电子书库未收录该图集编号；可用 guiju atlas search 按关键词在完整目录中核对编号"
@@ -175,11 +192,6 @@ def run(store: Store, args: argparse.Namespace) -> int:
                     break
             if ann_name != ann["doc_name"]:
                 break
-    # W3/P1-4：complete=False 表示这次答案没取全（空结果可能是漏记录，不是"没有"）。
-    # W3-2：empty_authoritative=True 时例外 —— 源明确回答"没有这条编号"，
-    # 只是明文回退导致 complete=False，不能再说"可能漏判"。
-    currency_complete, incomplete_reason = completeness_of(cur)
-    currency_empty_authoritative = empty_authoritative_of(cur)
     payload = {
         "ok": True,
         "query": args.ref,

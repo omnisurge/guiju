@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 
 from ._version import __version__
 from .domain.currency import Record
-from .errors import ComplianceDenied, GuijuError, NeedsHuman
+from .errors import ComplianceDenied, GuijuError, NeedsHuman, NoAttachment
 from .ports.currency import McpCurrencyPort
 
 PROTOCOL_VERSIONS = ("2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
@@ -480,6 +480,19 @@ class McpServer:
         ref = str(arguments.get("ref") or "").strip()
         if not ref:
             return _error_result("缺少 ref 参数")
+        from .domain import atlas
+
+        if atlas.is_atlas_code(ref):
+            norm_atlas = atlas.normalize_code(ref)
+            exc = NoAttachment(
+                f"图集 {ref} 属受版权保护的标准图集，住建部公告库无其全文或下载链接",
+                hint=f"请用 query({ref!r}) 核验图集现行/废止状态，用 atlas_search({ref!r}) 检索本地图集目录",
+                code=norm_atlas,
+                verdict="copyright_atlas",
+            )
+            return _text_result(
+                json.dumps(exc.payload(), ensure_ascii=False), error=True
+            )
         from .application import resolve as lookup
         from .domain import announcement, availability
         from .domain import attachment as att_domain

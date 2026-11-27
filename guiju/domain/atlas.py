@@ -46,15 +46,49 @@ _PROVINCE_TOKENS = (
 _PROV_PATTERN = "|".join(sorted(_PROVINCE_TOKENS, key=len, reverse=True))
 
 _LANG_SUFFIX_RE = re.compile(r"(?:英文版|中文版)$")
-_BILINGUAL_RE = re.compile(r"^B\d{2}[A-Z]{1,5}(?:/[TZ])?\d[\dA-Z\-~()（）]*(?:英文版|中文版)?$")
+_ATLAS_TAIL = (
+    r"(?:/[A-Z]-?|/|-)?[0-9Ⅰ-Ⅻ](?:[\dA-ZⅠ-Ⅻ\-/~]|\([^()]+\))*"
+    r"(?:附[\u4e00-\u9fff0-9A-Z\-~Ⅰ-Ⅻ()]*)?改?(?:英文版|中文版)?"
+)
+_BILINGUAL_RE = re.compile(
+    rf"^B\d{{2}}(?:\(\d{{2}}\))?[A-Z]{{1,5}}{_ATLAS_TAIL}$"
+)
 _YEAR_PREFIX_ATLAS_RE = re.compile(
-    r"^\d{2}[A-Z]{1,5}(?:/[TZ])?\d[\dA-Z\-~()（）]*(?:英文版|中文版)?$"
+    rf"^\d{{2}}(?:\(\d{{2}}\))?-?[A-Z]{{1,5}}{_ATLAS_TAIL}$"
+)
+_YEAR4_PREFIX_ATLAS_RE = re.compile(
+    rf"^(?:19|20)\d{{2}}[A-Z]{{1,6}}{_ATLAS_TAIL}$"
+)
+_YEAR4_PROV_ATLAS_RE = re.compile(
+    rf"^(?:\d{{2}}|(?:19|20)\d{{2}})(?:{_PROV_PATTERN}){{1,2}}[-/]?[A-Z]{{1,5}}{_ATLAS_TAIL}$"
+)
+_PROV_BODY = (
+    r"(?:T-[A-Z]-?\d[\dA-Z\-~()]*"
+    rf"|[A-Z]{{1,5}}(?:{_ATLAS_TAIL}|-[A-Z]{{1,4}}(?:\([A-Z]+\))?|合订本(?:\([^()]+\))?))"
 )
 _PROV_ATLAS_RE = re.compile(
-    rf"^(?:{_PROV_PATTERN})\d{{2}}[A-Z]{{1,5}}(?:/[TZ])?\d[\dA-Z\-~()（）]*(?:英文版|中文版)?$"
+    rf"^(?:{_PROV_PATTERN})(?:\d{{2}}|(?:19|20)\d{{2}})?(?:{_PROV_PATTERN})?[-/]?{_PROV_BODY}$"
 )
-_PROV_STRIP_YEAR_RE = re.compile(rf"^({_PROV_PATTERN})\d{{2}}([A-Z].*)$")
-_DBJ_ATLAS_RE = re.compile(r"^DBJ(?:/[TZ])?(?!08)\d{2}-\d+-\d{4}-\d{2}[A-Z]{1,4}\d+(?:-\d+)?$")
+_PROV_HAS_YEAR_RE = re.compile(
+    rf"^(?:(?:\d{{2}}|(?:19|20)\d{{2}})(?:{_PROV_PATTERN})|(?:{_PROV_PATTERN})(?:\d{{2}}|(?:19|20)\d{{2}})|"
+    rf"(?:{_PROV_PATTERN})[A-Z]{{1,5}}(?:(?:19|20)\d{{2}}-.*|.*(?:-(?:19|20)\d{{2}}|\((?:19|20)\d{{2}}年版?\))))$"
+)
+_LETTER_PROV_YEAR_RE = re.compile(
+    rf"^(?:(?:L|J|M|SDCT|XB)\d{{2}}-?[A-Z]{{1,5}}{_ATLAS_TAIL}"
+    rf"|L\d{{2}}[JGSND](?:\([^()]+\))?"
+    rf"|SX-\d{{2}}[A-Z]{{1,3}}\d[\dA-Z\-]*)$"
+)
+_PROV_STRIP_YEAR_RE = re.compile(
+    rf"^({_PROV_PATTERN})(?:\d{{2}}|(?:19|20)\d{{2}})[-/]?((?:{_PROV_PATTERN})?-?[A-Z].*)$"
+)
+_YEAR4_PROV_STRIP_RE = re.compile(
+    rf"^(?:\d{{2}}|(?:19|20)\d{{2}})((?:{_PROV_PATTERN}).*)$"
+)
+_LETTER_PROV_STRIP_RE = re.compile(r"^(L|J|M|SDCT|XB|SX-)\d{2}-?([A-Z].*)$")
+_DBJ_ATLAS_RE = re.compile(
+    rf"^DBJ(?:T|/T|/Z)?(?!08)\d{{2}}-\d+-\d{{4}}"
+    rf"(?:-\d{{2}}[A-Z]{{1,5}}{_ATLAS_TAIL}|[A-Z]{{2,6}}\d*)$"
+)
 _YEARLESS_DISCIPLINE_PREFIXES = (
     # 单字母建标/图集专业类代号（避免把 M1、CECS1、XX999 等非图集误判为无年份图集号）
     "J", "G", "S", "K", "D", "X", "R", "L", "F", "M", "C", "N", "H", "Q", "T",
@@ -63,14 +97,19 @@ _YEARLESS_DISCIPLINE_PREFIXES = (
     "CS", "CD", "CG", "MS", "MD", "MJ", "MG", "MK", "ZJ", "ZG", "ZS", "ZD", "ZK",
     "ZR", "ZX", "ZN", "TJ", "TG", "TS", "TD", "TK", "TX", "TR", "BJ", "BG", "BS",
     "BD", "BK", "BR", "BX", "DQ", "DJ", "JS", "GT", "GX", "SZ", "SSB",
+    "EJ", "QG", "LJ", "QJ", "XA", "LS", "GG",
 )
 _YEARLESS_PREFIX_PATTERN = "|".join(sorted(_YEARLESS_DISCIPLINE_PREFIXES, key=len, reverse=True))
+_SINGLE_DIGIT_ATLAS_RE = re.compile(
+    r"^(?:(?:S|K|R|MR)\d(?:/\d+)?(?:-\d+)?(?:\([^()]+\))*(?:附[\u4e00-\u9fff0-9A-Z\-~Ⅰ-Ⅻ()]*)?改?|XBD-\d+-\d{2,4}|XBD-\d+-\(\d{2}\))$"
+)
 _BASE_OR_BINDING_RE = re.compile(
     rf"^(?:{_YEARLESS_PREFIX_PATTERN})"
-    r"(?:\d{2,5}(?:-\d{1,4})?(?:~(?:[A-Z]{0,4}\d{1,5}(?:-\d{1,4})?))?"
+    r"(?:\d{2,5}(?:-\d{1,4})?(?:/\d{1,4})?(?:~[A-Z]{0,4}\d{1,5}(?:-\d{1,4})?(?:[A-Z]{1,4}\d{1,5}(?:-\d{1,4})?~\d{1,4})?)?"
     r"|\d(?:-\d{1,4})?~(?:[A-Z]{0,4}\d{1,5}(?:-\d{1,4})?))"
-    r"(?:\([^()]+\))?$"
+    r"(?:\([^()]+\))*(?:附[\u4e00-\u9fff0-9A-Z\-~Ⅰ-Ⅻ()]*)?改?$"
 )
+_ATLAS_CONT_RE = re.compile(r"^-?\d{1,3}(?:~\d{1,3})?(?:\([^()]+\))?$")
 
 _STATUS_MAP = {
     "现行": "current",
@@ -204,27 +243,44 @@ def _looks_like_standard(norm: str) -> bool:
             rest = norm[len(prefix):].lstrip("-")
             if rest and ("0" <= rest[0] <= "9" or (prefix in {"JC", "DL", "SL", "YB"} and len(rest) >= 2)):
                 return True
+    if _LETTER_PROV_YEAR_RE.match(norm):
+        return False
     return bool(_STANDARD_YEAR_TAIL.search(norm))
 
 
-def is_atlas_code(code: str) -> bool:
-    """判定是否为工程建设标准图集编号（严格互斥上海地标、国行标与中文书名）。"""
-    norm = normalize_code(code)
+def _is_single_atlas_code(norm: str) -> bool:
     if not norm or norm.isdigit() or norm.startswith("HTTP"):
         return False
     if re.match(r"^\d{4}[-/]", norm):
         return False
     if _looks_like_standard(norm):
         return False
-    if _DBJ_ATLAS_RE.match(norm):
-        return True
-    if _BILINGUAL_RE.match(norm):
-        return True
-    if _YEAR_PREFIX_ATLAS_RE.match(norm):
-        return True
-    if _PROV_ATLAS_RE.match(norm):
-        return True
-    return bool(_BASE_OR_BINDING_RE.match(norm))
+    return bool(
+        _DBJ_ATLAS_RE.match(norm)
+        or _BILINGUAL_RE.match(norm)
+        or _YEAR_PREFIX_ATLAS_RE.match(norm)
+        or _YEAR4_PREFIX_ATLAS_RE.match(norm)
+        or _YEAR4_PROV_ATLAS_RE.match(norm)
+        or _PROV_ATLAS_RE.match(norm)
+        or _LETTER_PROV_YEAR_RE.match(norm)
+        or _SINGLE_DIGIT_ATLAS_RE.match(norm)
+        or _BASE_OR_BINDING_RE.match(norm)
+    )
+
+
+def is_atlas_code(code: str) -> bool:
+    """判定是否为工程建设标准图集编号（严格互斥上海地标、国行标与中文书名）。"""
+    norm = normalize_code(code)
+    if not norm:
+        return False
+    if "、" in norm:
+        parts = norm.split("、")
+        if len(parts) < 2 or any(not p for p in parts):
+            return False
+        if not _is_single_atlas_code(parts[0]):
+            return False
+        return all(_is_single_atlas_code(p) or bool(_ATLAS_CONT_RE.match(p)) for p in parts[1:])
+    return _is_single_atlas_code(norm)
 
 
 def _is_bilingual(norm: str) -> bool:
@@ -240,22 +296,39 @@ def has_edition_year(code: str) -> bool:
     norm = normalize_code(code)
     if not is_atlas_code(norm):
         return False
+    if "、" in norm:
+        return has_edition_year(norm.split("、", 1)[0])
     if _is_bilingual(norm) or _has_lang_suffix(norm):
         return True
     if "~" in norm or _DBJ_ATLAS_RE.match(norm):
         return True
-    return bool(_PROV_ATLAS_RE.match(norm) or _YEAR_PREFIX_ATLAS_RE.match(norm))
+    if re.search(r"(?:\((?:19|20)\d{2}|-\(\d{2}\)$)", norm):
+        return True
+    return bool(
+        _YEAR_PREFIX_ATLAS_RE.match(norm)
+        or _YEAR4_PREFIX_ATLAS_RE.match(norm)
+        or _YEAR4_PROV_ATLAS_RE.match(norm)
+        or _LETTER_PROV_YEAR_RE.match(norm)
+        or _PROV_HAS_YEAR_RE.match(norm)
+    )
 
 
 def atlas_family(code: str) -> str:
-    """提取同族基号（去前导两位年份；保留汉字省前缀，双语/英文版原样保留）。"""
+    """提取同族基号（去前导年份；保留省/字母区域前缀，双语/英文版原样保留）。"""
     norm = normalize_code(code)
-    if not norm or _is_bilingual(norm) or _has_lang_suffix(norm):
+    if not norm or "、" in norm or _is_bilingual(norm) or _has_lang_suffix(norm):
         return norm
+    m_y4_prov = _YEAR4_PROV_STRIP_RE.match(norm)
+    if m_y4_prov:
+        return m_y4_prov.group(1)
     m_prov = _PROV_STRIP_YEAR_RE.match(norm)
     if m_prov:
-        return f"{m_prov.group(1)}{m_prov.group(2)}"
-    m_yr = re.match(r"^\d{2}([A-Z].*)$", norm)
+        prov, rest = m_prov.group(1), m_prov.group(2).lstrip("-")
+        return rest if rest.startswith(prov) else f"{prov}{rest}"
+    m_lprov = _LETTER_PROV_STRIP_RE.match(norm)
+    if m_lprov:
+        return f"{m_lprov.group(1)}{m_lprov.group(2)}"
+    m_yr = re.match(r"^(?:\d{2}(?:\(\d{2}\))?|(?:19|20)\d{2})-?([A-Z].*)$", norm)
     if m_yr:
         return m_yr.group(1)
     return norm

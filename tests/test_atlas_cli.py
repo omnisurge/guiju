@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 from guiju import currency as currency_mod
+from guiju.application.atlas import search_atlas, sync_atlas
 from guiju.application.resolve import ref_is_code
 from guiju.cli import main
 from guiju.cli.commands import atlas as atlas_cmd
@@ -103,6 +104,42 @@ class AtlasCatalogStoreTest(unittest.TestCase):
             with self.assertRaises(NeedsHuman) as ctx:
                 AtlasCatalogStore(self.path).save(entries)
             self.assertEqual(ctx.exception.exit, 50)
+
+    def test_age_days_clock_injection_and_future_timestamp_not_skipped(self) -> None:
+        entries = atlas_domain.parse_concise_catalogue(_concise_bytes().decode("utf-8"))
+        now = [1_800_000_000.0]
+        store = AtlasCatalogStore(self.path, clock=lambda: now[0])
+        store.save(entries)
+        now[0] += 2 * 86400.0
+        loaded = store.load()
+        self.assertIsNotNone(loaded)
+        self.assertAlmostEqual(loaded.age_days(), 2.0)
+
+        # 小幅时钟漂移（<= 1 小时）按 0 天处理
+        store.save(entries, synced_epoch=now[0] + 60.0)
+        skewed = store.load()
+        self.assertIsNotNone(skewed)
+        self.assertEqual(skewed.age_days(), 0.0)
+
+        # 未来时间戳超过 1 小时：age_days 返回 None，且 --if-stale 7 不得跳过重同步
+        store.save(entries, synced_epoch=now[0] + 10 * 86400.0)
+        future_loaded = store.load()
+        self.assertIsNotNone(future_loaded)
+        self.assertIsNone(future_loaded.age_days())
+
+        fetch_calls = 0
+
+        def fake_fetch() -> bytes:
+            nonlocal fetch_calls
+            fetch_calls += 1
+            return _concise_bytes()
+
+        res = sync_atlas(store, fetch_catalogue=fake_fetch, if_stale=7)
+        self.assertFalse(res["skipped"])
+        self.assertEqual(fetch_calls, 1)
+        refreshed = store.load()
+        self.assertIsNotNone(refreshed)
+        self.assertEqual(refreshed.age_days(), 0.0)
 
 
 class AtlasCliTest(unittest.TestCase):
@@ -330,6 +367,128 @@ class AtlasResolveWhichPullBoundariesTest(unittest.TestCase):
         self.assertEqual(batch_payload["counts"], {"30": 2})
         self.assertEqual(batch_payload["results"][0]["verdict"], "copyright_atlas")
         self.assertEqual(batch_payload["results"][1]["verdict"], "copyright_atlas")
+
+    def test_limit_zero_keeps_total_and_hides_empty_hint(self) -> None:
+        with mock.patch.object(atlas_cmd, "_fetch_catalogue", return_value=_concise_bytes()):
+            rc_sync, _, _ = _run_cli(["atlas", "sync", "--json"], home=self.home)
+        self.assertEqual(rc_sync, 0)
+
+        store = AtlasCatalogStore(self.home / "atlas-catalog.json")
+        app_res = search_atlas(store, query="101", limit=0)
+        self.assertGreater(app_res["total"], 0)
+        self.assertEqual(app_res["count"], 0)
+        self.assertTrue(app_res["truncated"])
+        self.assertEqual(app_res["hint"], "")
+
+        rc_human, out_human, _ = _run_cli(["atlas", "search", "101", "--limit", "0"], home=self.home)
+        self.assertEqual(rc_human, 0)
+        self.assertIn(f"命中 {app_res['total']} 条", out_human)
+        self.assertIn("用 --all 或 --limit N 查看", out_human)
+        self.assertNotIn("未命中图集记录", out_human)
+
+        rc_list, out_list, _ = _run_cli(["atlas", "list", "--limit", "0"], home=self.home)
+        self.assertEqual(rc_list, 0)
+        self.assertIn("命中 21 条", out_list)
+        self.assertNotIn("未命中图集记录", out_list)
+
+    def test_which_atlas_hint_distinguishes_currency_off_and_incomplete_truncation(self) -> None:
+        rc_off, out_off, _ = _run_cli(
+            ["which", "16G101-1", "--json"],
+            home=self.home,
+            extra_env={"GUIJU_CURRENCY": "off"},
+        )
+        self.assertEqual(rc_off, 0)
+        off_payload = json.loads(out_off)
+        self.assertEqual(off_payload["currency"], [])
+        self.assertIn("GUIJU_CURRENCY=off", off_payload["hint"])
+        self.assertNotIn("国标电子书库未收录该图集编号", off_payload["hint"])
+
+        class IncompleteEmptyCurrency:
+            name = "native"
+            endpoint = "native"
+            from_cache = False
+            stale = False
+            cache_age_days = None
+            upstream_error = None
+            complete = False
+            empty_authoritative = False
+            incomplete_reason = "最多翻页 5 页已截断"
+
+            def __init__(self, store=None, **_kwargs) -> None:
+                pass
+
+            def lookup(self, code: str) -> list[Record]:
+                return []
+
+        with mock.patch.object(currency_mod, "CachedCurrency", IncompleteEmptyCurrency):
+            rc_inc, out_inc, _ = _run_cli(["which", "G101-1", "--json"], home=self.home)
+        self.assertEqual(rc_inc, 0)
+        inc_payload = json.loads(out_inc)
+        self.assertFalse(inc_payload["currency_complete"])
+        self.assertIn("检索结果未取全", inc_payload["hint"])
+        self.assertIn("最多翻页 5 页已截断", inc_payload["hint"])
+        self.assertNotIn("国标电子书库未收录该图集编号", inc_payload["hint"])
+
+    def test_cite_rejects_atlas_even_when_mohurd_name_matches_or_classifier_bypassed(self) -> None:
+        db = self.home / "catalog.db"
+        store = Store(db)
+        try:
+            store.upsert_announcement(
+                "https://www.mohurd.gov.cn/gonggao/399.html",
+                "2016-10-01",
+                "住房城乡建设部关于发布行业标准《住宅排气道应用技术规程》的公告",
+                "住宅排气道应用技术规程",
+                "standard",
+            )
+            store.commit()
+        finally:
+            store.close()
+
+        class FakeAtlasCurrency:
+            name = "native"
+            endpoint = "native"
+            from_cache = False
+            stale = False
+            cache_age_days = None
+            upstream_error = None
+            complete = True
+            empty_authoritative = False
+            incomplete_reason = ""
+
+            def __init__(self, store=None, **_kwargs) -> None:
+                pass
+
+            def lookup(self, code: str) -> list[Record]:
+                return [
+                    Record(
+                        code="16J916-1",
+                        status="current",
+                        name="住宅排气道",
+                        implement_date="2016-09-01",
+                        source="chinabuilding",
+                    )
+                ]
+
+        with mock.patch.object(currency_mod, "CachedCurrency", FakeAtlasCurrency):
+            for argv in (
+                ["cite", "16J916-1", "--json"],
+                ["cite", "16J916-1", "--strict", "--json"],
+            ):
+                rc, stdout_text, _ = _run_cli(argv, home=self.home)
+                self.assertEqual(rc, 31)
+                payload = json.loads(stdout_text)
+                self.assertFalse(payload["ok"])
+                self.assertEqual(payload["verdict"], "copyright_atlas")
+                self.assertNotIn("cite", payload)
+
+            # 即使分类器漏认，resolve 见到 chinabuilding 记录也绝不能错配住建部同名规程
+            with mock.patch.object(atlas_domain, "is_atlas_code", return_value=False):
+                rc_bypass, out_bypass, _ = _run_cli(["cite", "16J916-1", "--strict", "--json"], home=self.home)
+            self.assertEqual(rc_bypass, 31)
+            bypass_payload = json.loads(out_bypass)
+            self.assertFalse(bypass_payload["ok"])
+            self.assertEqual(bypass_payload["verdict"], "copyright_atlas")
+            self.assertNotIn("cite", bypass_payload)
 
 
 if __name__ == "__main__":

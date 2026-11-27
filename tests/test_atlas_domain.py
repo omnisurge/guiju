@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import unittest
 from pathlib import Path
 
@@ -256,6 +257,73 @@ class AtlasConciseCatalogueParserTest(unittest.TestCase):
             atlas.parse_concise_catalogue("<html><body>not concise</body></html>")
         with self.assertRaises(NeedsHuman):
             atlas.parse_concise_catalogue('<table class="menuTd"><tbody></tbody></table>')
+
+
+class RedTeamAtlasCodeClassificationTest(unittest.TestCase):
+    """红队审查回归：真实 4252 条图集格式识别、家庭隔离与严格互斥误判。"""
+
+    def test_real_atlas_formats_recognized(self) -> None:
+        positives = (
+            # 4 位年份省标与特殊分隔省标
+            "皖2021ZT104", "陕2022TJ068", "辽2015J801", "湘2018J002-3",
+            "闽2021-J-48", "川2021J153-TJ", "黔2023/T124", "闽2009T-J-04",
+            # 年份在后/无前导年份省标与合订本
+            "苏J59-2021", "吉J2021-060", "浙J25-95", "滇J991", "西南J812",
+            "津17WJ-3", "津18MS-XF(JZ)", "津16MS-J", "西南22J/C315", "西南18J合订本(4)",
+            # 字母省标 / SX / L13 / DBJ 图集
+            "L23J907", "J22J268", "M97GⅢ", "SDCT19J05", "XB93G302-1-3",
+            "L13J（一）", "L13G", "SX-12J1", "DBJT02-80-2013-12G06~10", "DBJ03-63-2014SZJC",
+            # 年份在省前缀之前 & 4 位年份前缀
+            "2021沪J111", "2013沪J/Z-901", "2004浙G19", "99浙J15", "2016JZZY4",
+            # 经典单数字/合订本/修订年/附册/顿号合编
+            "S2", "S3(2010年合订本)", "S5(二)", "K1(上)", "R4(四)", "MR1/2",
+            "EJ722", "XBD-941-(05)", "99(03)S203", "17CJ70-2(2024年版)", "09X700(上)",
+            "16G116-1附册一", "04SG518-2附构件详图", "新97J201(二)附", "13J811-1改",
+            "粤20J/010-2", "K507-1～2 R418-1～2",
+            "25J908-12、25D202-7、25S130", "12G03-1、2、4", "SG334、SG533",
+        )
+        for code in positives:
+            with self.subTest(code=code):
+                self.assertTrue(atlas.is_atlas_code(code), f"漏识别真实图集号: {code}")
+
+    def test_standards_acronyms_dates_never_misclassified_as_atlas(self) -> None:
+        negatives = (
+            "GB 50016-2014", "JGJ 1-2014", "DB31/373-2010", "DBJ/T 15-123-2020",
+            "DBJ03-69-2015", "T/CECS 100-2020", "CECS 1", "GBX 1", "XX 999",
+            "NFPA 13", "M1", "UNKNOWN", "2022-05-01", "153493", "JZGCAQSG", "WFGZSJTJ",
+        )
+        for code in negatives:
+            with self.subTest(code=code):
+                self.assertFalse(atlas.is_atlas_code(code), f"误判为图集号: {code}")
+
+    def test_provincial_and_revision_atlas_family_isolation(self) -> None:
+        self.assertEqual(atlas.atlas_family("2021沪J111"), "沪J111")
+        self.assertFalse(atlas.matches("J111", "2021沪J111"))
+        self.assertTrue(atlas.matches("沪J111", "2021沪J111"))
+
+        self.assertEqual(atlas.atlas_family("L23J907"), "LJ907")
+        self.assertFalse(atlas.matches("J907", "L23J907"))
+        self.assertTrue(atlas.matches("LJ907", "L23J907"))
+
+        self.assertEqual(atlas.atlas_family("99(03)S203"), "S203")
+        self.assertTrue(atlas.has_edition_year("99(03)S203"))
+        self.assertTrue(atlas.has_edition_year("苏J59-2021"))
+        self.assertTrue(atlas.has_edition_year("吉J2021-060"))
+        self.assertFalse(atlas.has_edition_year("滇J991"))
+        self.assertFalse(atlas.has_edition_year("滇J991-12"))
+
+    def test_is_atlas_code_linear_time_on_adversarial_long_inputs(self) -> None:
+        adversarial = (
+            "22G" + "1" * 60 + "!",
+            "皖2021J" + "1" * 60 + "!",
+            "L23J" + "1" * 60 + "!",
+            "DBJT02-80-2013-12G" + "1" * 60 + "!",
+        )
+        t0 = time.perf_counter()
+        for bad in adversarial:
+            with self.subTest(bad=bad[:20]):
+                self.assertFalse(atlas.is_atlas_code(bad))
+        self.assertLess(time.perf_counter() - t0, 0.1)
 
 
 if __name__ == "__main__":

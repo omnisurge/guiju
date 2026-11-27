@@ -20,6 +20,7 @@ from guiju.domain import atlas as atlas_domain
 from guiju.errors import AmbiguousCode, ComplianceDenied, NeedsHuman, NoCurrencyRecord, SourceUnreachable
 from guiju.mcp import McpServer, _query_result, make_http_server, serve_stdio
 from guiju.store.atlas import AtlasCatalogStore
+from guiju.store.sqlite import Store
 
 
 def _record(code="GB 50011-2010", status="current", *, source="csres", fallback=""):
@@ -807,6 +808,41 @@ class AtlasMcpSupportTest(unittest.TestCase):
                 with self.subTest(bad_args=bad_args):
                     err = _call(server, "atlas_search", bad_args)["result"]
                     self.assertTrue(err["isError"])
+
+    def test_announcement_rejects_atlas_without_false_mohurd_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "catalog.db"
+            store = Store(db_path)
+            try:
+                store.upsert_announcement(
+                    "https://www.mohurd.gov.cn/gonggao/399.html",
+                    "2016-10-01",
+                    "住房城乡建设部关于发布行业标准《住宅排气道应用技术规程》的公告",
+                    "住宅排气道应用技术规程",
+                    "standard",
+                )
+                store.commit()
+            finally:
+                store.close()
+
+            rec = Record("16J916-1", "current", "住宅排气道", "2016-09-01", "chinabuilding")
+            server = McpServer(FakeBackend({"16J916-1": (rec,)}), store_path=db_path)
+            self.addCleanup(server.close)
+
+            for ref in ("16J916-1", "粤25G/T116"):
+                res = _call(server, "announcement", {"ref": ref})["result"]
+                self.assertTrue(res["isError"])
+                payload = json.loads(res["content"][0]["text"])
+                self.assertFalse(payload["ok"])
+                self.assertEqual(payload["verdict"], "copyright_atlas")
+                self.assertNotIn("mohurd.gov.cn", res["content"][0]["text"])
+
+            with mock.patch.object(atlas_domain, "is_atlas_code", return_value=False):
+                bypass = _call(server, "announcement", {"ref": "16J916-1"})["result"]
+            self.assertTrue(bypass["isError"])
+            bypass_payload = json.loads(bypass["content"][0]["text"])
+            self.assertEqual(bypass_payload["verdict"], "copyright_atlas")
+            self.assertNotIn("mohurd.gov.cn", bypass["content"][0]["text"])
 
 
 if __name__ == "__main__":

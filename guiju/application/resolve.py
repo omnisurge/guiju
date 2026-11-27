@@ -349,7 +349,17 @@ def _by_code(
     fetch_detail=None,
     sources: object | None = None,
 ) -> dict:
+    from ..domain import atlas
     from ..domain.codes import normalize_key
+
+    if atlas.is_atlas_code(ref):
+        norm_atlas = atlas.normalize_code(ref)
+        raise NotIndexed(
+            f"编号 {ref} 属工程建设标准图集（版权出版物），住建部公告目录不提供其标准公告或正文下载",
+            hint=f"请用 guiju which {ref} 或 MCP query 核验图集现行/废止及替代关系，用 guiju atlas search 检索图集目录",
+            code=norm_atlas,
+            verdict="copyright_atlas",
+        )
 
     currency = _require_currency(currency)
 
@@ -423,6 +433,15 @@ def _by_code(
             f"编号 {ref} 既不在本地索引中，时效服务也未返回可识别的名称",
             hint="确认编号是否完整（含年份）；或 guiju sync 后再试；仍无则本地目录里没有这本规范",
             currency=[r.as_payload() for r in records],
+        )
+    if best_record.source == "chinabuilding":
+        raise NotIndexed(
+            f"编号 {best_record.code or ref} 来自国标电子书库（工程建设标准图集），无住建部免费正文公告",
+            hint=f"请用 guiju which {best_record.code or ref} 或 MCP query 核验图集现行/废止及替代关系，用 guiju atlas search 检索图集目录",
+            currency=[r.as_payload() for r in records],
+            resolved_name=best_record.name,
+            code=best_record.code or ref,
+            verdict="copyright_atlas",
         )
 
     # 上游名称常带装饰（「（2026年局部修订）」「(2018年版)」「（英文版）」），

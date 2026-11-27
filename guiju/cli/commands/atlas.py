@@ -59,11 +59,12 @@ def _render_entries(payload: dict, *, empty_label: str) -> None:
         render.out(payload["hint"])
         return
     results = payload.get("results") or []
-    if not results:
+    total = payload.get("total", len(results))
+    if not total:
         render.out(f"未命中图集记录（目录共 {payload['catalog_total']} 条）。{payload.get('hint', '')}".rstrip())
         return
     mode_tag = "（模糊匹配）" if payload.get("mode") == "fuzzy" else ""
-    render.out(f"命中 {payload['total']} 条{mode_tag}（目录共 {payload['catalog_total']} 条 · {empty_label}）：")
+    render.out(f"命中 {total} 条{mode_tag}（目录共 {payload['catalog_total']} 条 · {empty_label}）：")
     for item in results:
         label = _STATUS_CN.get(item["status"], item["status"])
         rep = f"  [替代 → {item['replaced_by']}]" if item.get("replaced_by") else ""

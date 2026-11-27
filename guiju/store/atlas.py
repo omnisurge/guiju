@@ -15,7 +15,7 @@ import tempfile
 import time
 from collections.abc import Callable, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -69,12 +69,17 @@ class AtlasCatalogSnapshot:
     entries: tuple[atlas.AtlasCatalogEntry, ...]
     corrupt: bool = False
     error: str = ""
+    _clock: Callable[[], float] = field(default=time.time, repr=False, compare=False)
 
     def age_days(self, now: float | None = None) -> float | None:
         if self.synced_epoch <= 0:
             return None
-        current = time.time() if now is None else float(now)
-        return max(0.0, (current - self.synced_epoch) / 86400.0)
+        current = self._clock() if now is None else float(now)
+        age = (current - self.synced_epoch) / 86400.0
+        # 未来时间戳超过 1 小时不是“新鲜”，视为异常时钟交上层重同步；小幅时钟漂移按 0 处理。
+        if age < -(1.0 / 24.0):
+            return None
+        return max(0.0, age)
 
 
 class AtlasCatalogStore:
@@ -137,6 +142,7 @@ class AtlasCatalogStore:
             source=data["source"],
             source_url=data["source_url"],
             entries=tuple(parsed),
+            _clock=self._clock,
         )
 
     def save(
@@ -199,4 +205,5 @@ class AtlasCatalogStore:
             source="chinabuilding",
             source_url=str(source_url),
             entries=tuple(entries),
+            _clock=self._clock,
         )

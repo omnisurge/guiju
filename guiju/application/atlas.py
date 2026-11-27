@@ -63,7 +63,7 @@ def sync_atlas(
     existing = atlas_store.load()
     if if_stale is not None and existing is not None and not existing.corrupt and existing.entries:
         age = existing.age_days(now)
-        if if_stale == 0 or (age is not None and age <= if_stale):
+        if age is not None and (if_stale == 0 or age <= if_stale):
             return {
                 "ok": True,
                 "skipped": True,
@@ -230,7 +230,7 @@ def search_atlas(
     age_days = None if age is None else round(age, 2)
 
     hint = ""
-    if not results:
+    if total == 0:
         hint = "本地图集索引暂无匹配；可用 --status all 放宽状态、调整关键词，或 guiju which <图集号> 在线核对。"
 
     return {

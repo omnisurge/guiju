@@ -8,6 +8,7 @@
 - S1：新增纯领域模块 `guiju/domain/atlas.py`（国标/中南标/省标图集号识别、严格防串号/防与上海地标及国行标混淆匹配，以及 `search`/`detail`/`conciseCatalogueList` 纯 HTML 解析器）及全套离线黄金夹具单测 `tests/test_atlas_domain.py`。
 - S2：新增 `guiju/currency/chinabuilding.py` 国标电子书库图集时效适配器（方案 A：列表检索 + 精确废止追查 `detail/show` 获取 `代替标准号`）并接入 `default_registry`；为 `MetadataPolicy`/`MetadataClient` 增加按端点字节上限（8 MB 仅限 `/zbooklib/conciseCatalogueList`，防止重定向放宽）；`Record` 增 `replaced_by` 且 `DiskCurrencyCache` 向下兼容存量 `v1.3.0` 缓存；收紧无年份专业前缀白名单并通过全套内存 HTTPS 与缓存契约测试。
 - S3：新增独立快照存储 `guiju/store/atlas.py`（`GUIJU_HOME/atlas-catalog.json`，不触碰 `catalog.db` schema v2）、应用层 `guiju/application/atlas.py` 与 CLI 命令 `guiju atlas {sync|search|list}`；更新 `resolve.ref_is_code` 识别汉字省前缀图集号（如 `粤25G/T116`），使 `guiju which` 对图集跳过住建部公告定位并展示 `replaced_by`、`guiju pull` 直接诚实退出 `30`（零下载）；在 `guiju/mcp.py` 新增只读 `atlas_search` 工具并完善 MCP 工具说明与替代关系透传。
+- S3-fix（发版前红队审查修复）：扩充 `atlas.is_atlas_code` 对国标电子书库全量 4,252 条真实图集号的编码模式覆盖（四位年份省标、`YYYY沪...`、`L/J/M/SDCT/XB/SX` 省标、单数字合订本、修订年/附册、`、` 联合图集及 `DBJT` 图集），并严格保留 `沪J111`/`LJ907` 区域同族隔离；封堵 `resolve._by_code` 与 MCP `announcement` 对图集编号误配住建部同名标准的路径；修正 `guiju which` 在 `GUIJU_CURRENCY=off` 或不完整检索空结果时误报“国标电子书库未收录”；修正 `search_atlas` 与 CLI `atlas` 在 `--limit 0` 下命中总数与空提示矛盾；修复 `AtlasCatalogSnapshot.age_days` 未来时间戳校验与 `AtlasCatalogStore._clock` 注入一致性。
 
 ## 1.3.0 — 2026-11-26（1.3.0 正式发布）
 
