@@ -13,13 +13,13 @@
 
 | 项 | 值 |
 |---|---|
-| 代码基线 | `feat/v1.4.0`（S0–S3 + `248281c` + S4 本地冻结，待打发布 tag `v1.4.0`） |
-| 版本 | `1.4.0`（目标发布 tag `v1.4.0`） |
+| 代码基线 | `main`（S0–S4 收口，发布 tag `v1.4.0` 指向最终发布提交） |
+| 版本 | `1.4.0`（发布 tag `v1.4.0`） |
 | 单测 | Python 3.10.21 / 3.13.5 **各 1279/1279 通过**；`scripts/ci.sh` exit 0（含 ruff、docs-only、离线 e2e 4/4） |
 | 完整联网 e2e | `python3 scripts/e2e.py --require-currency` **39/39** 通过，exit 0（`2026-11-27 11:22–11:28 CST` 实测，同步 `db=3257 上游=3257`，二次幂等 `new=0`）；另有国标电子书库真链点查（`22G101-1` current、`16G101-1` superseded `replaced_by=22G101-1` 无 `B16G101-1`、`21ZJ111`/`粤25G/T116` current、`pull 22G101-1` exit 30、`cite 16J916-1 --strict` exit 31、`atlas sync` total=4252、`atlas search` 与 MCP `atlas_search`/`announcement` 均通过） |
 | 发布产物 | wheel `guiju-1.4.0-py3-none-any.whl` SHA-256 `448aa1a5472065773fafece13baacaf40b5d222db0d74002b1c1a4ac690f8498`（226,846 bytes，100 个文件，PEP 639 零弃用警告，`Metadata-Version: 2.4` / `License-Expression: MIT`）；sdist `guiju-1.4.0.tar.gz` SHA-256 `a6890f0606cb136a5b9595d7d2ab8f7a69ea6ae25af25747b36e7316f2d424cb`（385,803 bytes，187 个条目，不含 `docs/`） |
 | 本地回退演练 | `/tmp/guiju-rollback-drill-20261127` 实测 `1.4.0 → 1.3.0 → 1.4.0` wheel 切换、`SCHEMA_VERSION=2` `catalog.db` 直读与标记保留（`rollback_drill_marker=before-rollback-1.4.0`）及独立 `atlas-catalog.json`（`16G101-1` / `replaced_by=22G101-1`）并存读回均完整通过；本机 editable `guiju --version` 实测 `guiju 1.4.0` |
-| hk 生产部署 | 尚未部署（当前运行 `1.3.0`，待所有者确认窗口执行 `1.3.0 ↔ 1.4.0` 升级、`GUIJU_HOME=/var/lib/guiju guiju atlas sync` 预热及真实 systemd 回退/再部署演练）；未访问 NAS |
+| hk 生产部署 | 2026-11-27 12:20:41 CST 已升级 1.4.0（`/opt/guiju`，Python 3.11.2，沿用强化 unit SHA-256 `a91fcd79d9fec2b726aabc586bca2f514b96ed3785d656fe2ce3ba4d238ffc6c`）；本地 health `{"ok":true}`，`su -s /bin/sh guiju` 完成 `guiju atlas sync` 预热写入 `/var/lib/guiju/atlas-catalog.json`（1,088,317 B，`total=4252`：`current=3105 / superseded=59 / withdrawn=1088`），MCP `tools/list` 返回 5 工具（含 `atlas_search`）、`query` `GB 55037-2022`（current）、`query` `22G101-1`（current / `chinabuilding`）、`query` `16G101-1`（superseded / `replaced_by=22G101-1`）、`atlas_search` `16G101-1`（`ok=true`, `total=4252`）、`announcement` `22G101-1`（`exit=30` / `copyright_atlas`）及公网无 Bearer `401` 均通过；完成 `1.4.0 → 1.3.0 → 1.4.0` 真实 systemd 回退/再部署演练。备份 `/opt/guiju/backup-1.3.0-20261127-122041/`（另留 `/opt/guiju/guiju.prev-1.3.0-20261127-122041/`）；`/var/lib/guiju/catalog.db`（77,824 B）保持原样，未访问 NAS |
 | 发布页 | https://github.com/omnisurge/guiju/releases/tag/v1.4.0 |
 
 ## v1.3.0（2026-11-26）

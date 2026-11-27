@@ -1,9 +1,9 @@
 # 规矩 guiju — 交接文档
 
 > 一句话：从官方站点取工程建设标准的**目录 + 正文 + 引用串 + 现行状态**，只搬运与校验，不生产内容。
-> 状态：**v1.4.0 已发布**（2026-11-27；本地冻结待打 tag v1.4.0，发布提交为 tag 指向的最终提交；发版记录 [docs/audit/release-1.4.0-20261127.md](docs/audit/release-1.4.0-20261127.md)）。单测 **1279 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.4.0。
+> 状态：**v1.4.0 已发布**（2026-11-27；tag v1.4.0，发布提交为 tag 指向的发布提交；发版记录 [docs/audit/release-1.4.0-20261127.md](docs/audit/release-1.4.0-20261127.md)）。单测 **1279 项**、Python 3.10/3.13 与本地 CI 全绿；完整联网 e2e 39/39；发布页 https://github.com/omnisurge/guiju/releases/tag/v1.4.0。
 > 本文件包含版本历史记录；历史行中的 cmd/mcp、NAS spec-currency 是当时事实，不代表当前运行形态。当前形态见 [docs/README.md](docs/README.md)。
-> ADR 0001 / ADR 0002 / ADR 0004 / ADR 0005 / ADR 0006 均已关闭，v1.4.0 图集时效/目录索引与 PEP 639 治理见 [docs/adr/0007-atlas-currency-and-catalog.md](docs/adr/0007-atlas-currency-and-catalog.md)（索引见 [docs/adr/README.md](docs/adr/README.md)）；当前时效只使用 **native**，`GUIJU_CURRENCY` 只认 `native[:off|dir]` / `off`；hk `guiju-mcp` 当前运行 1.3.0（1.4.0 候选待所有者确认窗口升级、`guiju atlas sync` 预热及 `1.3.0 ↔ 1.4.0` 真实回退/再部署演练），NAS spec-currency 已于 2026-11-01 停用（历史事实，本项目不依赖 NAS）。
+> ADR 0001 / ADR 0002 / ADR 0004 / ADR 0005 / ADR 0006 / ADR 0007 均已关闭（v1.4.0 图集时效/目录索引与 PEP 639 治理见 [docs/adr/0007-atlas-currency-and-catalog.md](docs/adr/0007-atlas-currency-and-catalog.md)，索引见 [docs/adr/README.md](docs/adr/README.md)）；当前时效只使用 **native**，`GUIJU_CURRENCY` 只认 `native[:off|dir]` / `off`；hk `guiju-mcp` 已部署 1.4.0（2026-11-27 完成 `/var/lib/guiju/atlas-catalog.json` 4,252 条预热及 `1.3.0 ↔ 1.4.0` 真实回退/再部署），NAS spec-currency 已于 2026-11-01 停用（历史事实，本项目不依赖 NAS）。
 
 ## 文档地图（各司其职，不要互相抄）
 

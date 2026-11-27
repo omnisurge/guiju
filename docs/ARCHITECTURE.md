@@ -8,7 +8,7 @@
 > **修订状态（2026-11-27 / v1.4.0）**：v1.4.0（ADR 0007）在 v1.3.0 分层基础上新增标准图集只读时效/替代链与目录索引闭环，并对齐 PEP 639 打包与显式年份护栏：
 > - S0：升级 `pyproject.toml` 为 PEP 639（消除 `SetuptoolsDeprecationWarning`）并归档图集离线黄金夹具；
 > - S1–S2：新增纯领域 `guiju/domain/atlas.py` 与原生适配 `guiju/currency/chinabuilding.py`（方案 A，废止追查 `replaced_by`），`MetadataPolicy` 对 `/zbooklib/conciseCatalogueList` 设 8 MB 按端点上限，`Record` / `DiskCurrencyCache` 向下兼容存量 `v1.3.0` 缓存；
-> - S3 + 收口修复：独立 `GUIJU_HOME/atlas-catalog.json`（不改 `catalog.db` `SCHEMA_VERSION = 2`）、CLI `guiju atlas {sync|search|list}` 与 MCP 只读 `atlas_search`；`which` 跳过住建部公告并展示 `replaced_by`、`pull`/`cite`/MCP `announcement` 拒绝图集下载；修复显式带 4 位版年查询跨年替代问题。hk `guiju-mcp` 当前运行 1.3.0（待所有者窗口升级 1.4.0、预热 `atlas sync` 与回退演练），NAS 绝不访问。
+> - S3 + 收口修复：独立 `GUIJU_HOME/atlas-catalog.json`（不改 `catalog.db` `SCHEMA_VERSION = 2`）、CLI `guiju atlas {sync|search|list}` 与 MCP 只读 `atlas_search`；`which` 跳过住建部公告并展示 `replaced_by`、`pull`/`cite`/MCP `announcement` 拒绝图集下载；修复显式带 4 位版年查询跨年替代问题。hk `guiju-mcp` 已部署 1.4.0、完成 `atlas-catalog.json`（4,252 条）预热与 `1.3.0 ↔ 1.4.0` 真实回退/再部署，NAS 绝不访问。
 
 > **修订（2026-11-09）**：归档责任划给 kb-system 后，本地不再有正文注册表：
 > `artifact` 表、`verify`/`provenance` 命令已删除，幂等改由文件名里的

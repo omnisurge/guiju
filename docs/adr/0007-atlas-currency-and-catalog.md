@@ -1,7 +1,7 @@
 # ADR 0007 · 工程建设标准图集时效校验、完整目录索引与打包元数据治理
 
-- 状态：**已批准（本地冻结完成，2026-11-27，待所有者确认发版 tag 与 hk 窗口关闭）**（2026-11-26 立项）
-> **实施记录（`feat/v1.4.0`，2026-11-27 本地冻结）**：S0–S3 与 S4 本地冻结、双 Python（3.10.21 / 3.13.5）各 1279 项单测、`ruff`、`scripts/ci.sh`、完整联网 e2e 39/39 + 图集真链点查、PEP 639 零警告产物构建与校验、本地 `1.3.0 ↔ 1.4.0` 回退演练均已通过；待所有者确认发布 `v1.4.0` tag、执行 hk `1.3.0 ↔ 1.4.0` 升级/回退演练并预热 `guiju atlas sync` 后关闭本 ADR（未访问 NAS）。发版验证见 [release-1.4.0-20261127.md](../audit/release-1.4.0-20261127.md) 与 [ACCEPTANCE.md](../ACCEPTANCE.md)。
+- 状态：**已关闭（1.4.0 已于 2026-11-27 正式发布；D1–D6 为现行契约）**（2026-11-26 立项）
+> **实施记录（`main` / `v1.4.0`，2026-11-27 最终）**：S0–S4 全部闭环——双 Python（3.10.21 / 3.13.5）各 1279 项单测、`ruff`、本地 CI、完整联网 e2e 39/39 + 图集真链点查、PEP 639 零警告产物构建与校验、本地 `1.4.0 ↔ 1.3.0` 回退演练、hk 生产 `1.4.0` 升级与 `atlas-catalog.json`（4,252 条）预热及 `1.3.0 ↔ 1.4.0` 真实 systemd 回退/再部署均已通过；未访问 NAS。发版验证与产物事实见 [release-1.4.0-20261127.md](../audit/release-1.4.0-20261127.md) 与 [ACCEPTANCE.md](../ACCEPTANCE.md)。
 - 决策人：所有者
 - 触发：`v1.3.0` 收口后，需要为 `guiju` 增加工程建设标准图集（国标图集/中南标图集/地方标图集）的权威现行/废止/替代校验与 agent 完整目录索引能力，并提前消除 `pyproject.toml` 的 `SetuptoolsDeprecationWarning`（2027-02-18 截止）。
 - 影响：`guiju/net/{endpoints,policy}.py`、`guiju/domain/atlas.py`、`guiju/domain/currency.py`、`guiju/currency/{chinabuilding,registry}.py`、`guiju/store/{atlas,currency}.py`、`guiju/application/{atlas,resolve,pull}.py`、`guiju/cli/`、`guiju/mcp.py`、`pyproject.toml`、`tests/`
